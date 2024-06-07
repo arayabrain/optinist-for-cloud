@@ -10,7 +10,13 @@ from studio.app.common.core.snakemake.snakemake_executor import (
 from studio.app.common.core.snakemake.snakemake_reader import SmkParamReader
 from studio.app.common.core.snakemake.snakemake_rule import SmkRule
 from studio.app.common.core.snakemake.snakemake_writer import SmkConfigWriter
-from studio.app.common.core.workflow.workflow import NodeType, RunItem
+from studio.app.common.core.workflow.workflow import (
+    Node,
+    NodeData,
+    NodeType,
+    ProcessType,
+    RunItem,
+)
 from studio.app.common.core.workflow.workflow_params import get_typecheck_params
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.common.core.workflow.workflow_writer import WorkflowConfigWriter
@@ -77,6 +83,7 @@ class WorkflowRunner:
         rule_dict: Dict[str, Rule] = {}
         last_outputs = []
 
+        # generate a rule for each node
         for node in self.nodeDict.values():
             if node.type == NodeType.IMAGE:
                 rule_dict[node.id] = SmkRule(
@@ -148,6 +155,27 @@ class WorkflowRunner:
                     last_outputs.append(rule.output)
             else:
                 assert False, "NodeType doesn't exists"
+
+        # generate a rule for implicit post-process
+        post_process_rule = SmkRule(
+            workspace_id=self.workspace_id,
+            unique_id=self.unique_id,
+            node=Node(
+                id=f"{ProcessType.POST_PROCESS}_0",
+                type=ProcessType.POST_PROCESS,
+                data=NodeData(
+                    label=ProcessType.POST_PROCESS,
+                    param=None,
+                    path=last_outputs,
+                    type=None,
+                ),
+                position=None,
+                style=None,
+            ),
+            edgeDict={},
+        ).post_process()
+        rule_dict[ProcessType.POST_PROCESS] = post_process_rule
+        last_outputs.append(post_process_rule.output)
 
         return rule_dict, last_outputs
 

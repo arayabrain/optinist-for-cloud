@@ -2,6 +2,7 @@ import os
 
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
+from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.const import FILETYPE
 from studio.app.dir_path import DIRPATH
 from studio.app.wrappers import wrapper_dict
@@ -29,6 +30,7 @@ class SmkUtils:
 
     @classmethod
     def conda(cls, details):
+        # skip conda for input node
         if details["type"] in [
             FILETYPE.IMAGE,
             FILETYPE.CSV,
@@ -36,6 +38,11 @@ class SmkUtils:
             FILETYPE.HDF5,
             FILETYPE.MATLAB,
             FILETYPE.MICROSCOPE,
+        ]:
+            return None
+        # skip conda for process-event
+        elif details["type"] in [
+            ProcessType.POST_PROCESS,
         ]:
             return None
 

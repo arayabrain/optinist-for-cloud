@@ -16,6 +16,7 @@ class NodeType:
     MAT: str = "MatlabFileNode"
     MICROSCOPE: str = "MicroscopeFileNode"
     ALGO: str = "AlgorithmNode"
+    MANAGEMENT: str = "ManagementNode"
 
 
 @dataclass
@@ -31,6 +32,11 @@ class OutputType:
     POLAR: str = "polar"
     HISTOGRAM: str = "histogram"
     PIE: str = "pie"
+
+
+@dataclass
+class ProcessType:
+    POST_PROCESS: str = "post_process"
 
 
 class NodeItem(BaseModel):
