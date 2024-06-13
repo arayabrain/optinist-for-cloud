@@ -14,6 +14,7 @@ from studio.app.common.core.workflow.workflow import (
     Node,
     NodeData,
     NodeType,
+    NodeTypeUtil,
     ProcessType,
     RunItem,
 )
@@ -85,76 +86,47 @@ class WorkflowRunner:
 
         # generate a rule for each node
         for node in self.nodeDict.values():
-            if node.type == NodeType.IMAGE:
-                rule_dict[node.id] = SmkRule(
+            if NodeTypeUtil.check_nodetype(node.type) == NodeType.DATA:
+                data_common_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
                     node=node,
                     edgeDict=self.edgeDict,
                     nwbfile=nwbfile,
-                ).image()
-            elif node.type == NodeType.CSV:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).csv()
-            elif node.type == NodeType.FLUO:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).csv()
-            elif node.type == NodeType.BEHAVIOR:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).csv(nodeType="behavior")
-            elif node.type == NodeType.HDF5:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).hdf5()
-            elif node.type == NodeType.MAT:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).mat()
-            elif node.type == NodeType.MICROSCOPE:
-                rule_dict[node.id] = SmkRule(
-                    workspace_id=self.workspace_id,
-                    unique_id=self.unique_id,
-                    node=node,
-                    edgeDict=self.edgeDict,
-                    nwbfile=nwbfile,
-                ).microscope()
-            elif node.type == NodeType.ALGO:
-                rule = SmkRule(
+                )
+                data_rule = None
+
+                if node.type == NodeType.IMAGE:
+                    data_rule = data_common_rule.image()
+                elif node.type == NodeType.CSV:
+                    data_rule = data_common_rule.csv()
+                elif node.type == NodeType.FLUO:
+                    data_rule = data_common_rule.csv()
+                elif node.type == NodeType.BEHAVIOR:
+                    data_rule = data_common_rule.csv(nodeType="behavior")
+                elif node.type == NodeType.HDF5:
+                    data_rule = data_common_rule.hdf5()
+                elif node.type == NodeType.MATLAB:
+                    data_rule = data_common_rule.mat()
+                elif node.type == NodeType.MICROSCOPE:
+                    data_rule = data_common_rule.microscope()
+
+                rule_dict[node.id] = data_rule
+
+            elif NodeTypeUtil.check_nodetype(node.type) == NodeType.ALGO:
+                algo_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
                     node=node,
                     edgeDict=self.edgeDict,
                 ).algo(nodeDict=self.nodeDict)
 
-                rule_dict[node.id] = rule
+                rule_dict[node.id] = algo_rule
 
                 if node.id in endNodeList:
-                    last_outputs.append(rule.output)
+                    last_outputs.append(algo_rule.output)
             else:
-                assert False, "NodeType doesn't exists"
+                assert False, f"NodeType doesn't exists: {node.type}"
 
         # generate a rule for implicit post-process
         post_process_rule = SmkRule(
