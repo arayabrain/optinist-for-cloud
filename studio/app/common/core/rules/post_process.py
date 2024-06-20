@@ -40,15 +40,19 @@ if __name__ == "__main__":
     input_info = Runner.read_input_info(snakemake.input)
     del input_info
 
-    # Get workspace_id, unique_id
-    # TODO: 関数（Utility）化
-    rule_config = RuleConfigReader.read(snakemake.params.name)
-    workspace_id, unique_id = rule_config.output.split("/")[0:2]
+    # Operate remote storage.
+    if RemoteStorageController.use_remote_storage():
+        # Get workspace_id, unique_id
+        # TODO: 関数（Utility）化
+        rule_config = RuleConfigReader.read(snakemake.params.name)
+        workspace_id, unique_id = rule_config.output.split("/")[0:2]
 
-    # 処理結果データの外部ストレージへのデータ転送
-    # TODO: データ転送の実施要否の判定追加（環境変数想定）
-    remote_storage_controller = RemoteStorageController()
-    remote_storage_controller.upload_experiment(workspace_id, unique_id)
+        # 処理結果データの外部ストレージへのデータ転送
+        # TODO: データ転送の実施要否の判定追加（環境変数想定）
+        remote_storage_controller = RemoteStorageController()
+        remote_storage_controller.upload_experiment(workspace_id, unique_id)
+    else:
+        logger.debug("remote storage is unused in post-process.")
 
     # 処理結果ファイルを保存
     output_path = str(snakemake.output)

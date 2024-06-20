@@ -4,11 +4,25 @@ from enum import Enum
 
 
 class RemoteStorageType(Enum):
+    NO_USE = "0"
     MOCK = "1"
     S3 = "2"
 
 
 class BaseRemoteStorageController(metaclass=ABCMeta):
+    @staticmethod
+    def use_remote_storage():
+        """
+        Determine if remote storage is used
+        """
+        remote_storage_type = os.environ.get("REMOTE_STORAGE_TYPE")
+        use_remote_storage = (
+            remote_storage_type is not None
+            and remote_storage_type
+            in [RemoteStorageType.MOCK.value, RemoteStorageType.S3.value]
+        )
+        return use_remote_storage
+
     @abstractmethod
     def download_experiment_metas(self, workspace_id: str, unique_id: str):
         """
