@@ -107,7 +107,7 @@ class SmkRule:
     def post_process(self) -> Rule:
         # For post_process, set node.data.path directly without modification
         # (adjustment to make post_process fit into Snakefile)
-        pp_input = self._node.data.path.copy()  # do copy()
+        pp_input = self._node.data.path.copy()  # do explicit copy
 
         return (
             self.builder.set_input(pp_input).set_type(ProcessType.POST_PROCESS).build()
