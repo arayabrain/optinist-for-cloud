@@ -23,6 +23,7 @@ class NodeType:
 
     # Algo Type
     ALGO: str = "AlgorithmNode"
+    MANAGEMENT: str = "ManagementNode"
 
 
 class NodeTypeUtil:
@@ -77,6 +78,11 @@ class OutputType:
     POLAR: str = "polar"
     HISTOGRAM: str = "histogram"
     PIE: str = "pie"
+
+
+@dataclass
+class ProcessType:
+    POST_PROCESS: str = "post_process"
 
 
 class NodeItem(BaseModel):
