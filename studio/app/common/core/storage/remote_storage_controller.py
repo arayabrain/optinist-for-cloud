@@ -15,12 +15,13 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
         Determine if remote storage is used
         """
-        remote_storage_type = os.environ.get("REMOTE_STORAGE_TYPE")
-        use_remote_storage = (
-            remote_storage_type is not None
-            and remote_storage_type
-            in [RemoteStorageType.MOCK.value, RemoteStorageType.S3.value]
+        remote_storage_type = os.environ.get(
+            "REMOTE_STORAGE_TYPE", RemoteStorageType.NO_USE.value
         )
+        use_remote_storage = remote_storage_type in [
+            RemoteStorageType.MOCK.value,
+            RemoteStorageType.S3.value,
+        ]
         return use_remote_storage
 
     @abstractmethod
