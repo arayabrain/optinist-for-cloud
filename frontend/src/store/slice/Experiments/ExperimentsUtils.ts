@@ -42,6 +42,7 @@ export function convertToExperimentType(dto: ExperimentDTO): ExperimentType {
     status: dto.success,
     name: dto.name,
     hasNWB: dto.hasNWB,
+    isRemoteSynced: dto.is_remote_synced,
     functions,
     frameRate: dto.nwb?.imaging_plane.imaging_rate,
   }

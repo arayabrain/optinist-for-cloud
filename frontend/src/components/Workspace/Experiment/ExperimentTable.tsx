@@ -37,6 +37,7 @@ import Typography from "@mui/material/Typography"
 import { renameExperiment } from "api/experiments/Experiments"
 import { ConfirmDialog } from "components/common/ConfirmDialog"
 import { useLocalStorage } from "components/utils/LocalStorageUtil"
+import { CloudSyncButton } from "components/Workspace/Experiment/Button/CloudSyncButton"
 import { DeleteButton } from "components/Workspace/Experiment/Button/DeleteButton"
 import {
   NWBDownloadButton,
@@ -395,6 +396,7 @@ const HeadItem = memo(function HeadItem({
         <TableCell>Workflow</TableCell>
         <TableCell>Snakemake</TableCell>
         <TableCell>NWB</TableCell>
+        <TableCell>Sync</TableCell>
         {isOwner && <TableCell>Delete</TableCell>}
       </TableRow>
     </TableHead>
@@ -534,6 +536,9 @@ const RowItem = memo(function RowItem({
         </TableCell>
         <TableCell>
           <NWBDownloadButton name={uid} hasNWB={hasNWB} />
+        </TableCell>
+        <TableCell>
+          <CloudSyncButton />
         </TableCell>
         {isOwner && (
           <TableCell>

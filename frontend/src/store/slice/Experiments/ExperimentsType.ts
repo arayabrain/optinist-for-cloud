@@ -31,6 +31,7 @@ export type ExperimentType = {
   finishedAt?: string
   hasNWB: boolean
   frameRate?: number
+  isRemoteSynced?: boolean
 }
 
 export type ExperimentFunction = {

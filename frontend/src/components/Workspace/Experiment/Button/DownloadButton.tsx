@@ -3,6 +3,7 @@ import { useSelector } from "react-redux"
 
 import { useSnackbar } from "notistack"
 
+import CloudQueueIcon from "@mui/icons-material/CloudQueue"
 import SimCardDownloadOutlinedIcon from "@mui/icons-material/SimCardDownloadOutlined"
 import IconButton from "@mui/material/IconButton"
 
@@ -12,6 +13,7 @@ import {
 } from "api/experiments/Experiments"
 import { downloadWorkflowConfigApi } from "api/workflow/Workflow"
 import { ExperimentUidContext } from "components/Workspace/Experiment/ExperimentTable"
+import { selectExperimentIsRemoteSynced } from "store/slice/Experiments/ExperimentsSelectors"
 import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
 
 interface NWBDownloadButtonProps {
@@ -29,6 +31,7 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
   const uid = useContext(ExperimentUidContext)
   const ref = useRef<HTMLAnchorElement | null>(null)
   const [url, setFileUrl] = useState<string>()
+  const isRemoteSynced = useSelector(selectExperimentIsRemoteSynced(uid))
   const { enqueueSnackbar } = useSnackbar()
 
   const onClick = async () => {
@@ -51,12 +54,23 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
 
   return (
     <>
-      <IconButton onClick={onClick} color="primary" disabled={!hasNWB}>
-        <SimCardDownloadOutlinedIcon />
-      </IconButton>
-      <a href={url} download={`nwb_${name}.nwb`} className="hidden" ref={ref}>
-        {/* 警告が出るので空文字を入れておく */}{" "}
-      </a>
+      {isRemoteSynced ? (
+        <>
+          <IconButton onClick={onClick} color="primary" disabled={!hasNWB}>
+            <SimCardDownloadOutlinedIcon />
+          </IconButton>
+          <a
+            href={url}
+            download={`nwb_${name}.nwb`}
+            className="hidden"
+            ref={ref}
+          >
+            {/* 警告が出るので空文字を入れておく */}{" "}
+          </a>
+        </>
+      ) : (
+        <CloudQueueIcon color="disabled" />
+      )}
     </>
   )
 })

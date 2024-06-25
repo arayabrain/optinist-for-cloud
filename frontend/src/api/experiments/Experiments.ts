@@ -35,6 +35,7 @@ export type ExperimentDTO = {
   workspace_id: number
   unique_id: string
   hasNWB: boolean
+  is_remote_synced?: boolean
   nwb: NWBType
 }
 
@@ -107,5 +108,15 @@ export async function renameExperiment(
       new_name,
     },
   )
+  return response.data
+}
+
+export async function syncRemoteStorageExperimentApi(
+  workspaceId: number,
+  uid: string,
+) {
+  // TODO: sync remote storage experiment API に変更する
+  //       暫定で GET /experiments を設定
+  const response = await axios.get(`${BASE_URL}/experiments/${workspaceId}`)
   return response.data
 }
