@@ -25,25 +25,51 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         return use_remote_storage
 
     @abstractmethod
-    def download_experiment_metas(self, workspace_id: str, unique_id: str):
+    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+        """
+        make experiment data directory local path.
+        """
+
+    @abstractmethod
+    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+        """
+        make experiment data directory remote path.
+        """
+
+    # TODO: add sync-status file operations.
+
+    # @abstractmethod
+    # def create_sync_status_file(self) -> None:
+    #     """
+    #     create remote storage sync status file.
+    #     """
+
+    # @abstractmethod
+    # def delete_sync_status_file(self) -> None:
+    #     """
+    #     delete remote storage sync status file.
+    #     """
+
+    @abstractmethod
+    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
         """
         download experiment metadata from remote storage.
         """
 
     @abstractmethod
-    def download_experiment(self, workspace_id: str, unique_id: str):
+    def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         """
         download experiment data from remote storage.
         """
 
     @abstractmethod
-    def upload_experiment(self, workspace_id: str, unique_id: str):
+    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
         """
         download experiment data to remote storage.
         """
 
     @abstractmethod
-    def remove_experiment(self, workspace_id: str, unique_id: str):
+    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
         """
         remove experiment data to remote storage.
         """
@@ -68,14 +94,20 @@ class RemoteStorageController(BaseRemoteStorageController):
         else:
             assert False, f"Invalid remote_storage_type: {remote_storage_type}"
 
-    def download_experiment_metas(self, workspace_id: str, unique_id: str):
-        self.__controller.download_experiment_metas(workspace_id, unique_id)
+    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+        return self.__controller.make_experiment_local_path(workspace_id, unique_id)
 
-    def download_experiment(self, workspace_id: str, unique_id: str):
-        self.__controller.download_experiment(workspace_id, unique_id)
+    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+        return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
 
-    def upload_experiment(self, workspace_id: str, unique_id: str):
-        self.__controller.upload_experiment(workspace_id, unique_id)
+    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
+        return self.__controller.download_experiment_metas(workspace_id, unique_id)
 
-    def remove_experiment(self, workspace_id: str, unique_id: str):
-        self.__controller.remove_experiment(workspace_id, unique_id)
+    def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return self.__controller.download_experiment(workspace_id, unique_id)
+
+    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return self.__controller.upload_experiment(workspace_id, unique_id)
+
+    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return self.__controller.remove_experiment(workspace_id, unique_id)

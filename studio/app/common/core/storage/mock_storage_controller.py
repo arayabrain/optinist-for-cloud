@@ -32,40 +32,78 @@ class MockStorageController(BaseRemoteStorageController):
         create_directory(__class__.MOCK_INPUT_DIR)
         create_directory(__class__.MOCK_OUTPUT_DIR)
 
-    def download_experiment_metas(self, workspace_id: str, unique_id: str):
-        # TODO: Implementation is required
-        pass
-
-    def download_experiment(self, workspace_id: str, unique_id: str):
-        # TODO: Implementation is required
-        pass
-
-    def upload_experiment(self, workspace_id: str, unique_id: str):
-        # make paths
-        experiment_source_path = join_filepath(
+    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+        experiment_local_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
         )
+        return experiment_local_path
+
+    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_remote_path = join_filepath(
             [__class__.MOCK_OUTPUT_DIR, workspace_id, unique_id]
+        )
+        return experiment_remote_path
+
+    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
+        # TODO: Implementation is required
+        pass
+
+    def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        # make paths
+        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
+        experiment_remote_path = self.make_experiment_remote_path(
+            workspace_id, unique_id
+        )
+
+        if not os.path.isdir(experiment_remote_path):
+            logger.warn("remote path is not exists. [%s]", experiment_remote_path)
+            return False
+
+        logger.debug(
+            "download data to remote storage (mock). [%s -> %s]",
+            experiment_remote_path,
+            experiment_local_path,
+        )
+
+        # cleaning data from local path
+        if os.path.isdir(experiment_local_path):
+            shutil.rmtree(experiment_local_path)
+
+        # do copy data from remote storage
+        shutil.copytree(
+            experiment_remote_path, experiment_local_path, dirs_exist_ok=True
+        )
+
+        # TODO: creating sync-status file.
+
+        return True
+
+    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        # make paths
+        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
+        experiment_remote_path = self.make_experiment_remote_path(
+            workspace_id, unique_id
         )
 
         create_directory(experiment_remote_path, delete_dir=True)
 
         logger.debug(
             "upload data to remote storage (mock). [%s -> %s]",
-            experiment_source_path,
+            experiment_local_path,
             experiment_remote_path,
         )
 
         # do copy data to remote storage
         shutil.copytree(
-            experiment_source_path, experiment_remote_path, dirs_exist_ok=True
+            experiment_local_path, experiment_remote_path, dirs_exist_ok=True
         )
 
-    def remove_experiment(self, workspace_id: str, unique_id: str):
+        return True
+
+    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
-        experiment_remote_path = join_filepath(
-            [__class__.MOCK_OUTPUT_DIR, workspace_id, unique_id]
+        experiment_remote_path = self.make_experiment_remote_path(
+            workspace_id, unique_id
         )
 
         logger.debug(
@@ -76,3 +114,5 @@ class MockStorageController(BaseRemoteStorageController):
         # do remove data from remote storage
         if os.path.isdir(experiment_remote_path):
             shutil.rmtree(experiment_remote_path)
+
+        return True
