@@ -30,3 +30,8 @@ class ExptConfig:
     function: Dict[str, ExptFunction]
     nwb: NWBParams
     snakemake: SmkParam
+
+
+@dataclass
+class ExptExtConfig(ExptConfig):
+    is_remote_synced: Optional[bool] = None

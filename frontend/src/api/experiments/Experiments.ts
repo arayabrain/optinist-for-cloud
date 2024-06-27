@@ -115,8 +115,6 @@ export async function syncRemoteStorageExperimentApi(
   workspaceId: number,
   uid: string,
 ) {
-  // TODO: sync remote storage experiment API に変更する
-  //       暫定で GET /experiments を設定
-  const response = await axios.get(`${BASE_URL}/experiments/${workspaceId}`)
+  const response = await axios.get(`${BASE_URL}/experiments/sync_remote/${workspaceId}/${uid}`)
   return response.data
 }

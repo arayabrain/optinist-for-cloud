@@ -102,7 +102,7 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
         Determine if remote storage is used
         """
-        remote_storage_type = RemoteStorageType.get_current_remote_storage_type()
+        remote_storage_type = RemoteStorageType.get_activated_type()
         use_remote_storage = remote_storage_type in [
             RemoteStorageType.MOCK.value,
             RemoteStorageType.S3.value,
