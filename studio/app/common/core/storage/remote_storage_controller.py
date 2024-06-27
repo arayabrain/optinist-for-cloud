@@ -140,9 +140,9 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         """
-        remove experiment data to remote storage.
+        delete experiment data to remote storage.
         """
 
 
@@ -180,5 +180,5 @@ class RemoteStorageController(BaseRemoteStorageController):
     def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
         return self.__controller.upload_experiment(workspace_id, unique_id)
 
-    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return self.__controller.remove_experiment(workspace_id, unique_id)
+    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return self.__controller.delete_experiment(workspace_id, unique_id)

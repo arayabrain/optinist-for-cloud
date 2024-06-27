@@ -124,14 +124,14 @@ class MockStorageController(BaseRemoteStorageController):
 
         return True
 
-    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
         experiment_remote_path = self.make_experiment_remote_path(
             workspace_id, unique_id
         )
 
         logger.debug(
-            "remove data from remote storage (mock). [%s]",
+            "delete data from remote storage (mock). [%s]",
             experiment_remote_path,
         )
 
@@ -139,7 +139,7 @@ class MockStorageController(BaseRemoteStorageController):
         # exec deleting
         # ----------------------------------------
 
-        # do remove data from remote storage
+        # do delete data from remote storage
         if os.path.isdir(experiment_remote_path):
             shutil.rmtree(experiment_remote_path)
 

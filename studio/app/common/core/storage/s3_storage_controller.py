@@ -186,14 +186,14 @@ class S3StorageController(BaseRemoteStorageController):
 
         return True
 
-    def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
         experiment_remote_path = self.make_experiment_remote_path(
             workspace_id, unique_id
         )
 
         logger.debug(
-            "remove data from remote storage (s3). [%s]",
+            "delete data from remote storage (s3). [%s]",
             experiment_remote_path,
         )
 
@@ -201,7 +201,7 @@ class S3StorageController(BaseRemoteStorageController):
         # exec deleting
         # ----------------------------------------
 
-        # do remove data from remote storage
+        # do delete data from remote storage
         self.__s3_resource.Bucket(__class__.S3_STORAGE_BUCKET).objects.filter(
             Prefix=experiment_remote_path
         ).delete()
