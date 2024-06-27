@@ -6,6 +6,8 @@ import boto3
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     BaseRemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.dir_path import DIRPATH
@@ -55,6 +57,19 @@ class S3StorageController(BaseRemoteStorageController):
             workspace_id, unique_id
         )
 
+        logger.debug(
+            "download data from remote storage (S3). [%s -> %s]",
+            experiment_local_path,
+            experiment_remote_path,
+        )
+
+        # ----------------------------------------
+        # exec downloading
+        # ----------------------------------------
+
+        # clear remote-sync-status file.
+        RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
+
         # request s3 list_objects
         s3_list_objects = self.__s3_client.list_objects_v2(
             Bucket=__class__.S3_STORAGE_BUCKET, Prefix=experiment_remote_path
@@ -90,7 +105,7 @@ class S3StorageController(BaseRemoteStorageController):
             local_abs_dir = os.path.dirname(local_abs_path)
 
             logger.debug(
-                f"download data to S3 ({index+1}/{target_files_count}) "
+                f"download data from S3 ({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
             )
 
@@ -103,7 +118,10 @@ class S3StorageController(BaseRemoteStorageController):
                 __class__.S3_STORAGE_BUCKET, s3_file_path, local_abs_path
             )
 
-        # TODO: creating sync-status file.
+        # creating remote-sync-status file.
+        RemoteSyncStatusFileUtil.create_sync_status_file(
+            workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
+        )
 
         return True
 
@@ -119,6 +137,13 @@ class S3StorageController(BaseRemoteStorageController):
             experiment_local_path,
             experiment_remote_path,
         )
+
+        # ----------------------------------------
+        # exec uploading
+        # ----------------------------------------
+
+        # clear remote-sync-status file.
+        RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         target_files = []
         for root, dirs, files in os.walk(experiment_local_path):
@@ -154,6 +179,11 @@ class S3StorageController(BaseRemoteStorageController):
                 local_abs_path, __class__.S3_STORAGE_BUCKET, s3_file_path
             )
 
+        # creating remote-sync-status file.
+        RemoteSyncStatusFileUtil.create_sync_status_file(
+            workspace_id, unique_id, RemoteSyncAction.UPLOAD
+        )
+
         return True
 
     def remove_experiment(self, workspace_id: str, unique_id: str) -> bool:
@@ -166,6 +196,10 @@ class S3StorageController(BaseRemoteStorageController):
             "remove data from remote storage (s3). [%s]",
             experiment_remote_path,
         )
+
+        # ----------------------------------------
+        # exec deleting
+        # ----------------------------------------
 
         # do remove data from remote storage
         self.__s3_resource.Bucket(__class__.S3_STORAGE_BUCKET).objects.filter(

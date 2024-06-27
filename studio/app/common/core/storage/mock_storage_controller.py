@@ -4,6 +4,8 @@ import shutil
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     BaseRemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -60,10 +62,17 @@ class MockStorageController(BaseRemoteStorageController):
             return False
 
         logger.debug(
-            "download data to remote storage (mock). [%s -> %s]",
+            "download data from remote storage (mock). [%s -> %s]",
             experiment_remote_path,
             experiment_local_path,
         )
+
+        # ----------------------------------------
+        # exec downloading
+        # ----------------------------------------
+
+        # clear remote-sync-status file.
+        RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # cleaning data from local path
         if os.path.isdir(experiment_local_path):
@@ -74,7 +83,10 @@ class MockStorageController(BaseRemoteStorageController):
             experiment_remote_path, experiment_local_path, dirs_exist_ok=True
         )
 
-        # TODO: creating sync-status file.
+        # creating remote-sync-status file.
+        RemoteSyncStatusFileUtil.create_sync_status_file(
+            workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
+        )
 
         return True
 
@@ -93,9 +105,21 @@ class MockStorageController(BaseRemoteStorageController):
             experiment_remote_path,
         )
 
+        # ----------------------------------------
+        # exec uploading
+        # ----------------------------------------
+
+        # clear remote-sync-status file.
+        RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
+
         # do copy data to remote storage
         shutil.copytree(
             experiment_local_path, experiment_remote_path, dirs_exist_ok=True
+        )
+
+        # creating remote-sync-status file.
+        RemoteSyncStatusFileUtil.create_sync_status_file(
+            workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )
 
         return True
@@ -110,6 +134,10 @@ class MockStorageController(BaseRemoteStorageController):
             "remove data from remote storage (mock). [%s]",
             experiment_remote_path,
         )
+
+        # ----------------------------------------
+        # exec deleting
+        # ----------------------------------------
 
         # do remove data from remote storage
         if os.path.isdir(experiment_remote_path):
