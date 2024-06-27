@@ -1,5 +1,4 @@
 import os
-import shutil
 from glob import glob
 from typing import Dict
 
@@ -8,6 +7,7 @@ from fastapi.responses import FileResponse
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptExtConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
+from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
@@ -68,12 +68,10 @@ async def get_experiments(workspace_id: str):
     dependencies=[Depends(is_workspace_owner)],
 )
 async def rename_experiment(workspace_id: str, unique_id: str, item: RenameItem):
-    config = ExptConfigReader.rename(
-        join_filepath(
-            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
-        ),
-        new_name=item.new_name,
-    )
+    config = ExptDataWriter(
+        workspace_id,
+        unique_id,
+    ).rename(item.new_name)
     config.nodeDict = []
     config.edgeDict = []
 
@@ -87,7 +85,10 @@ async def rename_experiment(workspace_id: str, unique_id: str, item: RenameItem)
 )
 async def delete_experiment(workspace_id: str, unique_id: str):
     try:
-        shutil.rmtree(join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id]))
+        ExptDataWriter(
+            workspace_id,
+            unique_id,
+        ).delete_data()
         return True
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -101,10 +102,11 @@ async def delete_experiment(workspace_id: str, unique_id: str):
 )
 async def delete_experiment_list(workspace_id: str, deleteItem: DeleteItem):
     try:
-        [
-            shutil.rmtree(join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, uid]))
-            for uid in deleteItem.uidList
-        ]
+        for unique_id in deleteItem.uidList:
+            ExptDataWriter(
+                workspace_id,
+                unique_id,
+            ).delete_data()
         return True
     except Exception as e:
         logger.error(e, exc_info=True)
