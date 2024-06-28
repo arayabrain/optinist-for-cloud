@@ -134,9 +134,15 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def upload_experiment(
+        self, workspace_id: str, unique_id: str, target_files: list = None
+    ) -> bool:
         """
         download experiment data to remote storage.
+
+        Args:
+            target_files list:
+                Specify files to be uploaded (By default, all files are targeted)
         """
 
     @abstractmethod
@@ -177,8 +183,12 @@ class RemoteStorageController(BaseRemoteStorageController):
     def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         return self.__controller.download_experiment(workspace_id, unique_id)
 
-    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return self.__controller.upload_experiment(workspace_id, unique_id)
+    def upload_experiment(
+        self, workspace_id: str, unique_id: str, target_files: list = None
+    ) -> bool:
+        return self.__controller.upload_experiment(
+            workspace_id, unique_id, target_files
+        )
 
     def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         return self.__controller.delete_experiment(workspace_id, unique_id)

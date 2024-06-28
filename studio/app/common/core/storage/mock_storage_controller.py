@@ -90,19 +90,13 @@ class MockStorageController(BaseRemoteStorageController):
 
         return True
 
-    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def upload_experiment(
+        self, workspace_id: str, unique_id: str, target_files: list = None
+    ) -> bool:
         # make paths
         experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
         experiment_remote_path = self.make_experiment_remote_path(
             workspace_id, unique_id
-        )
-
-        create_directory(experiment_remote_path, delete_dir=True)
-
-        logger.debug(
-            "upload data to remote storage (mock). [%s -> %s]",
-            experiment_local_path,
-            experiment_remote_path,
         )
 
         # ----------------------------------------
@@ -113,9 +107,33 @@ class MockStorageController(BaseRemoteStorageController):
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # do copy data to remote storage
-        shutil.copytree(
-            experiment_local_path, experiment_remote_path, dirs_exist_ok=True
-        )
+        if target_files:  # Target specified files.
+            logger.debug(
+                "upload data to remote storage (mock). [%s -> %s]",
+                target_files,
+                experiment_remote_path,
+            )
+
+            create_directory(experiment_remote_path)
+
+            # copy target files
+            for target_file in target_files:
+                target_file = f"{experiment_local_path}/{target_file}"
+                shutil.copy(target_file, experiment_remote_path)
+
+        else:  # Target all files.
+            logger.debug(
+                "upload data to remote storage (mock). [%s -> %s]",
+                experiment_local_path,
+                experiment_remote_path,
+            )
+
+            create_directory(experiment_remote_path, delete_dir=True)
+
+            # copy all files
+            shutil.copytree(
+                experiment_local_path, experiment_remote_path, dirs_exist_ok=True
+            )
 
         # creating remote-sync-status file.
         RemoteSyncStatusFileUtil.create_sync_status_file(

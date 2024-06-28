@@ -125,7 +125,9 @@ class S3StorageController(BaseRemoteStorageController):
 
         return True
 
-    def upload_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    def upload_experiment(
+        self, workspace_id: str, unique_id: str, target_files: list = None
+    ) -> bool:
         # make paths
         experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
         experiment_remote_path = self.make_experiment_remote_path(
@@ -145,30 +147,40 @@ class S3StorageController(BaseRemoteStorageController):
         # clear remote-sync-status file.
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
-        target_files = []
-        for root, dirs, files in os.walk(experiment_local_path):
-            for filename in files:
-                # construct paths
-                local_abs_path = os.path.join(root, filename)
-                local_relative_path = os.path.relpath(
-                    local_abs_path, experiment_local_path
-                )
+        # make target files path list
+        # 1) Obtain target file path in absolute path format.
+        target_abs_paths = []
+        if target_files:  # Target specified files.
+            target_abs_paths = [f"{experiment_local_path}/{f}" for f in target_files]
+        else:  # Target all files.
+            for root, dirs, files in os.walk(experiment_local_path):
+                for filename in files:
+                    local_abs_path = os.path.join(root, filename)
+                    target_abs_paths.append(local_abs_path)
 
-                s3_file_path = join_filepath(
-                    [
-                        __class__.S3_OUTPUT_DIR,
-                        workspace_id,
-                        unique_id,
-                        local_relative_path,
-                    ]
-                )
+        # make target files path list
+        # 2) Obtain target file path in transfer format to S3.
+        adjusted_target_files = []
+        for local_abs_path in target_abs_paths:
+            local_relative_path = os.path.relpath(local_abs_path, experiment_local_path)
 
-                file_size = os.path.getsize(local_abs_path)
-                target_files.append([local_abs_path, s3_file_path, file_size])
+            s3_file_path = join_filepath(
+                [
+                    __class__.S3_OUTPUT_DIR,
+                    workspace_id,
+                    unique_id,
+                    local_relative_path,
+                ]
+            )
+
+            file_size = os.path.getsize(local_abs_path)
+            adjusted_target_files.append([local_abs_path, s3_file_path, file_size])
 
         # do upload data to remote storage
-        target_files_count = len(target_files)
-        for index, (local_abs_path, s3_file_path, file_size) in enumerate(target_files):
+        target_files_count = len(adjusted_target_files)
+        for index, (local_abs_path, s3_file_path, file_size) in enumerate(
+            adjusted_target_files
+        ):
             logger.debug(
                 f"upload data to S3 ({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
