@@ -1,10 +1,10 @@
 import os
 from collections import deque
-from typing import Dict
+from typing import Dict, List
 
 from snakemake import snakemake
 
-from studio.app.common.core.snakemake.smk import SmkParam
+from studio.app.common.core.snakemake.smk import ForceRun, SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
 from studio.app.common.core.utils.filepath_creater import get_pickle_file, join_filepath
 from studio.app.common.core.workflow.workflow import Edge, Node
@@ -75,3 +75,37 @@ def delete_dependencies(
         for edge in edgeDict.values():
             if node_id == edge.source:
                 queue.append(edge.target)
+
+
+def delete_procs_dependencies(
+    workspace_id: str,
+    unique_id: str,
+    procsList: List[ForceRun],
+):
+    """
+    Delete procs (ExptConfig.procs) dependencies
+    """
+    queue = deque()
+
+    for param in procsList:
+        queue.append(param)
+
+    for procs in procsList:
+        node_id = procs.nodeId
+        algo_name = procs.name
+
+        # delete pickle
+        pickle_filepath = join_filepath(
+            [
+                DIRPATH.OUTPUT_DIR,
+                get_pickle_file(
+                    workspace_id=workspace_id,
+                    unique_id=unique_id,
+                    node_id=node_id,
+                    algo_name=algo_name,
+                ),
+            ]
+        )
+
+        if os.path.exists(pickle_filepath):
+            os.remove(pickle_filepath)

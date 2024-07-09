@@ -23,7 +23,7 @@ class NodeType:
 
     # Algo Type
     ALGO: str = "AlgorithmNode"
-    MANAGEMENT: str = "ManagementNode"
+    PROC: str = "ProcessNode"
 
 
 class NodeTypeUtil:
