@@ -70,7 +70,7 @@ class WorkflowRunner:
         delete_procs_dependencies(
             workspace_id=self.workspace_id,
             unique_id=self.unique_id,
-            procsList=[
+            forceRunList=[
                 ForceRun(
                     nodeId=ProcessType.POST_PROCESS.id,
                     name=ProcessType.POST_PROCESS.label,
