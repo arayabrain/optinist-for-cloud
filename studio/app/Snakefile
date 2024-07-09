@@ -33,7 +33,7 @@ else:
 
         # make rule of post_process
         elif details["type"] in [
-            ProcessType.POST_PROCESS,
+            ProcessType.POST_PROCESS.type,
         ]:
             rule:
                 name:

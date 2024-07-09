@@ -3,7 +3,7 @@ from typing import Dict, List, Union
 
 from pydantic import BaseModel
 
-from studio.app.common.core.snakemake.smk import ForceRun
+from studio.app.common.core.snakemake.smk import ForceRun, NormalRun
 from studio.app.const import FILETYPE
 
 
@@ -82,7 +82,9 @@ class OutputType:
 
 @dataclass
 class ProcessType:
-    POST_PROCESS: str = "post_process"
+    POST_PROCESS: NormalRun = NormalRun(
+        id="post_process_0", type="post_process", label="post_process"
+    )
 
 
 class NodeItem(BaseModel):

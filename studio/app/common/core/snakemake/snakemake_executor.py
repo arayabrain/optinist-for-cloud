@@ -80,20 +80,13 @@ def delete_dependencies(
 def delete_procs_dependencies(
     workspace_id: str,
     unique_id: str,
-    procsList: List[ForceRun],
+    forceRunList: List[ForceRun],
 ):
     """
     Delete procs (ExptConfig.procs) dependencies
     """
-    queue = deque()
 
-    for param in procsList:
-        queue.append(param)
-
-    for procs in procsList:
-        node_id = procs.nodeId
-        algo_name = procs.name
-
+    for proc in forceRunList:
         # delete pickle
         pickle_filepath = join_filepath(
             [
@@ -101,8 +94,8 @@ def delete_procs_dependencies(
                 get_pickle_file(
                     workspace_id=workspace_id,
                     unique_id=unique_id,
-                    node_id=node_id,
-                    algo_name=algo_name,
+                    node_id=proc.nodeId,
+                    algo_name=proc.name,
                 ),
             ]
         )
