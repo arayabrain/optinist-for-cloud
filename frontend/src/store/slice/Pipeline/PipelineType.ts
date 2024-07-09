@@ -117,3 +117,10 @@ export const RUN_BTN_LABELS = {
   [RUN_BTN_OPTIONS.RUN_NEW]: "RUN ALL",
   [RUN_BTN_OPTIONS.RUN_ALREADY]: "RUN",
 } as const
+
+export const PROCESS_TYPE = {
+  POST_PROCESS: {
+    id: "post_process_0",
+    name: "post_process",
+  },
+} as const
