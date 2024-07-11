@@ -14,6 +14,7 @@ ROOT_DIRPATH = dirname(dirname(dirname(dirname(dirname(dirname(abspath(__file__)
 
 sys.path.append(ROOT_DIRPATH)
 
+from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.snakemake.smk import Rule
@@ -36,15 +37,19 @@ class PostProcessRunner:
             logger.info("start post_process runner")
 
             # Get input data for a rule.
-            # Note: Check if all node data can be successfully retrieved.
-            #       If there is an error in any node, an AssertionError is generated here.
-            input_info = Runner.read_input_info(__rule.input)
-            del input_info
+            # Note:
+            #   - Check if all node data can be successfully retrieved.
+            #     If there is an error in any node, an AssertionError is generated here.
+            #   - read_input_info() is used to determine if there is an error,
+            #     and the return value is not used here.
+            Runner.read_input_info(__rule.input)
 
             # Operate remote storage.
             if RemoteStorageController.use_remote_storage():
                 # Get workspace_id, unique_id from output file path
-                workspace_id, unique_id = __rule.output.split("/")[-4:-2]
+                ids = ExptOutputPathIds(dirname(__rule.output))
+                workspace_id = ids.workspace_id
+                unique_id = ids.unique_id
 
                 # 処理結果データの外部ストレージへのデータ転送
                 # TODO: データ転送の実施要否の判定追加（環境変数想定）
