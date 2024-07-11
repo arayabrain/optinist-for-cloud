@@ -43,7 +43,12 @@ export const CloudSyncButton = memo(function CloudSyncButton() {
         <DoneIcon color="success" />
       ) : (
         <>
-          <IconButton onClick={openDialog} disabled={isRunning} color="primary">
+          <IconButton
+            onClick={openDialog}
+            disabled={isRunning}
+            color="primary"
+            style={{ padding: 0 }}
+          >
             <CloudDownloadIcon />
           </IconButton>
           <ConfirmDialog

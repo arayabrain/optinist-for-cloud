@@ -5,6 +5,7 @@ import { useSnackbar } from "notistack"
 
 import CloudQueueIcon from "@mui/icons-material/CloudQueue"
 import SimCardDownloadOutlinedIcon from "@mui/icons-material/SimCardDownloadOutlined"
+import { Tooltip } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 
 import {
@@ -69,7 +70,9 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
           </a>
         </>
       ) : (
-        <CloudQueueIcon color="disabled" />
+        <Tooltip title="Data is unsynchronized">
+          <CloudQueueIcon color="disabled" style={{ padding: "8px" }} />
+        </Tooltip>
       )}
     </>
   )
