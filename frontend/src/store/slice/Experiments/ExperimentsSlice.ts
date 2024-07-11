@@ -26,6 +26,7 @@ import {
 
 export const initialState: Experiments = {
   status: "uninitialized",
+  loading: true,
 }
 
 export const experimentsSlice = createSlice({
@@ -39,6 +40,7 @@ export const experimentsSlice = createSlice({
       .addCase(getExperiments.pending, () => {
         return {
           status: "pending",
+          loading: true,
         }
       })
       .addCase(getExperiments.fulfilled, (state, action) => {
@@ -46,20 +48,24 @@ export const experimentsSlice = createSlice({
         return {
           status: "fulfilled",
           experimentList,
+          loading: false,
         }
       })
       .addCase(getExperiments.rejected, (state, action) => {
         return {
           status: "error",
           message: action.error.message,
+          loading: false,
         }
       })
       .addCase(deleteExperimentByUid.fulfilled, (state, action) => {
+        state.loading = false
         if (action.payload && state.status === "fulfilled") {
           delete state.experimentList[action.meta.arg]
         }
       })
       .addCase(deleteExperimentByList.fulfilled, (state, action) => {
+        state.loading = false
         if (action.payload && state.status === "fulfilled") {
           action.meta.arg.map((v) => delete state.experimentList[v])
         }
@@ -82,6 +88,21 @@ export const experimentsSlice = createSlice({
           })
         }
       })
+      .addMatcher(
+        isAnyOf(deleteExperimentByUid.pending, deleteExperimentByList.pending),
+        (state) => {
+          state.loading = true
+        },
+      )
+      .addMatcher(
+        isAnyOf(
+          deleteExperimentByUid.rejected,
+          deleteExperimentByList.rejected,
+        ),
+        (state) => {
+          state.loading = false
+        },
+      )
       .addMatcher(
         isAnyOf(fetchWorkflow.fulfilled, reproduceWorkflow.fulfilled),
         (state, action) => {
