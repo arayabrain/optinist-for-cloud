@@ -1,6 +1,8 @@
 import { memo, useContext, useState } from "react"
 import { useSelector, useDispatch } from "react-redux"
 
+import { useSnackbar } from "notistack"
+
 import CloudDownloadIcon from "@mui/icons-material/CloudDownloadOutlined"
 import DoneIcon from "@mui/icons-material/Done"
 import IconButton from "@mui/material/IconButton"
@@ -29,12 +31,20 @@ export const CloudSyncButton = memo(function CloudSyncButton() {
   const name = useSelector(selectExperimentName(uid))
   const isRemoteSynced = useSelector(selectExperimentIsRemoteSynced(uid))
   const [open, setOpen] = useState(false)
+  const { enqueueSnackbar } = useSnackbar()
 
   const openDialog = () => {
     setOpen(true)
   }
   const handleSyncRemote = () => {
     dispatch(syncRemoteStorageExperiment(uid))
+      .unwrap()
+      .then(() => {
+        enqueueSnackbar("Successfully synchronize", { variant: "success" })
+      })
+      .catch(() => {
+        enqueueSnackbar("Failed to synchronize", { variant: "error" })
+      })
   }
 
   return (
