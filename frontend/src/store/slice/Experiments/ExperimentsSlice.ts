@@ -71,6 +71,7 @@ export const experimentsSlice = createSlice({
         }
       })
       .addCase(syncRemoteStorageExperiment.fulfilled, (state, action) => {
+        state.loading = false
         if (action.payload && state.status === "fulfilled") {
           state.experimentList[action.meta.arg].isRemoteSynced = true
         }
@@ -89,7 +90,11 @@ export const experimentsSlice = createSlice({
         }
       })
       .addMatcher(
-        isAnyOf(deleteExperimentByUid.pending, deleteExperimentByList.pending),
+        isAnyOf(
+          deleteExperimentByUid.pending,
+          deleteExperimentByList.pending,
+          syncRemoteStorageExperiment.pending,
+        ),
         (state) => {
           state.loading = true
         },
@@ -98,6 +103,7 @@ export const experimentsSlice = createSlice({
         isAnyOf(
           deleteExperimentByUid.rejected,
           deleteExperimentByList.rejected,
+          syncRemoteStorageExperiment.rejected,
         ),
         (state) => {
           state.loading = false
