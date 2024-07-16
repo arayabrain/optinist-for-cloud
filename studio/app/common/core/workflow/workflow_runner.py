@@ -2,9 +2,10 @@ from dataclasses import asdict
 from typing import Dict, List
 
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
-from studio.app.common.core.snakemake.smk import FlowConfig, Rule, SmkParam
+from studio.app.common.core.snakemake.smk import FlowConfig, ForceRun, Rule, SmkParam
 from studio.app.common.core.snakemake.snakemake_executor import (
     delete_dependencies,
+    delete_procs_dependencies,
     snakemake_execute,
 )
 from studio.app.common.core.snakemake.snakemake_reader import SmkParamReader
@@ -54,6 +55,8 @@ class WorkflowRunner:
         )
         snakemake_params = SmkParamReader.read(snakemake_params)
         snakemake_params.forcerun = self.runItem.forceRunList
+
+        # delete dependencies for nodes
         if len(snakemake_params.forcerun) > 0:
             delete_dependencies(
                 workspace_id=self.workspace_id,
@@ -62,6 +65,19 @@ class WorkflowRunner:
                 nodeDict=self.nodeDict,
                 edgeDict=self.edgeDict,
             )
+
+        # delete dependencies for procs
+        delete_procs_dependencies(
+            workspace_id=self.workspace_id,
+            unique_id=self.unique_id,
+            forceRunList=[
+                ForceRun(
+                    nodeId=ProcessType.POST_PROCESS.id,
+                    name=ProcessType.POST_PROCESS.label,
+                )
+            ],
+        )
+
         background_tasks.add_task(
             snakemake_execute, self.workspace_id, self.unique_id, snakemake_params
         )
@@ -133,10 +149,10 @@ class WorkflowRunner:
             workspace_id=self.workspace_id,
             unique_id=self.unique_id,
             node=Node(
-                id=f"{ProcessType.POST_PROCESS}_0",
-                type=ProcessType.POST_PROCESS,
+                id=ProcessType.POST_PROCESS.id,
+                type=ProcessType.POST_PROCESS.type,
                 data=NodeData(
-                    label=ProcessType.POST_PROCESS,
+                    label=ProcessType.POST_PROCESS.label,
                     param=None,
                     path=last_outputs,
                     type=None,
@@ -146,7 +162,7 @@ class WorkflowRunner:
             ),
             edgeDict={},
         ).post_process()
-        rule_dict[ProcessType.POST_PROCESS] = post_process_rule
+        rule_dict[ProcessType.POST_PROCESS.type] = post_process_rule
         last_outputs.append(post_process_rule.output)
 
         return rule_dict, last_outputs

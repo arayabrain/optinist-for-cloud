@@ -110,7 +110,9 @@ class SmkRule:
         pp_input = self._node.data.path.copy()  # do explicit copy
 
         return (
-            self.builder.set_input(pp_input).set_type(ProcessType.POST_PROCESS).build()
+            self.builder.set_input(pp_input)
+            .set_type(ProcessType.POST_PROCESS.type)
+            .build()
         )
 
     def get_return_name(self) -> str or None:

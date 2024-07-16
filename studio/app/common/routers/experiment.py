@@ -43,6 +43,11 @@ async def get_experiments(workspace_id: str):
         try:
             config = ExptConfigReader.read(path)
 
+            # NOTE: Include procs in the function and respond
+            #   (for display on the frontend Record screen)
+            if config.procs:
+                config.function.update(config.procs)
+
             # Operate remote storage.
             if use_remote_storage:
                 # check remote synced status.

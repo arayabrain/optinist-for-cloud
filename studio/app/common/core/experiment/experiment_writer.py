@@ -14,6 +14,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
 )
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
@@ -51,7 +52,8 @@ class ExptConfigWriter:
         else:
             self.create_config()
 
-        self.function_from_nodeDict()
+        self.build_function_from_nodeDict()
+        self.build_procs()
 
         ConfigWriter.write(
             dirname=join_filepath(
@@ -80,7 +82,7 @@ class ExptConfigWriter:
             .build()
         )
 
-    def function_from_nodeDict(self) -> ExptConfig:
+    def build_function_from_nodeDict(self) -> ExptConfig:
         func_dict: Dict[str, ExptFunction] = {}
         node_dict = WorkflowConfigReader.read(
             join_filepath(
@@ -104,6 +106,17 @@ class ExptConfigWriter:
                 func_dict[node.id].success = "success"
 
         return self.builder.set_function(func_dict).build()
+
+    def build_procs(self) -> ExptConfig:
+        target_procs = [ProcessType.POST_PROCESS]
+        func_dict: Dict[str, ExptFunction] = {}
+
+        for proc in target_procs:
+            func_dict[proc.id] = ExptFunction(
+                unique_id=proc.id, name=proc.label, hasNWB=False, success="running"
+            )
+
+        return self.builder.set_procs(func_dict).build()
 
 
 class ExptDataWriter:
@@ -161,6 +174,7 @@ class ExptDataWriter:
             success=config.get("success", "running"),
             hasNWB=config["hasNWB"],
             function=ExptConfigReader.read_function(config["function"]),
+            procs=ExptConfigReader.read_function(config.get("procs")),
             nwb=config.get("nwb"),
             snakemake=config.get("snakemake"),
         )

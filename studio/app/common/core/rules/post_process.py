@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+import traceback
 from os.path import abspath, dirname
 from pathlib import Path
 
@@ -13,8 +14,10 @@ ROOT_DIRPATH = dirname(dirname(dirname(dirname(dirname(dirname(abspath(__file__)
 
 sys.path.append(ROOT_DIRPATH)
 
+from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
+from studio.app.common.core.snakemake.smk import Rule
 from studio.app.common.core.snakemake.snakemake_reader import RuleConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
@@ -26,35 +29,64 @@ from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
 
+
+class PostProcessRunner:
+    @classmethod
+    def run(cls, __rule: Rule):
+        try:
+            logger.info("start post_process runner")
+
+            # Get input data for a rule.
+            # Note:
+            #   - Check if all node data can be successfully retrieved.
+            #     If there is an error in any node, an AssertionError is generated here.
+            #   - read_input_info() is used to determine if there is an error,
+            #     and the return value is not used here.
+            Runner.read_input_info(__rule.input)
+
+            # Operate remote storage.
+            if RemoteStorageController.use_remote_storage():
+                # Get workspace_id, unique_id from output file path
+                ids = ExptOutputPathIds(dirname(__rule.output))
+                workspace_id = ids.workspace_id
+                unique_id = ids.unique_id
+
+                # 処理結果データの外部ストレージへのデータ転送
+                # TODO: データ転送の実施要否の判定追加（環境変数想定）
+                remote_storage_controller = RemoteStorageController()
+                remote_storage_controller.upload_experiment(workspace_id, unique_id)
+            else:
+                logger.debug("remote storage is unused in post_process.")
+
+            # 処理結果ファイルを保存
+            output_path = __rule.output
+            output_info = {"success": True}  # TODO: より適切な情報の記録に修正想定
+            PickleWriter.write(output_path, output_info)
+
+        except Exception as e:
+            """
+            Note: The code here is the same as in the except section of Runner.run
+            """
+            err_msg = list(traceback.TracebackException.from_exception(e).format())
+
+            # show full trace to console
+            logger.error("\n".join(err_msg))
+
+            # save msg for GUI
+            PickleWriter.write(__rule.output, err_msg)
+
+
 if __name__ == "__main__":
     # TODO: debug log.
     logger.debug(
-        ">>>>>>>>> Post process logging\n"
+        ">>>>>>>>>>>>>>>>>>>> Post process logging\n"
         f"[snakemake.input: {snakemake.input}]\n"
         f"[snakemake.output: {snakemake.output}]\n"
     )
 
-    # Get input data for a rule.
-    # Note: Check if all node data can be successfully retrieved.
-    #       If there is an error in any node, an AssertionError is generated here.
-    input_info = Runner.read_input_info(snakemake.input)
-    del input_info
+    rule_config = RuleConfigReader.read(snakemake.params.name)
 
-    # Operate remote storage.
-    if RemoteStorageController.use_remote_storage():
-        # Get workspace_id, unique_id
-        # TODO: 関数（Utility）化
-        rule_config = RuleConfigReader.read(snakemake.params.name)
-        workspace_id, unique_id = rule_config.output.split("/")[0:2]
+    rule_config.input = snakemake.input
+    rule_config.output = snakemake.output[0]
 
-        # 処理結果データの外部ストレージへのデータ転送
-        # TODO: データ転送の実施要否の判定追加（環境変数想定）
-        remote_storage_controller = RemoteStorageController()
-        remote_storage_controller.upload_experiment(workspace_id, unique_id)
-    else:
-        logger.debug("remote storage is unused in post-process.")
-
-    # 処理結果ファイルを保存
-    output_path = str(snakemake.output)
-    output_info = {"success": True}  # TODO: より適切な情報の記録に要修正
-    PickleWriter.write(output_path, output_info)
+    PostProcessRunner.run(rule_config)
