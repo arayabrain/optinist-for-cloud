@@ -37,7 +37,7 @@ async def fetch_last_experiment(workspace_id: str):
         unique_id = last_expt_config.unique_id
 
         # sync unsynced remote storage data.
-        force_sync_unsynced_experiment(
+        is_remote_synced = force_sync_unsynced_experiment(
             workspace_id, unique_id, last_expt_config.success
         )
 
@@ -52,7 +52,9 @@ async def fetch_last_experiment(workspace_id: str):
         )
         workflow_config = WorkflowConfigReader.read(workflow_config_path)
         return WorkflowWithResults(
-            **asdict(last_expt_config), **asdict(workflow_config)
+            **asdict(last_expt_config),
+            **asdict(workflow_config),
+            is_remote_synced=is_remote_synced,
         )
     else:
         raise HTTPException(status_code=404)
@@ -75,12 +77,14 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
         workflow_config = WorkflowConfigReader.read(workflow_config_path)
 
         # sync unsynced remote storage data.
-        force_sync_unsynced_experiment(
+        is_remote_synced = force_sync_unsynced_experiment(
             workspace_id, unique_id, experiment_config.success
         )
 
         return WorkflowWithResults(
-            **asdict(experiment_config), **asdict(workflow_config)
+            **asdict(experiment_config),
+            **asdict(workflow_config),
+            is_remote_synced=is_remote_synced,
         )
     else:
         raise HTTPException(status_code=404, detail="file not found")
@@ -130,12 +134,12 @@ async def copy_sample_data(workspace_id: str):
 
 def force_sync_unsynced_experiment(
     workspace_id: str, unique_id: str, workflow_status: str
-):
+) -> bool:
     """
     Utility function: If experiment is unsynchronized, perform synchronization
     """
     if not RemoteStorageController.use_remote_storage():
-        return
+        return False
 
     # check remote synced status.
     is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file(
@@ -152,3 +156,5 @@ def force_sync_unsynced_experiment(
 
         if not result:
             raise HTTPException(status_code=404, detail="sync remote experiment failed")
+
+    return True

@@ -23,3 +23,4 @@ class WorkflowWithResults:
     function: Dict[str, ExptFunction]
     nodeDict: Dict[str, Node]
     edgeDict: Dict[str, Edge]
+    is_remote_synced: Optional[bool] = None
