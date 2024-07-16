@@ -32,6 +32,12 @@ async def get_experiments(workspace_id: str):
     for path in config_paths:
         try:
             config = ExptConfigReader.read(path)
+
+            # NOTE: Include procs in the function and respond
+            #   (for display on the frontend Record screen)
+            if config.procs:
+                config.function.update(config.procs)
+
             exp_config[config.unique_id] = config
         except Exception:
             pass

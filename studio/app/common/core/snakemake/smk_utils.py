@@ -30,7 +30,7 @@ class SmkUtils:
             return None
         # skip conda for process-event
         elif details["type"] in [
-            ProcessType.POST_PROCESS,
+            ProcessType.POST_PROCESS.type,
         ]:
             return None
 
