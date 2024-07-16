@@ -69,16 +69,19 @@ export const syncRemoteStorageExperiment = createAsyncThunk<
   boolean,
   string,
   ThunkApiConfig
->(`${EXPERIMENTS_SLICE_NAME}/syncRemoteStorageExperiment`, async (uid, thunkAPI) => {
-  const workspaceId = selectCurrentWorkspaceId(thunkAPI.getState())
-  if (workspaceId) {
-    try {
-      const response = await syncRemoteStorageExperimentApi(workspaceId, uid)
-      return response
-    } catch (e) {
-      return thunkAPI.rejectWithValue(e)
+>(
+  `${EXPERIMENTS_SLICE_NAME}/syncRemoteStorageExperiment`,
+  async (uid, thunkAPI) => {
+    const workspaceId = selectCurrentWorkspaceId(thunkAPI.getState())
+    if (workspaceId) {
+      try {
+        const response = await syncRemoteStorageExperimentApi(workspaceId, uid)
+        return response
+      } catch (e) {
+        return thunkAPI.rejectWithValue(e)
+      }
+    } else {
+      return thunkAPI.rejectWithValue("sync remote storage experiment failed.")
     }
-  } else {
-    return thunkAPI.rejectWithValue("workspace id does not exist.")
-  }
-})
+  },
+)

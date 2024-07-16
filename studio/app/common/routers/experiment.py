@@ -139,6 +139,4 @@ async def sync_remote_experiment(workspace_id: str, unique_id: str):
     if result:
         return True
     else:
-        raise HTTPException(
-            status_code=404, detail="sync remote remote experiment failed"
-        )
+        raise HTTPException(status_code=404, detail="sync remote experiment failed")
