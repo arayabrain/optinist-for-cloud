@@ -161,6 +161,7 @@ class ExptDataWriter:
 
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
+            # upload latest EXPERIMENT_YML
             RemoteStorageController().upload_experiment(
                 self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
             )

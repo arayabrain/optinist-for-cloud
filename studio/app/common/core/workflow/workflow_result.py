@@ -9,6 +9,9 @@ from typing import Dict
 from fastapi import HTTPException
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+)
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.file_reader import JsonReader, Reader
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -279,6 +282,15 @@ class PostProcessResult(BaseNodeResult):
             filename=DIRPATH.EXPERIMENT_YML,
             config=asdict(expt_config),
         )
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # upload latest
+            RemoteStorageController().upload_experiment(
+                expt_config.workspace_id,
+                expt_config.unique_id,
+                [DIRPATH.EXPERIMENT_YML],
+            )
 
         return message
 
