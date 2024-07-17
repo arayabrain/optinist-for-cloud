@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 
 import boto3
@@ -30,6 +31,8 @@ class S3StorageController(BaseRemoteStorageController):
     S3_INPUT_DIR = "input"
     S3_OUTPUT_DIR = "output"
 
+    S3_STORAGE_OUTPUT_URL = f"{S3_STORAGE_URL}/{S3_OUTPUT_DIR}"
+
     def __init__(self):
         self.__s3_client = boto3.client("s3")
         self.__s3_resource = boto3.resource("s3")
@@ -46,9 +49,106 @@ class S3StorageController(BaseRemoteStorageController):
         )
         return experiment_remote_path
 
-    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
-        # TODO: Implementation is required
-        pass
+    def download_all_experiments_metas(self) -> bool:
+        """
+        NOTE:
+          - この処理（config yaml files の S3 からのダウンロード）では、
+            ダウンロード対象ファイルリストの取得に、python module (boto3) ではなく、
+            外部コマンド (aws cli) を利用している
+          - aws cli を利用する事由
+            1. boto3 では、取得対象のファイルパスのfilterをサポートしていない（2024.7時点）
+              - 「Prefix配下のファイルリストをすべて取得 → 取得側(Client)でFilter」の操作手順となる
+            2. また 1. の操作を行う場合、Pagination の考慮も必要となる
+          - 上記のため、ファイルリストの取得には、aws cli を利用する形式としている
+            - なお aws cli も、基本的にはファイルパスへのfilterには非対応だが (`aws s3 ls`)、
+              `aws s3 sync` が間接的にファイルパスへのfilterが利用できる
+            - なお aws cli の利用は暫定的な対応であり、最終的には boto3 でfilterを実現できることが望ましい
+        """
+
+        # ----------------------------------------
+        # make paths
+        # ----------------------------------------
+
+        import subprocess
+        import tempfile
+
+        target_files = []
+        with tempfile.TemporaryDirectory() as tempdir:
+            aws_s3_sync_command = (
+                f"aws s3 sync {__class__.S3_STORAGE_OUTPUT_URL} {tempdir} "
+                "--dryrun --exclude '*' "
+                f"--include '*/{DIRPATH.EXPERIMENT_YML}' "
+                f"--include '*/{DIRPATH.WORKFLOW_YML}' "
+            )
+
+            # run aws cli command
+            cmd_ret = subprocess.run(
+                aws_s3_sync_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert (
+                cmd_ret.returncode == 0
+            ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+
+            # extract target files paths from command's stdout
+            target_files_str = re.sub(
+                "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
+            ).strip()
+            target_files = target_files_str.split("\n")
+
+            logger.debug(
+                "aws s3 sync result: [returncode:%d][len:%d]",
+                cmd_ret.returncode,
+                len(target_files),
+            )
+
+        logger.debug(
+            "download all medata from remote storage (s3). [count: %d]",
+            len(target_files),
+        )
+
+        # ----------------------------------------
+        # exec downloading
+        # ----------------------------------------
+
+        # do copy data from remote storage
+        target_files_count = len(target_files)
+        for index, remote_config_yml_abs_path in enumerate(target_files):
+            relative_config_yml_path = remote_config_yml_abs_path.replace(
+                f"{__class__.S3_STORAGE_OUTPUT_URL}/", ""
+            )
+            remote_config_yml_path = (
+                f"{__class__.S3_OUTPUT_DIR}/{relative_config_yml_path}"
+            )
+            local_config_yml_path = f"{DIRPATH.OUTPUT_DIR}/{relative_config_yml_path}"
+            local_config_yml_dir = os.path.dirname(local_config_yml_path)
+
+            if not os.path.isfile(local_config_yml_path):
+                logger.debug(
+                    f"copy config_yml: {relative_config_yml_path} "
+                    f"({index+1}/{target_files_count})"
+                )
+
+                os.makedirs(local_config_yml_dir, exist_ok=True)
+
+                # do download config file
+                self.__s3_client.download_file(
+                    __class__.S3_STORAGE_BUCKET,
+                    remote_config_yml_path,
+                    local_config_yml_path,
+                )
+
+            else:
+                logger.debug(
+                    f"skip copy config_yml: {relative_config_yml_path} "
+                    f"({index+1}/{target_files_count})"
+                )
+                continue
+
+        return True
 
     def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
