@@ -122,9 +122,9 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
+    def download_all_experiments_metas(self) -> bool:
         """
-        download experiment metadata from remote storage.
+        download all experiment metadata from remote storage.
         """
 
     @abstractmethod
@@ -177,8 +177,8 @@ class RemoteStorageController(BaseRemoteStorageController):
     def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
 
-    def download_experiment_metas(self, workspace_id: str, unique_id: str) -> bool:
-        return self.__controller.download_experiment_metas(workspace_id, unique_id)
+    def download_all_experiments_metas(self) -> bool:
+        return self.__controller.download_all_experiments_metas()
 
     def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         return self.__controller.download_experiment(workspace_id, unique_id)
