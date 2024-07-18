@@ -120,7 +120,7 @@ class MockStorageController(BaseRemoteStorageController):
         # exec downloading
         # ----------------------------------------
 
-        # clear remote-sync-status file.
+        # clear remote_sync_status file.
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # cleaning data from local path
@@ -132,7 +132,7 @@ class MockStorageController(BaseRemoteStorageController):
             experiment_remote_path, experiment_local_path, dirs_exist_ok=True
         )
 
-        # creating remote-sync-status file.
+        # creating remote_sync_status file.
         RemoteSyncStatusFileUtil.create_sync_status_file(
             workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
         )
@@ -152,7 +152,7 @@ class MockStorageController(BaseRemoteStorageController):
         # exec uploading
         # ----------------------------------------
 
-        # clear remote-sync-status file.
+        # clear remote_sync_status file.
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # do copy data to remote storage
@@ -184,7 +184,7 @@ class MockStorageController(BaseRemoteStorageController):
                 experiment_local_path, experiment_remote_path, dirs_exist_ok=True
             )
 
-        # creating remote-sync-status file.
+        # creating remote_sync_status file.
         RemoteSyncStatusFileUtil.create_sync_status_file(
             workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )
