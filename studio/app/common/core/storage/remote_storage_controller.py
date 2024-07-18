@@ -29,7 +29,7 @@ class RemoteSyncAction(Enum):
 
 
 class RemoteSyncStatusFileUtil:
-    REMOTE_SYNC_STATUS_FILE = "remote_synced.json"
+    REMOTE_SYNC_STATUS_FILE = "remote_sync_stat.json"
 
     @classmethod
     def make_sync_status_file_path(cls, workspace_id: str, unique_id: str) -> None:
@@ -65,7 +65,7 @@ class RemoteSyncStatusFileUtil:
 
     @classmethod
     def create_sync_status_file(
-        cls, workspace_id: str, unique_id: str, sync_action: RemoteSyncAction
+        cls, workspace_id: str, unique_id: str, remote_sync_action: RemoteSyncAction
     ) -> None:
         """
         create remote storage sync status file.
@@ -77,7 +77,7 @@ class RemoteSyncStatusFileUtil:
         with open(remote_sync_status_file_path, "w") as f:
             sync_status_data = {
                 "remote_storage_type": RemoteStorageType.get_activated_type(),
-                "action": sync_action.value,
+                "action": remote_sync_action.value,
                 "status": RemoteSyncStatus.OK.value,
                 "timestamp": datetime.datetime.now(),
             }

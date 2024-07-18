@@ -111,10 +111,12 @@ export async function renameExperiment(
   return response.data
 }
 
-export async function syncRemoteStorageExperimentApi(
+export async function syncRemoteExperimentApi(
   workspaceId: number,
   uid: string,
 ) {
-  const response = await axios.get(`${BASE_URL}/experiments/sync_remote/${workspaceId}/${uid}`)
+  const response = await axios.get(
+    `${BASE_URL}/experiments/sync_remote/${workspaceId}/${uid}`,
+  )
   return response.data
 }

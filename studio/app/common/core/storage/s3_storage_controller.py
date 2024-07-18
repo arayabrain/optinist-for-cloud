@@ -67,7 +67,7 @@ class S3StorageController(BaseRemoteStorageController):
         # exec downloading
         # ----------------------------------------
 
-        # clear remote-sync-status file.
+        # clear remote_sync_status file.
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # request s3 list_objects
@@ -118,7 +118,7 @@ class S3StorageController(BaseRemoteStorageController):
                 __class__.S3_STORAGE_BUCKET, s3_file_path, local_abs_path
             )
 
-        # creating remote-sync-status file.
+        # creating remote_sync_status file.
         RemoteSyncStatusFileUtil.create_sync_status_file(
             workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
         )
@@ -144,7 +144,7 @@ class S3StorageController(BaseRemoteStorageController):
         # exec uploading
         # ----------------------------------------
 
-        # clear remote-sync-status file.
+        # clear remote_sync_status file.
         RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
         # make target files path list
@@ -191,7 +191,7 @@ class S3StorageController(BaseRemoteStorageController):
                 local_abs_path, __class__.S3_STORAGE_BUCKET, s3_file_path
             )
 
-        # creating remote-sync-status file.
+        # creating remote_sync_status file.
         RemoteSyncStatusFileUtil.create_sync_status_file(
             workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )

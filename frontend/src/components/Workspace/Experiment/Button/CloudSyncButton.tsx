@@ -9,7 +9,7 @@ import IconButton from "@mui/material/IconButton"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
 import { ExperimentUidContext } from "components/Workspace/Experiment/ExperimentTable"
-import { syncRemoteStorageExperiment } from "store/slice/Experiments/ExperimentsActions"
+import { syncRemoteExperiment } from "store/slice/Experiments/ExperimentsActions"
 import {
   selectExperimentName,
   selectExperimentIsRemoteSynced,
@@ -37,7 +37,7 @@ export const CloudSyncButton = memo(function CloudSyncButton() {
     setOpen(true)
   }
   const handleSyncRemote = () => {
-    dispatch(syncRemoteStorageExperiment(uid))
+    dispatch(syncRemoteExperiment(uid))
       .unwrap()
       .then(() => {
         enqueueSnackbar("Successfully synchronize", { variant: "success" })
