@@ -51,16 +51,15 @@ class PostProcessRunner:
                 workspace_id = ids.workspace_id
                 unique_id = ids.unique_id
 
-                # 処理結果データの外部ストレージへのデータ転送
-                # TODO: データ転送の実施要否の判定追加（環境変数想定）
+                # Transfer of processing result data to remote storage
                 remote_storage_controller = RemoteStorageController()
                 remote_storage_controller.upload_experiment(workspace_id, unique_id)
             else:
                 logger.debug("remote storage is unused in post_process.")
 
-            # 処理結果ファイルを保存
+            # Save processing result pkl file.
             output_path = __rule.output
-            output_info = {"success": True}  # TODO: より適切な情報の記録に修正想定
+            output_info = {"success": True}  # Note: Add parameters as needed.
             PickleWriter.write(output_path, output_info)
 
         except Exception as e:
@@ -77,9 +76,8 @@ class PostProcessRunner:
 
 
 if __name__ == "__main__":
-    # TODO: debug log.
     logger.debug(
-        ">>>>>>>>>>>>>>>>>>>> Post process logging\n"
+        "post process startup debug logging\n"
         f"[snakemake.input: {snakemake.input}]\n"
         f"[snakemake.output: {snakemake.output}]\n"
     )
