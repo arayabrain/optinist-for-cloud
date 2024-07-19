@@ -20,7 +20,7 @@ import {
 } from "store/slice/Pipeline/PipelineSelectors"
 import { AppDispatch, RootState } from "store/store"
 
-export const CloudSyncButton = memo(function CloudSyncButton() {
+export const RemoteSyncButton = memo(function CloudSyncButton() {
   const dispatch = useDispatch<AppDispatch>()
   const uid = useContext(ExperimentUidContext)
   const isRunning = useSelector((state: RootState) => {
