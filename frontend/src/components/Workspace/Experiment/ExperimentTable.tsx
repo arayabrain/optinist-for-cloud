@@ -38,13 +38,13 @@ import Typography from "@mui/material/Typography"
 import { renameExperiment } from "api/experiments/Experiments"
 import { ConfirmDialog } from "components/common/ConfirmDialog"
 import { useLocalStorage } from "components/utils/LocalStorageUtil"
-import { CloudSyncButton } from "components/Workspace/Experiment/Button/CloudSyncButton"
 import { DeleteButton } from "components/Workspace/Experiment/Button/DeleteButton"
 import {
   NWBDownloadButton,
   SnakemakeDownloadButton,
   WorkflowDownloadButton,
 } from "components/Workspace/Experiment/Button/DownloadButton"
+import { RemoteSyncButton } from "components/Workspace/Experiment/Button/RemoteSyncButton"
 import { ReproduceButton } from "components/Workspace/Experiment/Button/ReproduceButton"
 import { CollapsibleTable } from "components/Workspace/Experiment/CollapsibleTable"
 import { ExperimentStatusIcon } from "components/Workspace/Experiment/ExperimentStatusIcon"
@@ -550,7 +550,7 @@ const RowItem = memo(function RowItem({
           <NWBDownloadButton name={uid} hasNWB={hasNWB} />
         </TableCell>
         <TableCell>
-          <CloudSyncButton />
+          <RemoteSyncButton />
         </TableCell>
         {isOwner && (
           <TableCell>

@@ -285,7 +285,7 @@ class PostProcessResult(BaseNodeResult):
 
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
-            # upload latest
+            # upload latest EXPERIMENT_YML
             RemoteStorageController().upload_experiment(
                 expt_config.workspace_id,
                 expt_config.unique_id,
