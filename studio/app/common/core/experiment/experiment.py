@@ -34,6 +34,11 @@ class ExptConfig:
 
 
 @dataclass
+class ExptExtConfig(ExptConfig):
+    is_remote_synced: Optional[bool] = None
+
+
+@dataclass
 class ExptOutputPathIds:
     output_dir: Optional[str] = None
     workspace_id: Optional[str] = None

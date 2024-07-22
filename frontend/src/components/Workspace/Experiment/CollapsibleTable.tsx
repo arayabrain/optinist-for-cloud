@@ -31,7 +31,7 @@ export const CollapsibleTable = memo(function CollapsibleTable({
 }: CollapsibleTableProps) {
   return (
     <TableRow>
-      <TableCell sx={{ paddingBottom: 0, paddingTop: 0 }} colSpan={11}>
+      <TableCell sx={{ paddingBottom: 0, paddingTop: 0 }} colSpan={12}>
         <Collapse in={open} timeout="auto" unmountOnExit>
           <Box margin={1}>
             <Typography variant="h6" gutterBottom component="div">

@@ -8,6 +8,10 @@ from fastapi.responses import FileResponse
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_utils import ExptUtils
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
     join_filepath,
@@ -30,17 +34,27 @@ router = APIRouter(prefix="/workflow", tags=["workflow"])
 async def fetch_last_experiment(workspace_id: str):
     last_expt_config = ExptUtils.get_last_experiment(workspace_id)
     if last_expt_config:
+        unique_id = last_expt_config.unique_id
+
+        # sync unsynced remote storage data.
+        is_remote_synced = force_sync_unsynced_experiment(
+            workspace_id, unique_id, last_expt_config.success
+        )
+
+        # fetch workflow
         workflow_config_path = join_filepath(
             [
                 DIRPATH.OUTPUT_DIR,
                 workspace_id,
-                last_expt_config.unique_id,
+                unique_id,
                 DIRPATH.WORKFLOW_YML,
             ]
         )
         workflow_config = WorkflowConfigReader.read(workflow_config_path)
         return WorkflowWithResults(
-            **asdict(last_expt_config), **asdict(workflow_config)
+            **asdict(last_expt_config),
+            **asdict(workflow_config),
+            is_remote_synced=is_remote_synced,
         )
     else:
         raise HTTPException(status_code=404)
@@ -61,8 +75,16 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
     if os.path.exists(experiment_config_path) and os.path.exists(workflow_config_path):
         experiment_config = ExptConfigReader.read(experiment_config_path)
         workflow_config = WorkflowConfigReader.read(workflow_config_path)
+
+        # sync unsynced remote storage data.
+        is_remote_synced = force_sync_unsynced_experiment(
+            workspace_id, unique_id, experiment_config.success
+        )
+
         return WorkflowWithResults(
-            **asdict(experiment_config), **asdict(workflow_config)
+            **asdict(experiment_config),
+            **asdict(workflow_config),
+            is_remote_synced=is_remote_synced,
         )
     else:
         raise HTTPException(status_code=404, detail="file not found")
@@ -106,5 +128,33 @@ async def copy_sample_data(workspace_id: str):
 
         create_directory(user_dir)
         shutil.copytree(sample_data_dir, user_dir, dirs_exist_ok=True)
+
+    return True
+
+
+def force_sync_unsynced_experiment(
+    workspace_id: str, unique_id: str, workflow_status: str
+) -> bool:
+    """
+    Utility function: If experiment is unsynchronized, perform synchronization
+    """
+    if not RemoteStorageController.use_remote_storage():
+        return False
+
+    # check remote synced status.
+    is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file(
+        workspace_id, unique_id
+    )
+
+    # checked workflow status.
+    is_running = workflow_status == "running"
+
+    # If not, perform synchronization
+    if not is_running and not is_remote_synced:
+        remote_storage_controller = RemoteStorageController()
+        result = remote_storage_controller.download_experiment(workspace_id, unique_id)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="sync remote experiment failed")
 
     return True

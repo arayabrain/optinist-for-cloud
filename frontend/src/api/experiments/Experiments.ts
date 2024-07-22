@@ -35,6 +35,7 @@ export type ExperimentDTO = {
   workspace_id: number
   unique_id: string
   hasNWB: boolean
+  is_remote_synced?: boolean
   nwb: NWBType
 }
 
@@ -106,6 +107,16 @@ export async function renameExperiment(
     {
       new_name,
     },
+  )
+  return response.data
+}
+
+export async function syncRemoteExperimentApi(
+  workspaceId: number,
+  uid: string,
+) {
+  const response = await axios.get(
+    `${BASE_URL}/experiments/sync_remote/${workspaceId}/${uid}`,
   )
   return response.data
 }

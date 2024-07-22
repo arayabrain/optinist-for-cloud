@@ -9,6 +9,9 @@ import yaml
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
 from studio.app.common.core.experiment.experiment_builder import ExptConfigBuilder
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+)
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import ProcessType
@@ -129,7 +132,16 @@ class ExptDataWriter:
         shutil.rmtree(
             join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
         )
-        return True
+
+        result = True
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            result = RemoteStorageController().delete_experiment(
+                self.workspace_id, self.unique_id
+            )
+
+        return result
 
     def rename(self, new_name: str) -> ExptConfig:
         filepath = join_filepath(
@@ -146,6 +158,13 @@ class ExptDataWriter:
             config["name"] = new_name
             f.seek(0)  # requires seek(0) before write.
             yaml.dump(config, f, sort_keys=False)
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # upload latest EXPERIMENT_YML
+            RemoteStorageController().upload_experiment(
+                self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
+            )
 
         return ExptConfig(
             workspace_id=config["workspace_id"],

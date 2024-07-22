@@ -4,6 +4,7 @@ import {
   getExperiments,
   deleteExperimentByUid,
   deleteExperimentByList,
+  syncRemoteExperiment,
 } from "store/slice/Experiments/ExperimentsActions"
 import {
   EXPERIMENTS_SLICE_NAME,
@@ -69,6 +70,12 @@ export const experimentsSlice = createSlice({
           action.meta.arg.map((v) => delete state.experimentList[v])
         }
       })
+      .addCase(syncRemoteExperiment.fulfilled, (state, action) => {
+        state.loading = false
+        if (action.payload && state.status === "fulfilled") {
+          state.experimentList[action.meta.arg].isRemoteSynced = true
+        }
+      })
       .addCase(pollRunResult.fulfilled, (state, action) => {
         if (state.status === "fulfilled") {
           const uid = action.meta.arg.uid
@@ -83,7 +90,11 @@ export const experimentsSlice = createSlice({
         }
       })
       .addMatcher(
-        isAnyOf(deleteExperimentByUid.pending, deleteExperimentByList.pending),
+        isAnyOf(
+          deleteExperimentByUid.pending,
+          deleteExperimentByList.pending,
+          syncRemoteExperiment.pending,
+        ),
         (state) => {
           state.loading = true
         },
@@ -92,6 +103,7 @@ export const experimentsSlice = createSlice({
         isAnyOf(
           deleteExperimentByUid.rejected,
           deleteExperimentByList.rejected,
+          syncRemoteExperiment.rejected,
         ),
         (state) => {
           state.loading = false

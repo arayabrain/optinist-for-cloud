@@ -12,7 +12,7 @@ from studio.app.dir_path import DIRPATH
 
 class SmkStatusLogger:
     """
-    TODO: Since the Snakemake library automatically creates thread for workflows and
+    NOTE: Since the Snakemake library automatically creates thread for workflows and
     shares the same loggers in the library, all workflows running at the same time
     will use same log data.
     """

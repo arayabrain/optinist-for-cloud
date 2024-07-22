@@ -5,9 +5,14 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from studio.app.common.core.experiment.experiment import ExptConfig
+from studio.app.common.core.experiment.experiment import ExptConfig, ExptExtConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
+from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
@@ -18,10 +23,12 @@ from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
+logger = AppLogger.get_logger()
+
 
 @router.get(
     "/{workspace_id}",
-    response_model=Dict[str, ExptConfig],
+    response_model=Dict[str, ExptExtConfig],
     dependencies=[Depends(is_workspace_available)],
 )
 async def get_experiments(workspace_id: str):
@@ -29,6 +36,9 @@ async def get_experiments(workspace_id: str):
     config_paths = glob(
         join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML])
     )
+
+    use_remote_storage = RemoteStorageController.use_remote_storage()
+
     for path in config_paths:
         try:
             config = ExptConfigReader.read(path)
@@ -38,8 +48,20 @@ async def get_experiments(workspace_id: str):
             if config.procs:
                 config.function.update(config.procs)
 
+            # Operate remote storage.
+            if use_remote_storage:
+                # check remote synced status.
+                is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file(
+                    workspace_id, config.unique_id
+                )
+
+                # extend config to ExptExtConfig
+                config = ExptExtConfig(**config.__dict__)
+                config.is_remote_synced = is_remote_synced
+
             exp_config[config.unique_id] = config
-        except Exception:
+        except Exception as e:
+            logger.error(e, exc_info=True)
             pass
 
     return exp_config
@@ -73,7 +95,8 @@ async def delete_experiment(workspace_id: str, unique_id: str):
             unique_id,
         ).delete_data()
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(e, exc_info=True)
         return False
 
 
@@ -90,7 +113,8 @@ async def delete_experiment_list(workspace_id: str, deleteItem: DeleteItem):
                 unique_id,
             ).delete_data()
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(e, exc_info=True)
         return False
 
 
@@ -106,3 +130,18 @@ async def download_config_experiment(workspace_id: str, unique_id: str):
         return FileResponse(config_filepath)
     else:
         raise HTTPException(status_code=404, detail="file not found")
+
+
+@router.get(
+    "/sync_remote/{workspace_id}/{unique_id}",
+    response_model=bool,
+    dependencies=[Depends(is_workspace_available)],
+)
+async def sync_remote_experiment(workspace_id: str, unique_id: str):
+    remote_storage_controller = RemoteStorageController()
+    result = remote_storage_controller.download_experiment(workspace_id, unique_id)
+
+    if result:
+        return True
+    else:
+        raise HTTPException(status_code=404, detail="sync remote experiment failed")
