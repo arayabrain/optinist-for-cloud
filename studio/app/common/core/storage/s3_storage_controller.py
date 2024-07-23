@@ -56,12 +56,12 @@ class S3StorageController(BaseRemoteStorageController):
             ダウンロード対象ファイルリストの取得に、python module (boto3) ではなく、
             外部コマンド (aws cli) を利用している
           - aws cli を利用する事由
-            1. boto3 では、取得対象のファイルパスのfilterをサポートしていない（2024.7時点）
-              - 「Prefix配下のファイルリストをすべて取得 → 取得側(Client)でFilter」の操作手順となる
+            1. boto3 では、取得対象のファイルリストの Server(AWS) Side でのfilterをサポートしていない（2024.7時点）
+                - 「Prefix配下のファイルリストをすべて取得 → Client Side でのFilter」の操作手順となる
             2. また 1. の操作を行う場合、Pagination の考慮も必要となる
           - 上記のため、ファイルリストの取得には、aws cli を利用する形式としている
-            - なお aws cli も、基本的にはファイルパスへのfilterには非対応だが (`aws s3 ls`)、
-              `aws s3 sync` が間接的にファイルパスへのfilterが利用できる
+            - aws cli (`aws s3 ls`) も、基本的には Server(AWS) Side のファイルリストfilterには非対応だが、
+              `aws s3 sync` の利用により、間接的に Server(AWS) Side での filterが利用可能
             - なお aws cli の利用は暫定的な対応であり、最終的には boto3 でfilterを実現できることが望ましい
         """
 
@@ -74,6 +74,18 @@ class S3StorageController(BaseRemoteStorageController):
 
         target_files = []
         with tempfile.TemporaryDirectory() as tempdir:
+            """
+            # CLI Command Description
+            - Use `aws s3 sync`
+                - Specify --dryrun to get file list (no actual sync)
+            - search target files
+                - Experiment Metadata Files
+                    - DIRPATH.EXPERIMENT_YML
+                    - DIRPATH.WORKFLOW_YML
+            - command result (stdout) format
+                > (dryrun) download: s3://{FILE_URL} to {DOWNLOAD_LOCAL_PATH}
+                > ... (repeat above)
+            """
             aws_s3_sync_command = (
                 f"aws s3 sync {__class__.S3_STORAGE_OUTPUT_URL} {tempdir} "
                 "--dryrun --exclude '*' "
