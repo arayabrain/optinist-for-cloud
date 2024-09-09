@@ -79,7 +79,7 @@ class ExptConfigWriter:
         return (
             self.builder.set_started_at(
                 datetime.now().strftime(DATE_FORMAT)
-            )  # 時間を更新
+            )  # Update time
             .set_success("running")
             .build()
         )
