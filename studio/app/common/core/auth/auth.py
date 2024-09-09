@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Tuple
 
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
@@ -16,24 +17,26 @@ from studio.app.common.models.user import User as UserModel
 from studio.app.common.schemas.auth import AccessToken, Token, UserAuth
 
 
-async def authenticate_user(db: Session, data: UserAuth):
+async def authenticate_user(db: Session, data: UserAuth) -> Tuple[Token, UserModel]:
     try:
         user = pyrebase_app.auth().sign_in_with_email_and_password(
             data.email, data.password
         )
-        user_db = (
+        user_db: UserModel = (
             db.query(UserModel)
             .filter(UserModel.uid == user["localId"], UserModel.active.is_(True))
             .first()
         )
+
         assert user_db is not None, "Invalid user uid"
         ex_token = create_access_token(subject=user_db.uid)
-        return Token(
+        token = Token(
             access_token=user["idToken"],
             refresh_token=create_refresh_token(subject=user["refreshToken"]),
             token_type="bearer",
             ex_token=ex_token,
         )
+        return token, user_db
     except Exception as e:
         logging.getLogger().error(e)
         raise HTTPException(status_code=400, detail=str(e))
