@@ -15,8 +15,9 @@ from studio.app.common.core.storage.remote_storage_controller import (  # noqa: 
 )
 from studio.app.dir_path import DIRPATH
 
+remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
 workspace_id = "default"
-unique_id = "0123"
+unique_id = "remote_storage_test"
 
 
 def test_initialize():
@@ -45,13 +46,19 @@ def test_RemoteSyncStatusFileUtil():
         return
 
     # test create_sync_status_file()
-    RemoteSyncStatusFileUtil.create_sync_status_file(
-        workspace_id, unique_id, RemoteSyncAction.UPLOAD
+    RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+        remote_bucket_name, workspace_id, unique_id, RemoteSyncAction.UPLOAD
     )
     is_remote_sync_status_ok = RemoteSyncStatusFileUtil.check_sync_status_file(
         workspace_id, unique_id
     )
     assert is_remote_sync_status_ok, "create_sync_status_file failed.."
+
+    # test get_remote_bucket_name()
+    remote_bucket_name_ = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+        workspace_id, unique_id
+    )
+    assert remote_bucket_name_, "get_remote_bucket_name failed.."
 
     # test delete_sync_status_file()
     RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
@@ -62,7 +69,7 @@ def test_RemoteStorageController_upload():
         print("RemoteStorageController is available, skip this test.")
         return
 
-    remote_storage_controller = RemoteStorageController()
+    remote_storage_controller = RemoteStorageController(remote_bucket_name)
 
     # upload specific files to remote
     target_files = [DIRPATH.EXPERIMENT_YML, DIRPATH.WORKFLOW_YML]
@@ -80,7 +87,7 @@ def test_RemoteStorageController_download():
         print("RemoteStorageController is available, skip this test.")
         return
 
-    remote_storage_controller = RemoteStorageController()
+    remote_storage_controller = RemoteStorageController(remote_bucket_name)
 
     test_data_output_path = f"{DIRPATH.DATA_DIR}/output/{workspace_id}/{unique_id}"
     test_data_output_experiment_yaml = (
