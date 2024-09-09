@@ -6,6 +6,7 @@ import yaml
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_utils import ExptUtils
 from studio.app.common.core.storage.remote_storage_controller import (
@@ -31,14 +32,17 @@ router = APIRouter(prefix="/workflow", tags=["workflow"])
     response_model=WorkflowWithResults,
     dependencies=[Depends(is_workspace_available)],
 )
-async def fetch_last_experiment(workspace_id: str):
+async def fetch_last_experiment(
+    workspace_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     last_expt_config = ExptUtils.get_last_experiment(workspace_id)
     if last_expt_config:
         unique_id = last_expt_config.unique_id
 
         # sync unsynced remote storage data.
         is_remote_synced = force_sync_unsynced_experiment(
-            workspace_id, unique_id, last_expt_config.success
+            remote_bucket_name, workspace_id, unique_id, last_expt_config.success
         )
 
         # fetch workflow
@@ -65,7 +69,11 @@ async def fetch_last_experiment(workspace_id: str):
     response_model=WorkflowWithResults,
     dependencies=[Depends(is_workspace_available)],
 )
-async def reproduce_experiment(workspace_id: str, unique_id: str):
+async def reproduce_experiment(
+    workspace_id: str,
+    unique_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     experiment_config_path = join_filepath(
         [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
     )
@@ -78,7 +86,7 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
 
         # sync unsynced remote storage data.
         is_remote_synced = force_sync_unsynced_experiment(
-            workspace_id, unique_id, experiment_config.success
+            remote_bucket_name, workspace_id, unique_id, experiment_config.success
         )
 
         return WorkflowWithResults(
@@ -133,7 +141,7 @@ async def copy_sample_data(workspace_id: str):
 
 
 def force_sync_unsynced_experiment(
-    workspace_id: str, unique_id: str, workflow_status: str
+    remote_bucket_name: str, workspace_id: str, unique_id: str, workflow_status: str
 ) -> bool:
     """
     Utility function: If experiment is unsynchronized, perform synchronization
@@ -151,7 +159,7 @@ def force_sync_unsynced_experiment(
 
     # If not, perform synchronization
     if not is_running and not is_remote_synced:
-        remote_storage_controller = RemoteStorageController()
+        remote_storage_controller = RemoteStorageController(remote_bucket_name)
         result = remote_storage_controller.download_experiment(workspace_id, unique_id)
 
         if not result:

@@ -23,7 +23,8 @@ from studio.app.dir_path import DIRPATH
 
 
 class WorkflowResult:
-    def __init__(self, workspace_id, unique_id):
+    def __init__(self, remote_bucket_name, workspace_id, unique_id):
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
         self.workflow_dirpath = join_filepath(
@@ -67,6 +68,7 @@ class WorkflowResult:
                 # process for procs
                 if node_id == ProcessType.POST_PROCESS.id:
                     node_result = PostProcessResult(
+                        self.remote_bucket_name,
                         self.workflow_dirpath,
                         node_id,
                         pickle_filepath,
@@ -240,7 +242,8 @@ class NodeResult(BaseNodeResult):
 
 
 class PostProcessResult(BaseNodeResult):
-    def __init__(self, workflow_dirpath, node_id, pickle_filepath):
+    def __init__(self, remote_bucket_name, workflow_dirpath, node_id, pickle_filepath):
+        self.remote_bucket_name = remote_bucket_name
         self.workflow_dirpath = workflow_dirpath
         self.node_id = node_id
         self.node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
@@ -286,7 +289,8 @@ class PostProcessResult(BaseNodeResult):
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
             # upload latest EXPERIMENT_YML
-            RemoteStorageController().upload_experiment(
+            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
+            remote_storage_controller.upload_experiment(
                 expt_config.workspace_id,
                 expt_config.unique_id,
                 [DIRPATH.EXPERIMENT_YML],

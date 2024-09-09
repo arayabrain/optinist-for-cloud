@@ -21,19 +21,16 @@ class S3StorageController(BaseRemoteStorageController):
     S3 Storage Controller
     """
 
-    # TODO: 認証情報の管理方式の組み込み
-    # - 現段階では、awscli で事前認証した状態で、利用可能としている
-
-    # TODO: S3 bucket は、最終的にユーザー単位での区画分けとなる想定
-    S3_STORAGE_URL = os.environ.get("S3_STORAGE_URL")
-    S3_STORAGE_BUCKET = S3_STORAGE_URL.split("//")[-1]
-
     S3_INPUT_DIR = "input"
     S3_OUTPUT_DIR = "output"
 
-    S3_STORAGE_OUTPUT_URL = f"{S3_STORAGE_URL}/{S3_OUTPUT_DIR}"
+    def __init__(self, bucket_name: str):
+        # init s3 bucket attributes
+        assert bucket_name, "S3 bucket name is not defined."
+        self.__s3_storage_bucket = bucket_name
+        self.__s3_storage_url = f"s3://{bucket_name}"
+        logger.debug(f"Init S3StorageController: {bucket_name=}")
 
-    def __init__(self):
         self.__s3_client = boto3.client("s3")
         self.__s3_resource = boto3.resource("s3")
 
@@ -87,7 +84,7 @@ class S3StorageController(BaseRemoteStorageController):
                 > ... (repeat above)
             """
             aws_s3_sync_command = (
-                f"aws s3 sync {__class__.S3_STORAGE_OUTPUT_URL} {tempdir} "
+                f"aws s3 sync {self.__s3_storage_url} {tempdir} "
                 "--dryrun --exclude '*' "
                 f"--include '*/{DIRPATH.EXPERIMENT_YML}' "
                 f"--include '*/{DIRPATH.WORKFLOW_YML}' "
@@ -100,6 +97,12 @@ class S3StorageController(BaseRemoteStorageController):
                 capture_output=True,
                 text=True,
                 check=True,
+                env={
+                    "PATH": os.environ.get("PATH"),
+                    "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+                    "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                    "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
+                },
             )
             assert (
                 cmd_ret.returncode == 0
@@ -118,7 +121,8 @@ class S3StorageController(BaseRemoteStorageController):
             )
 
         logger.debug(
-            "download all medata from remote storage (s3). [count: %d]",
+            "download all medata from remote storage (s3). [%s] [count: %d]",
+            self.__s3_storage_bucket,
             len(target_files),
         )
 
@@ -130,12 +134,10 @@ class S3StorageController(BaseRemoteStorageController):
         target_files_count = len(target_files)
         for index, remote_config_yml_abs_path in enumerate(target_files):
             relative_config_yml_path = remote_config_yml_abs_path.replace(
-                f"{__class__.S3_STORAGE_OUTPUT_URL}/", ""
+                f"{self.__s3_storage_url}/", ""
             )
-            remote_config_yml_path = (
-                f"{__class__.S3_OUTPUT_DIR}/{relative_config_yml_path}"
-            )
-            local_config_yml_path = f"{DIRPATH.OUTPUT_DIR}/{relative_config_yml_path}"
+            remote_config_yml_path = relative_config_yml_path
+            local_config_yml_path = f"{DIRPATH.DATA_DIR}/{relative_config_yml_path}"
             local_config_yml_dir = os.path.dirname(local_config_yml_path)
 
             if not os.path.isfile(local_config_yml_path):
@@ -148,7 +150,7 @@ class S3StorageController(BaseRemoteStorageController):
 
                 # do download config file
                 self.__s3_client.download_file(
-                    __class__.S3_STORAGE_BUCKET,
+                    self.__s3_storage_bucket,
                     remote_config_yml_path,
                     local_config_yml_path,
                 )
@@ -170,7 +172,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "download data from remote storage (S3). [%s -> %s]",
+            "download data from remote storage (S3). [%s] [%s -> %s]",
+            self.__s3_storage_bucket,
             experiment_local_path,
             experiment_remote_path,
         )
@@ -184,14 +187,14 @@ class S3StorageController(BaseRemoteStorageController):
 
         # request s3 list_objects
         s3_list_objects = self.__s3_client.list_objects_v2(
-            Bucket=__class__.S3_STORAGE_BUCKET, Prefix=experiment_remote_path
+            Bucket=self.__s3_storage_bucket, Prefix=experiment_remote_path
         )
 
         # check copy source directory
         if not s3_list_objects or s3_list_objects.get("KeyCount", 0) == 0:
             logger.warn(
-                "remote data is not exists. [%s][%s]",
-                __class__.S3_STORAGE_BUCKET,
+                "remote data is not exists. [%s] [%s]",
+                self.__s3_storage_bucket,
                 experiment_remote_path,
             )
             return False
@@ -217,7 +220,8 @@ class S3StorageController(BaseRemoteStorageController):
             local_abs_dir = os.path.dirname(local_abs_path)
 
             logger.debug(
-                f"download data from S3 ({index+1}/{target_files_count}) "
+                f"download data from S3 [{self.__s3_storage_bucket}] "
+                f"({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
             )
 
@@ -227,12 +231,12 @@ class S3StorageController(BaseRemoteStorageController):
 
             # do download experiment files
             self.__s3_client.download_file(
-                __class__.S3_STORAGE_BUCKET, s3_file_path, local_abs_path
+                self.__s3_storage_bucket, s3_file_path, local_abs_path
             )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            self.__s3_storage_bucket, workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
         )
 
         return True
@@ -247,7 +251,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "upload data to remote storage (S3). [%s -> %s]",
+            "upload data to remote storage (S3). [%s] [%s -> %s]",
+            self.__s3_storage_bucket,
             experiment_local_path,
             experiment_remote_path,
         )
@@ -294,18 +299,19 @@ class S3StorageController(BaseRemoteStorageController):
             adjusted_target_files
         ):
             logger.debug(
-                f"upload data to S3 ({index+1}/{target_files_count}) "
+                f"upload data to S3 [{self.__s3_storage_bucket}] "
+                f"({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
             )
 
             # do upload experiment files
             self.__s3_client.upload_file(
-                local_abs_path, __class__.S3_STORAGE_BUCKET, s3_file_path
+                local_abs_path, self.__s3_storage_bucket, s3_file_path
             )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.UPLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            self.__s3_storage_bucket, workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )
 
         return True
@@ -317,7 +323,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "delete data from remote storage (s3). [%s]",
+            "delete data from remote storage (s3). [%s] [%s]",
+            self.__s3_storage_bucket,
             experiment_remote_path,
         )
 
@@ -326,7 +333,7 @@ class S3StorageController(BaseRemoteStorageController):
         # ----------------------------------------
 
         # do delete data from remote storage
-        self.__s3_resource.Bucket(__class__.S3_STORAGE_BUCKET).objects.filter(
+        self.__s3_resource.Bucket(self.__s3_storage_bucket).objects.filter(
             Prefix=experiment_remote_path
         ).delete()
 
