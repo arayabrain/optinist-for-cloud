@@ -3,6 +3,7 @@ from typing import Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.workflow.workflow import Message, NodeItem, RunItem
 from studio.app.common.core.workflow.workflow_result import WorkflowResult
@@ -22,9 +23,16 @@ logger = AppLogger.get_logger()
     response_model=str,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundTasks):
+async def run(
+    workspace_id: str,
+    runItem: RunItem,
+    background_tasks: BackgroundTasks,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     unique_id = str(uuid.uuid4())[:8]
-    WorkflowRunner(workspace_id, unique_id, runItem).run_workflow(background_tasks)
+    WorkflowRunner(remote_bucket_name, workspace_id, unique_id, runItem).run_workflow(
+        background_tasks
+    )
 
     logger.info("run snakemake")
 
@@ -37,9 +45,15 @@ async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundT
     dependencies=[Depends(is_workspace_owner)],
 )
 async def run_id(
-    workspace_id: str, uid: str, runItem: RunItem, background_tasks: BackgroundTasks
+    workspace_id: str,
+    uid: str,
+    runItem: RunItem,
+    background_tasks: BackgroundTasks,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    WorkflowRunner(workspace_id, uid, runItem).run_workflow(background_tasks)
+    WorkflowRunner(remote_bucket_name, workspace_id, uid, runItem).run_workflow(
+        background_tasks
+    )
 
     logger.info("run snakemake")
     logger.info("forcerun list: %s", runItem.forceRunList)
@@ -52,8 +66,15 @@ async def run_id(
     response_model=Dict[str, Message],
     dependencies=[Depends(is_workspace_available)],
 )
-async def run_result(workspace_id: str, uid: str, nodeDict: NodeItem):
-    return WorkflowResult(workspace_id, uid).get(nodeDict.pendingNodeIdList)
+async def run_result(
+    workspace_id: str,
+    uid: str,
+    nodeDict: NodeItem,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    return WorkflowResult(remote_bucket_name, workspace_id, uid).get(
+        nodeDict.pendingNodeIdList
+    )
 
 
 @router.post(
@@ -61,5 +82,9 @@ async def run_result(workspace_id: str, uid: str, nodeDict: NodeItem):
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def run_cancel(workspace_id: str, uid: str):
-    return WorkflowResult(workspace_id, uid).cancel()
+async def run_cancel(
+    workspace_id: str,
+    uid: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    return WorkflowResult(remote_bucket_name, workspace_id, uid).cancel()

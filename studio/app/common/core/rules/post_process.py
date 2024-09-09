@@ -22,6 +22,7 @@ from studio.app.common.core.snakemake.snakemake_reader import RuleConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageType,
+    RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.pickle_handler import PickleWriter
@@ -52,7 +53,10 @@ class PostProcessRunner:
                 unique_id = ids.unique_id
 
                 # Transfer of processing result data to remote storage
-                remote_storage_controller = RemoteStorageController()
+                remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                    workspace_id, unique_id
+                )
+                remote_storage_controller = RemoteStorageController(remote_bucket_name)
                 remote_storage_controller.upload_experiment(workspace_id, unique_id)
             else:
                 logger.debug("remote storage is unused in post_process.")
