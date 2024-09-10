@@ -11,6 +11,7 @@ from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_utils import ExptUtils
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteSyncAction,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import (
@@ -127,15 +128,44 @@ async def import_workflow_config(file: UploadFile = File(...)):
     "/sample_data/{workspace_id}",
     dependencies=[Depends(is_workspace_available)],
 )
-async def copy_sample_data(workspace_id: str):
+async def copy_sample_data(
+    workspace_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    sample_data_dir_name = "sample_data"
     folders = ["input", "output"]
 
     for folder in folders:
-        sample_data_dir = join_filepath([DIRPATH.ROOT_DIR, "sample_data", folder])
+        sample_data_dir = join_filepath(
+            [DIRPATH.ROOT_DIR, sample_data_dir_name, folder]
+        )
         user_dir = join_filepath([DIRPATH.DATA_DIR, folder, workspace_id])
 
         create_directory(user_dir)
         shutil.copytree(sample_data_dir, user_dir, dirs_exist_ok=True)
+
+    # Operate remote storage data.
+    if RemoteStorageController.use_remote_storage():
+        from glob import glob
+
+        # Get list of sample data names.
+        sample_data_output_dir = join_filepath(
+            [DIRPATH.ROOT_DIR, sample_data_dir_name, "output"]
+        )
+        sample_data_subdirs = sorted(glob(f"{sample_data_output_dir}/*"))
+
+        # Process sample data individually.
+        for sample_data_subdir in sample_data_subdirs:
+            unique_id = os.path.basename(sample_data_subdir)
+
+            # Note: Force creation of remote_sync_status file
+            #   to enable reproduction of sample data.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.DOWNLOAD,
+            )
 
     return True
 
