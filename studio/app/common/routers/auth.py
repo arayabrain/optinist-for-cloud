@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from studio.app.common.core.auth import auth
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
 )
@@ -10,11 +11,13 @@ from studio.app.common.schemas.auth import AccessToken, RefreshToken, Token, Use
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+logger = AppLogger.get_logger()
+
 
 @router.post("/login", response_model=Token)
 async def login(user_data: UserAuth, db: Session = Depends(get_db)):
     try:
-        response = await auth.authenticate_user(db, user_data)
+        token, user = await auth.authenticate_user(db, user_data)
 
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
@@ -22,10 +25,18 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
             #   download all experiments metadata.
             RemoteStorageController().download_all_experiments_metas()
 
-    except Exception as e:
+    except HTTPException as e:
+        logger.error(e, exc_info=True)
         raise e
 
-    return response
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Some error occurred during authentication.",
+        )
+
+    return token
 
 
 @router.post("/refresh", response_model=AccessToken)
