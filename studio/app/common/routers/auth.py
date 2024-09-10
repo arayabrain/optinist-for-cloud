@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from studio.app.common.core.auth import auth
@@ -26,9 +26,16 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
             remote_storage_controller = RemoteStorageController(user.remote_bucket_name)
             remote_storage_controller.download_all_experiments_metas()
 
-    except Exception as e:
+    except HTTPException as e:
         logger.error(e, exc_info=True)
         raise e
+
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Some error occurred during authentication.",
+        )
 
     return token
 

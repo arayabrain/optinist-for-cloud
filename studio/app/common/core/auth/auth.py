@@ -37,22 +37,29 @@ async def authenticate_user(db: Session, data: UserAuth) -> Tuple[Token, UserMod
             ex_token=ex_token,
         )
         return token, user_db
+
+    except (HTTPError, AssertionError) as e:
+        logging.getLogger().error(e)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     except Exception as e:
         logging.getLogger().error(e)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
 async def refresh_current_user_token(refresh_token: str):
     token, err = validate_refresh_token(refresh_token)
 
     if err:
-        raise HTTPException(status_code=400)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
     try:
         user = pyrebase_app.auth().refresh(refresh_token=token["sub"])
         return AccessToken(access_token=user["idToken"])
     except Exception as e:
         logging.getLogger().error(e)
-        raise HTTPException(status_code=400)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
 
 async def send_reset_password_mail(db: Session, email: str):
