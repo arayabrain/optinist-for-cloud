@@ -59,6 +59,11 @@ async def get_experiments(workspace_id: str):
                 # extend config to ExptExtConfig
                 config = ExptExtConfig(**config.__dict__)
                 config.is_remote_synced = is_remote_synced
+            else:
+                # extend config to ExptExtConfig
+                # Always flag as synchronized if remote storage is unused.
+                config = ExptExtConfig(**config.__dict__)
+                config.is_remote_synced = True
 
             exp_config[config.unique_id] = config
         except Exception as e:
