@@ -5,7 +5,6 @@ from firebase_admin.auth import UserRecord
 from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
-from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
 )
@@ -97,8 +96,6 @@ async def list_user(
 
 async def create_user(db: Session, data: UserCreate, organization_id: int):
     try:
-        logger = AppLogger.get_logger()
-
         # create firebase user
         user: UserRecord = firebase_auth.create_user(
             email=data.email, password=data.password
@@ -131,8 +128,6 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
             user_db.attributes = {"remote_bucket_name": new_bucket_name}
             db.flush()
             db.commit()
-
-            logger.info(f"S3 bucket was successfully created. [{new_bucket_name}]")
 
         return User.from_orm(user_db)
     except Exception as e:
@@ -193,8 +188,6 @@ async def update_password(
 
 async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
     try:
-        logger = AppLogger.get_logger()
-
         # delete application db user
         user_db: User = (
             db.query(UserModel)
@@ -217,10 +210,6 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
                 user_db.remote_bucket_name
             )
             remote_storage_controller.delete_bucket(force_delete=True)
-
-            logger.info(
-                f"S3 bucket was successfully deleted. [{user_db.remote_bucket_name}]"
-            )
 
         db.commit()
 
