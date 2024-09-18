@@ -10,6 +10,11 @@ from snakemake import snakemake
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
@@ -53,7 +58,23 @@ class EditRoiUtils:
         return algo
 
     @classmethod
-    def execute(cls, filepath):
+    def execute(cls, filepath: str, remote_bucket_name: str):
+        # Get workspace_id, unique_id from output file path
+        ids = ExptOutputPathIds(os.path.dirname(filepath))
+        workspace_id = ids.workspace_id
+        unique_id = ids.unique_id
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # creating remote_sync_status file.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
+
+        # Run snakemake
         snakemake(
             DIRPATH.SNAKEMAKE_FILEPATH,
             use_conda=True,
@@ -225,12 +246,39 @@ class EditROI:
 
         self.__update_pickle_for_roi_edition(self.pickle_file_path, info)
         self.__save_json(info)
-        self.__update_whole_nwb(info)
+
+        # TODO: __update_whole_nwb 内でExceptionが生じているため、暫定コメントアウト 2024/09/16
+        # self.__update_whole_nwb(info)
+
         (
             os.remove(self.tmp_pickle_file_path)
             if os.path.exists(self.tmp_pickle_file_path)
             else None
         )
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # Get workspace_id, unique_id from output file path
+            ids = ExptOutputPathIds(self.node_dirpath)
+            workspace_id = ids.workspace_id
+            unique_id = ids.unique_id
+
+            # Get remote_bucket_name
+            remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                workspace_id, unique_id
+            )
+
+            # TODO: 直近更新の発生しているファイルのみを、upload対象とする（通信量の削減のため）
+            upload_files = [
+                DIRPATH.EXPERIMENT_YML,
+                DIRPATH.WORKFLOW_YML,
+            ]  # TODO: テスト用に仮に左記のファイルを固定設定（最終的にはglobで検索したファイルを指定）
+
+            # upload update files
+            remote_storage_controller = RemoteStorageController(remote_bucket_name)
+            remote_storage_controller.upload_experiment(
+                workspace_id, unique_id, upload_files
+            )
 
     def cancel(self):
         original_num_cell = len(self.output_info.get("fluorescence").data)
