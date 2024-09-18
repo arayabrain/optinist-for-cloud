@@ -212,7 +212,7 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
 
 class RemoteStorageController(BaseRemoteStorageController):
     def __init__(self, bucket_name: str):
-        remote_storage_type = os.environ.get("REMOTE_STORAGE_TYPE")
+        remote_storage_type = RemoteStorageType.get_activated_type()
 
         if remote_storage_type == RemoteStorageType.MOCK.value:
             from studio.app.common.core.storage.mock_storage_controller import (
@@ -234,6 +234,30 @@ class RemoteStorageController(BaseRemoteStorageController):
 
     def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
+
+    def create_bucket(self) -> bool:
+        remote_storage_type = RemoteStorageType.get_activated_type()
+        if remote_storage_type == RemoteStorageType.S3.value:
+            self.__controller.create_bucket()
+        else:
+            assert False, (
+                "This remote_storage_type "
+                f"does not support bucket: {remote_storage_type}"
+            )
+
+        return True
+
+    def delete_bucket(self, force_delete=False) -> bool:
+        remote_storage_type = RemoteStorageType.get_activated_type()
+        if remote_storage_type == RemoteStorageType.S3.value:
+            self.__controller.delete_bucket(force_delete)
+        else:
+            assert False, (
+                "This remote_storage_type "
+                f"does not support bucket: {remote_storage_type}"
+            )
+
+        return True
 
     def download_all_experiments_metas(self) -> bool:
         return self.__controller.download_all_experiments_metas()
