@@ -67,6 +67,8 @@ class S3StorageController(BaseRemoteStorageController):
             CreateBucketConfiguration=create_config,
         )
 
+        logger.info(f"S3 bucket was successfully created. [{self.__s3_storage_bucket}]")
+
         return True
 
     def delete_bucket(self, force_delete=False) -> str:
@@ -76,6 +78,8 @@ class S3StorageController(BaseRemoteStorageController):
             bucket.objects.all().delete()
 
         bucket.delete()
+
+        logger.info(f"S3 bucket was successfully deleted. [{self.__s3_storage_bucket}]")
 
         return True
 
