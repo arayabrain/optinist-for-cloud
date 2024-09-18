@@ -235,6 +235,19 @@ class RemoteStorageController(BaseRemoteStorageController):
     def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
 
+    @staticmethod
+    def create_user_bucket_name(id: int, prefix: str = "optinist-user") -> str:
+        import hashlib
+        import time
+
+        current_time = time.time()
+        hash_src = f"{id}-{current_time}"
+        hash_value = hashlib.md5(hash_src.encode()).hexdigest()
+        hash_value = hash_value[0:10]
+        new_name = f"{prefix}-{id}-{hash_value}"
+
+        return new_name
+
     def create_bucket(self) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
         if remote_storage_type == RemoteStorageType.S3.value:
