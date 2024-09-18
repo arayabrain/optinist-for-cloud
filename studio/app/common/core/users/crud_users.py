@@ -5,6 +5,10 @@ from firebase_admin.auth import UserRecord
 from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
+from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+)
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserRole as UserRoleModel
@@ -93,9 +97,14 @@ async def list_user(
 
 async def create_user(db: Session, data: UserCreate, organization_id: int):
     try:
+        logger = AppLogger.get_logger()
+
+        # create firebase user
         user: UserRecord = firebase_auth.create_user(
             email=data.email, password=data.password
         )
+
+        # create application db user
         user_db = UserModel(
             uid=user.uid,
             email=user.email,
@@ -109,6 +118,22 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
         await set_role(db, user_id=user_db.id, role_id=data.role_id, auto_commit=False)
         db.commit()
         user_db.__dict__["role_id"] = data.role_id
+
+        # create remote_storage bucket
+        if RemoteStorageController.use_remote_storage():
+            new_bucket_name = RemoteStorageController.create_user_bucket_name(
+                id=user_db.id
+            )
+            remote_storage_controller = RemoteStorageController(new_bucket_name)
+            remote_storage_controller.create_bucket()
+
+            # store bucket info in user record
+            user_db.attributes = {"remote_bucket_name": new_bucket_name}
+            db.flush()
+            db.commit()
+
+            logger.info(f"S3 bucket was successfully created. [{new_bucket_name}]")
+
         return User.from_orm(user_db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -118,6 +143,7 @@ async def update_user(
     db: Session, user_id: int, data: UserUpdate, organization_id: int
 ):
     try:
+        # update application db user
         user_db = (
             db.query(UserModel)
             .filter(
@@ -135,8 +161,12 @@ async def update_user(
         if role_id is not None:
             await set_role(db, user_id=user_db.id, role_id=role_id, auto_commit=False)
         user_db.__dict__["role_id"] = role_id
+
+        # create firebase user
         firebase_auth.update_user(user_db.uid, email=data.email)
+
         db.commit()
+
         return User.from_orm(user_db)
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -163,7 +193,10 @@ async def update_password(
 
 async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
     try:
-        user_db = (
+        logger = AppLogger.get_logger()
+
+        # delete application db user
+        user_db: User = (
             db.query(UserModel)
             .filter(
                 UserModel.active.is_(True),
@@ -174,8 +207,23 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
         )
         assert user_db is not None, "User not found"
         user_db.active = False
-        db.commit()
+
+        # delete application db user
         firebase_auth.delete_user(user_db.uid)
+
+        # delete remote_storage bucket
+        if RemoteStorageController.use_remote_storage():
+            remote_storage_controller = RemoteStorageController(
+                user_db.remote_bucket_name
+            )
+            remote_storage_controller.delete_bucket(force_delete=True)
+
+            logger.info(
+                f"S3 bucket was successfully deleted. [{user_db.remote_bucket_name}]"
+            )
+
+        db.commit()
+
         return True
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e))

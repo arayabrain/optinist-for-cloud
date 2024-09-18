@@ -141,10 +141,13 @@ class S3StorageController(BaseRemoteStorageController):
             ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
 
             # extract target files paths from command's stdout
-            target_files_str = re.sub(
-                "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
-            ).strip()
-            target_files = target_files_str.split("\n")
+            if len(str(cmd_ret.stdout).strip()) > 0:
+                target_files_str = re.sub(
+                    "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
+                ).strip()
+                target_files = target_files_str.split("\n")
+            else:
+                target_files = []
 
             logger.debug(
                 "aws s3 sync result: [returncode:%d][len:%d]",
