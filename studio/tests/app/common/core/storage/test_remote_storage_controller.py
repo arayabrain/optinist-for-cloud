@@ -64,6 +64,22 @@ def test_RemoteSyncStatusFileUtil():
     RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
 
+def test_RemoteStorageController_crud_bucket():
+    if not RemoteStorageController.use_remote_storage():
+        print("RemoteStorageController is available, skip this test.")
+        return
+
+    new_bucket_name = "test-optinist-dummy-bucket-0123"
+
+    remote_storage_controller = RemoteStorageController(new_bucket_name)
+
+    result = remote_storage_controller.create_bucket()
+    assert result, f"create bucket failed. [{new_bucket_name}]"
+
+    result = remote_storage_controller.delete_bucket(force_delete=True)
+    assert result, f"delete bucket failed. [{new_bucket_name}]"
+
+
 def test_RemoteStorageController_upload():
     if not RemoteStorageController.use_remote_storage():
         print("RemoteStorageController is available, skip this test.")
