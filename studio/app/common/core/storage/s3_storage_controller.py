@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from subprocess import CalledProcessError
 
 import boto3
 
@@ -123,22 +124,31 @@ class S3StorageController(BaseRemoteStorageController):
             )
 
             # run aws cli command
-            cmd_ret = subprocess.run(
-                aws_s3_sync_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=True,
-                env={
-                    "PATH": os.environ.get("PATH"),
-                    "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
-                    "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-                    "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
-                },
-            )
-            assert (
-                cmd_ret.returncode == 0
-            ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+            try:
+                cmd_ret = subprocess.run(
+                    aws_s3_sync_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env={
+                        "PATH": os.environ.get("PATH"),
+                        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+                        "AWS_SECRET_ACCESS_KEY": os.environ.get(
+                            "AWS_SECRET_ACCESS_KEY"
+                        ),
+                        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
+                    },
+                )
+
+                assert (
+                    cmd_ret.returncode == 0
+                ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+
+            except CalledProcessError as e:
+                logger.error(e)
+                logger.error(e.stderr)
+                raise e
 
             # extract target files paths from command's stdout
             if len(str(cmd_ret.stdout).strip()) > 0:
