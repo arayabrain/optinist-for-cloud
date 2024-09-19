@@ -47,6 +47,42 @@ class S3StorageController(BaseRemoteStorageController):
         )
         return experiment_remote_path
 
+    def create_bucket(self) -> bool:
+        """
+        Note:
+        - About public access settings for bucket
+            - Public access permission by ACL is not allowed after 2023/4.
+                - https://aws.amazon.com/jp/about-aws/whats-new/2022/12/
+                    amazon-s3-automatically-enable-block-public-access-disable-
+                    access-control-lists-buckets-april-2023/
+            - The above requires that public access be configured via bucket policy.
+        """
+
+        create_config = {
+            "LocationConstraint": os.environ.get("AWS_DEFAULT_REGION"),
+        }
+
+        self.__s3_client.create_bucket(
+            Bucket=self.__s3_storage_bucket,
+            CreateBucketConfiguration=create_config,
+        )
+
+        logger.info(f"S3 bucket was successfully created. [{self.__s3_storage_bucket}]")
+
+        return True
+
+    def delete_bucket(self, force_delete=False) -> str:
+        bucket = self.__s3_resource.Bucket(self.__s3_storage_bucket)
+
+        if force_delete:
+            bucket.objects.all().delete()
+
+        bucket.delete()
+
+        logger.info(f"S3 bucket was successfully deleted. [{self.__s3_storage_bucket}]")
+
+        return True
+
     def download_all_experiments_metas(self) -> bool:
         """
         NOTE:
@@ -119,10 +155,13 @@ class S3StorageController(BaseRemoteStorageController):
                 raise e
 
             # extract target files paths from command's stdout
-            target_files_str = re.sub(
-                "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
-            ).strip()
-            target_files = target_files_str.split("\n")
+            if len(str(cmd_ret.stdout).strip()) > 0:
+                target_files_str = re.sub(
+                    "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
+                ).strip()
+                target_files = target_files_str.split("\n")
+            else:
+                target_files = []
 
             logger.debug(
                 "aws s3 sync result: [returncode:%d][len:%d]",
