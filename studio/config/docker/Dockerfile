@@ -39,6 +39,9 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     poetry config virtualenvs.create false
 RUN poetry install --no-root
 
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+CMD curl -f http://0.0.0.0:8000/health || exit 1
+
 # copy optinist files
 COPY frontend/build /app/frontend/build
 COPY studio /app/studio

@@ -118,6 +118,11 @@ async def index(request: Request):
     return await root(request)
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
 def main(develop_mode: bool = False):
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="127.0.0.1")
@@ -130,6 +135,9 @@ def main(develop_mode: bool = False):
         if MODE.IS_STANDALONE
         else f"{DIRPATH.CONFIG_DIR}/logging.multiuser.yaml"
     )
+
+    logger = AppLogger.get_logger()
+    logger.info(f"Starting Optinist server on {args.host}:{args.port}")
 
     if develop_mode:
         reload_options = {"reload_dirs": ["studio"]} if args.reload else {}

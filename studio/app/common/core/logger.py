@@ -1,7 +1,9 @@
 import logging
 import logging.config
 import os
+import sys
 
+import watchtower  # Import watchtower for CloudWatch logging
 import yaml
 
 from studio.app.common.core.mode import MODE
@@ -39,19 +41,56 @@ class AppLogger:
             else f"{DIRPATH.CONFIG_DIR}/logging.multiuser.yaml"
         )
 
-        with open(log_config_file) as file:
-            log_config = yaml.load(file.read(), yaml.FullLoader)
+        if os.path.exists(log_config_file):
+            with open(log_config_file) as file:
+                log_config = yaml.load(file.read(), yaml.FullLoader)
 
-            # create log output directory (if none exists)
-            log_file = (
-                log_config.get("handlers", {}).get("rotating_file", {}).get("filename")
+                # Create log output directory (if none exists)
+                log_file = (
+                    log_config.get("handlers", {})
+                    .get("rotating_file", {})
+                    .get("filename")
+                )
+                if log_file:
+                    log_dir = os.path.dirname(log_file)
+                    if not os.path.isdir(log_dir):
+                        os.makedirs(log_dir)
+
+                logging.config.dictConfig(log_config)
+        else:
+            # Fallback configuration if the YAML file is not found
+            logging.basicConfig(
+                format=(
+                    "[%(asctime)s] %(levelname)s in %(module)s:"
+                    "%(funcName)s:%(lineno)d: %(message)s"
+                ),
+                datefmt="%Y-%m-%d %H:%M:%S",
+                stream=sys.stderr,
+                level=logging.INFO,
             )
-            if log_file:
-                log_dir = os.path.dirname(log_file)
-                if not os.path.isdir(log_dir):
-                    os.makedirs(log_dir)
 
-            logging.config.dictConfig(log_config)
+        # Configure CloudWatch logging
+        log_group = os.environ.get(
+            "CLOUDWATCH_LOG_GROUP", "/ecs/optinist-cloud-taskdef"
+        )
+        stream_name = os.environ.get("CLOUDWATCH_STREAM_NAME", "optinist-cloud-stream")
+        # Create a unique stream name if not provided
+        if stream_name == "optinist-cloud-stream":
+            import uuid
+
+            stream_name = f"optinist-cloud-stream-{uuid.uuid4()}"
+
+        try:
+            cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                log_group=log_group,
+                stream_name=stream_name,
+                create_log_group=True,  # Create the log group if it doesn't exist
+            )
+            logging.getLogger().addHandler(cloudwatch_handler)
+            logging.info("CloudWatch logging configured.")
+            logging.info(f"Log Group: {log_group}, Stream: {stream_name}")
+        except Exception as e:
+            logging.error(f"Failed to configure CloudWatch logging: {str(e)}")
 
     @staticmethod
     def get_logger():
