@@ -2,8 +2,9 @@ import logging
 import logging.config
 import os
 import sys
+import uuid
 
-import watchtower  # Import watchtower for CloudWatch logging
+import watchtower
 import yaml
 
 from studio.app.common.core.mode import MODE
@@ -76,8 +77,6 @@ class AppLogger:
         stream_name = os.environ.get("CLOUDWATCH_STREAM_NAME", "optinist-cloud-stream")
         # Create a unique stream name if not provided
         if stream_name == "optinist-cloud-stream":
-            import uuid
-
             stream_name = f"optinist-cloud-stream-{uuid.uuid4()}"
 
         try:
