@@ -9,6 +9,7 @@ RUN apt-get --allow-releaseinfo-change update && \
 # install conda & packages
 RUN mkdir -p /opt/miniconda3 && \
     apt-get install --no-install-recommends -y gcc g++ libgl1 libgl1-mesa-dev libopencv-dev && \
+    apt-get install -y curl && \
     wget -q https://repo.anaconda.com/miniconda/Miniconda3-py39_4.12.0-Linux-x86_64.sh -O /opt/miniconda3/miniconda.sh && \
     bash /opt/miniconda3/miniconda.sh -b -u -p /opt/miniconda3 && \
     rm /opt/miniconda3/miniconda.sh && \
@@ -49,3 +50,8 @@ COPY sample_data /app/sample_data
 COPY main.py alembic.ini ./
 
 EXPOSE 8000
+
+ENV HOST=0.0.0.0
+ENV PORT=8000
+
+CMD ["python", "main.py"]

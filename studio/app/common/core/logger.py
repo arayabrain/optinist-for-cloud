@@ -17,9 +17,10 @@ class AppLogger:
     """
 
     LOGGER_NAME = "optinist"
+    _cloudwatch_configured = False
 
-    @staticmethod
-    def init_logger():
+    @classmethod
+    def init_logger(cls):
         """
         Note #1.
             At the time of starting to use this Logger,
@@ -78,21 +79,22 @@ class AppLogger:
         # Create a unique stream name if not provided
         if stream_name == "optinist-cloud-stream":
             stream_name = f"optinist-cloud-stream-{uuid.uuid4()}"
+        if not cls._cloudwatch_configured:
+            try:
+                cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                    log_group=log_group,
+                    stream_name=stream_name,
+                    create_log_group=True,  # Create the log group if it doesn't exist
+                )
+                logging.getLogger().addHandler(cloudwatch_handler)
+                logging.info("CloudWatch logging configured.")
+                logging.info(f"Log Group: {log_group}, Stream: {stream_name}")
+                cls._cloudwatch_configured = True
+            except Exception as e:
+                logging.error(f"Failed to configure CloudWatch logging: {str(e)}")
 
-        try:
-            cloudwatch_handler = watchtower.CloudWatchLogHandler(
-                log_group=log_group,
-                stream_name=stream_name,
-                create_log_group=True,  # Create the log group if it doesn't exist
-            )
-            logging.getLogger().addHandler(cloudwatch_handler)
-            logging.info("CloudWatch logging configured.")
-            logging.info(f"Log Group: {log_group}, Stream: {stream_name}")
-        except Exception as e:
-            logging.error(f"Failed to configure CloudWatch logging: {str(e)}")
-
-    @staticmethod
-    def get_logger():
+    @classmethod
+    def get_logger(cls):
         logger = logging.getLogger(__class__.LOGGER_NAME)
 
         # If before initialization, call init
