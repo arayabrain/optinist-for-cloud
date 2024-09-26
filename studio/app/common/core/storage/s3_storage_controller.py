@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from subprocess import CalledProcessError
 
 import boto3
 
@@ -45,6 +46,42 @@ class S3StorageController(BaseRemoteStorageController):
             [__class__.S3_OUTPUT_DIR, workspace_id, unique_id]
         )
         return experiment_remote_path
+
+    def create_bucket(self) -> bool:
+        """
+        Note:
+        - About public access settings for bucket
+            - Public access permission by ACL is not allowed after 2023/4.
+                - https://aws.amazon.com/jp/about-aws/whats-new/2022/12/
+                    amazon-s3-automatically-enable-block-public-access-disable-
+                    access-control-lists-buckets-april-2023/
+            - The above requires that public access be configured via bucket policy.
+        """
+
+        create_config = {
+            "LocationConstraint": os.environ.get("AWS_DEFAULT_REGION"),
+        }
+
+        self.__s3_client.create_bucket(
+            Bucket=self.__s3_storage_bucket,
+            CreateBucketConfiguration=create_config,
+        )
+
+        logger.info(f"S3 bucket was successfully created. [{self.__s3_storage_bucket}]")
+
+        return True
+
+    def delete_bucket(self, force_delete=False) -> str:
+        bucket = self.__s3_resource.Bucket(self.__s3_storage_bucket)
+
+        if force_delete:
+            bucket.objects.all().delete()
+
+        bucket.delete()
+
+        logger.info(f"S3 bucket was successfully deleted. [{self.__s3_storage_bucket}]")
+
+        return True
 
     def download_all_experiments_metas(self) -> bool:
         """
@@ -91,28 +128,40 @@ class S3StorageController(BaseRemoteStorageController):
             )
 
             # run aws cli command
-            cmd_ret = subprocess.run(
-                aws_s3_sync_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=True,
-                env={
-                    "PATH": os.environ.get("PATH"),
-                    "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
-                    "AWS_SECRET_ACCESS_KEY": os.environ.get("AWS_SECRET_ACCESS_KEY"),
-                    "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
-                },
-            )
-            assert (
-                cmd_ret.returncode == 0
-            ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+            try:
+                cmd_ret = subprocess.run(
+                    aws_s3_sync_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env={
+                        "PATH": os.environ.get("PATH"),
+                        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+                        "AWS_SECRET_ACCESS_KEY": os.environ.get(
+                            "AWS_SECRET_ACCESS_KEY"
+                        ),
+                        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
+                    },
+                )
+
+                assert (
+                    cmd_ret.returncode == 0
+                ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+
+            except CalledProcessError as e:
+                logger.error(e)
+                logger.error(e.stderr)
+                raise e
 
             # extract target files paths from command's stdout
-            target_files_str = re.sub(
-                "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
-            ).strip()
-            target_files = target_files_str.split("\n")
+            if len(str(cmd_ret.stdout).strip()) > 0:
+                target_files_str = re.sub(
+                    "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
+                ).strip()
+                target_files = target_files_str.split("\n")
+            else:
+                target_files = []
 
             logger.debug(
                 "aws s3 sync result: [returncode:%d][len:%d]",
