@@ -251,9 +251,7 @@ class EditROI:
 
         self.__update_pickle_for_roi_edition(self.pickle_file_path, info)
         self.__save_json(info)
-
-        # TODO: __update_whole_nwb 内でExceptionが生じているため、暫定コメントアウト 2024/09/16
-        # self.__update_whole_nwb(info)
+        self.__update_whole_nwb(info)
 
         (
             os.remove(self.tmp_pickle_file_path)
