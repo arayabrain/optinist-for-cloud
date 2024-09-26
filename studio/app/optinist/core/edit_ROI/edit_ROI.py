@@ -76,7 +76,7 @@ class EditRoiUtils:
             )
 
         # Run snakemake
-        snakemake(
+        result = snakemake(
             DIRPATH.SNAKEMAKE_FILEPATH,
             use_conda=True,
             cores=2,
@@ -87,6 +87,10 @@ class EditRoiUtils:
                 "file_path": filepath,
             },
         )
+
+        if not result:
+            logger.error("edit_ROI snakemake run failed.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class EditROI:
