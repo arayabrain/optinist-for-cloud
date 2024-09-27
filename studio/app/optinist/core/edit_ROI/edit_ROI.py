@@ -17,7 +17,10 @@ from studio.app.common.core.storage.remote_storage_controller import (
 )
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
+from studio.app.common.core.utils.filepath_finder import (
+    find_condaenv_filepath,
+    find_recent_updated_files,
+)
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
 from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.common.dataclass.base import BaseData
@@ -272,16 +275,21 @@ class EditROI:
                 workspace_id, unique_id
             )
 
-            # TODO: 直近更新の発生しているファイルのみを、upload対象とする（通信量の削減のため）
-            upload_files = [
-                DIRPATH.EXPERIMENT_YML,
-                DIRPATH.WORKFLOW_YML,
-            ]  # TODO: テスト用に仮に左記のファイルを固定設定（最終的にはglobで検索したファイルを指定）
+            # Search upload target files (most recently updated files)
+            upload_target_files = find_recent_updated_files(
+                self.workflow_dirpath,
+                threshold_minutes=600,
+                do_relative_path=True,
+                exclude_files=[
+                    ".lock",
+                    RemoteSyncStatusFileUtil.REMOTE_SYNC_STATUS_FILE,
+                ],
+            )
 
             # upload update files
             remote_storage_controller = RemoteStorageController(remote_bucket_name)
             remote_storage_controller.upload_experiment(
-                workspace_id, unique_id, upload_files
+                workspace_id, unique_id, upload_target_files
             )
 
     def cancel(self):
