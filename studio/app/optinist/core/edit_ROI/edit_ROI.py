@@ -96,6 +96,7 @@ class EditRoiUtils:
 class EditROI:
     def __init__(self, file_path):
         self.node_dirpath = os.path.dirname(file_path)
+        self.workflow_dirpath = os.path.dirname(self.node_dirpath)
         self.function_id = ExptOutputPathIds(self.node_dirpath).function_id
 
         self.output_info: Dict = PickleReader.read(self.pickle_file_path)
@@ -306,9 +307,8 @@ class EditROI:
         )
 
     def __update_whole_nwb(self, output_info):
-        workflow_dirpath = os.path.dirname(self.node_dirpath)
         smk_config_file = join_filepath(
-            [workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
+            [self.workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
         )
         smk_config = ConfigReader.read(smk_config_file)
 
@@ -326,7 +326,7 @@ class EditROI:
             last_output_info = self.__update_pickle_for_roi_edition(
                 last_output_path, output_info
             )
-            whole_nwb_path = join_filepath([workflow_dirpath, "whole.nwb"])
+            whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
 
             Runner.save_all_nwb(whole_nwb_path, last_output_info["nwbfile"])
 
