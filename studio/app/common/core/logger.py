@@ -95,10 +95,10 @@ class AppLogger:
 
     @classmethod
     def get_logger(cls):
-        logger = logging.getLogger(__class__.LOGGER_NAME)
+        logger = logging.getLogger(cls.LOGGER_NAME)
 
         # If before initialization, call init
         if not logger.handlers:
-            __class__.init_logger()
+            cls.init_logger()
 
         return logger

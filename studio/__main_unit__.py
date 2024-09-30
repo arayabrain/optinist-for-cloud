@@ -56,60 +56,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(docs_url="/docs", openapi_url="/openapi", lifespan=lifespan)
 
 
-async def check_load_balancer() -> Dict[str, Any]:
-    # if MODE.IS_STANDALONE:
-    #     logger.info("Running in standalone mode, skipping load balancer check")
-    #     return {"status": "skipped", "details": "Standalone mode"}
-
-    server_host = os.getenv("AWS_SERVER_HOST", "localhost")
-    logger.info(f"Attempting to connect to load balancer at: http://{server_host}")
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"http://{server_host}", timeout=5) as response:
-                logger.info(f"Load balancer response status: {response.status}")
-                if response.status == 200:
-                    logger.info("Load balancer check passed")
-                    return {
-                        "status": "operational",
-                        "details": {"status_code": response.status},
-                    }
-                else:
-                    logger.warning(
-                        f"Load balancer check failed. Status: {response.status}"
-                    )
-                    logger.warning(f" Reason: {response.reason}")
-
-                    return {
-                        "status": "error",
-                        "details": {
-                            "status_code": response.status,
-                            "reason": response.reason,
-                        },
-                    }
-    except aiohttp.ClientError as e:
-        logger.error(f"Load balancer connection error: {str(e)}")
-        return {"status": "error", "details": {"error": str(e)}}
-    except Exception as e:
-        logger.exception(f"Unexpected error in check_load_balancer: {str(e)}")
-        return {"status": "error", "details": {"error": f"Unexpected error: {str(e)}"}}
-
-
 @app.get("/health")
 async def health_check():
-    logger.info("Health check function called")
     try:
-        lb_result = await check_load_balancer()
-        health_status = (
-            "healthy" if lb_result["status"] == "operational" else "unhealthy"
-        )
-        result = {
-            "status": health_status,
-            "details": {"application": "running", "load_balancer": lb_result},
-        }
-        logger.info(f"Health check status: {health_status}")
-        logger.info(f"Load balancer status: {lb_result['status']}")
-        return result
+        return {"status": "healthy"}
     except Exception as e:
         logger.error(f"Exception in health check: {str(e)}")
         return {
@@ -185,11 +135,46 @@ async def index(request: Request):
     return await root(request)
 
 
+async def check_load_balancer() -> Dict[str, Any]:
+    server_host = os.getenv("AWS_SERVER_HOST", "localhost")
+    logger.info(f"Attempting to connect to load balancer at: http://{server_host}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{server_host}", timeout=5) as response:
+                logger.info(f"Load balancer response status: {response.status}")
+                if response.status == 200:
+                    logger.info("Load balancer check passed")
+                    return {
+                        "status": "operational",
+                        "details": {"status_code": response.status},
+                    }
+                else:
+                    logger.warning(
+                        f"Load balancer check failed. Status: {response.status}"
+                    )
+                    logger.warning(f" Reason: {response.reason}")
+                    return {
+                        "status": "error",
+                        "details": {
+                            "status_code": response.status,
+                            "reason": response.reason,
+                        },
+                    }
+    except aiohttp.ClientError as e:
+        logger.error(f"Load balancer connection error: {str(e)}")
+        return {"status": "error", "details": {"error": str(e)}}
+    except Exception as e:
+        logger.exception(f"Unexpected error in check_load_balancer: {str(e)}")
+        return {"status": "error", "details": {"error": f"Unexpected error: {str(e)}"}}
+
+
 def main(develop_mode: bool = False):
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
+    parser.add_argument("--check-load-balancer", action="store_true")
     args = parser.parse_args()
 
     log_config_file = (
@@ -199,6 +184,13 @@ def main(develop_mode: bool = False):
     )
 
     logger.info(f"Starting Optinist server on {args.host}:{args.port}")
+
+    if args.check_load_balancer:
+        import asyncio
+
+        lb_status = asyncio.run(check_load_balancer())
+        print(f"Load balancer status: {lb_status}")
+        return
 
     if develop_mode:
         reload_options = {"reload_dirs": ["studio"]} if args.reload else {}
