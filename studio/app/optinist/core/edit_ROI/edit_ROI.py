@@ -10,9 +10,17 @@ from snakemake import snakemake
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
+from studio.app.common.core.utils.filepath_finder import (
+    find_condaenv_filepath,
+    find_recent_updated_files,
+)
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
 from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.common.dataclass.base import BaseData
@@ -54,7 +62,23 @@ class EditRoiUtils:
         return algo
 
     @classmethod
-    def execute(cls, filepath):
+    def execute(cls, filepath: str, remote_bucket_name: str):
+        # Get workspace_id, unique_id from output file path
+        ids = ExptOutputPathIds(os.path.dirname(filepath))
+        workspace_id = ids.workspace_id
+        unique_id = ids.unique_id
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # creating remote_sync_status file.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
+
+        # Run snakemake
         result = snakemake(
             DIRPATH.SNAKEMAKE_FILEPATH,
             use_conda=True,
@@ -238,6 +262,35 @@ class EditROI:
             if os.path.exists(self.tmp_pickle_file_path)
             else None
         )
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # Get workspace_id, unique_id from output file path
+            ids = ExptOutputPathIds(self.node_dirpath)
+            workspace_id = ids.workspace_id
+            unique_id = ids.unique_id
+
+            # Get remote_bucket_name
+            remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                workspace_id, unique_id
+            )
+
+            # Search upload target files (most recently updated files)
+            upload_target_files = find_recent_updated_files(
+                self.workflow_dirpath,
+                threshold_minutes=600,
+                do_relative_path=True,
+                exclude_files=[
+                    ".lock",
+                    RemoteSyncStatusFileUtil.REMOTE_SYNC_STATUS_FILE,
+                ],
+            )
+
+            # upload update files
+            remote_storage_controller = RemoteStorageController(remote_bucket_name)
+            remote_storage_controller.upload_experiment(
+                workspace_id, unique_id, upload_target_files
+            )
 
     def cancel(self):
         original_num_cell = len(self.output_info.get("fluorescence").data)
