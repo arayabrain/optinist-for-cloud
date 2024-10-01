@@ -128,4 +128,4 @@ def test_RemoteStorageController_download():
     remote_storage_controller.download_experiment(workspace_id, unique_id)
     assert os.path.isfile(
         test_data_output_experiment_yaml
-    ), "download_all_experiments_metas failed.."
+    ), "download_experiment failed.."
