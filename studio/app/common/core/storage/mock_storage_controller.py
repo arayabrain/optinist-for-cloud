@@ -107,7 +107,7 @@ class MockStorageController(BaseRemoteStorageController):
         )
 
         if not os.path.isdir(experiment_remote_path):
-            logger.warn("remote path is not exists. [%s]", experiment_remote_path)
+            logger.warning("remote path is not exists. [%s]", experiment_remote_path)
             return False
 
         logger.debug(
