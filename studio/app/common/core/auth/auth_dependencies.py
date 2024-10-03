@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Response, status
@@ -66,3 +67,13 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges",
         )
+
+
+async def get_user_remote_bucket_name(current_user: User = Depends(get_current_user)):
+    """
+    get user remote_bucket_name from users.attributes
+    """
+    if not current_user:
+        return os.environ.get("S3_DEFAULT_BUCKET_NAME")
+    else:
+        return current_user.remote_bucket_name

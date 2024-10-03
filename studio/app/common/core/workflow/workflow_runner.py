@@ -11,6 +11,11 @@ from studio.app.common.core.snakemake.snakemake_executor import (
 from studio.app.common.core.snakemake.snakemake_reader import SmkParamReader
 from studio.app.common.core.snakemake.snakemake_rule import SmkRule
 from studio.app.common.core.snakemake.snakemake_writer import SmkConfigWriter
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.workflow.workflow import (
     Node,
     NodeData,
@@ -25,7 +30,14 @@ from studio.app.common.core.workflow.workflow_writer import WorkflowConfigWriter
 
 
 class WorkflowRunner:
-    def __init__(self, workspace_id: str, unique_id: str, runItem: RunItem) -> None:
+    def __init__(
+        self,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        runItem: RunItem,
+    ) -> None:
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
         self.runItem = runItem
@@ -77,6 +89,16 @@ class WorkflowRunner:
                 )
             ],
         )
+
+        # Operate remote storage data.
+        if RemoteStorageController.use_remote_storage():
+            # creating remote_sync_status file.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
+                self.remote_bucket_name,
+                self.workspace_id,
+                self.unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
 
         background_tasks.add_task(
             snakemake_execute, self.workspace_id, self.unique_id, snakemake_params

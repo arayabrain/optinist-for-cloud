@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from subprocess import CalledProcessError
 
 import boto3
 
@@ -21,19 +22,16 @@ class S3StorageController(BaseRemoteStorageController):
     S3 Storage Controller
     """
 
-    # TODO: 認証情報の管理方式の組み込み
-    # - 現段階では、awscli で事前認証した状態で、利用可能としている
-
-    # TODO: S3 bucket は、最終的にユーザー単位での区画分けとなる想定
-    S3_STORAGE_URL = os.environ.get("S3_STORAGE_URL")
-    S3_STORAGE_BUCKET = S3_STORAGE_URL.split("//")[-1]
-
     S3_INPUT_DIR = "input"
     S3_OUTPUT_DIR = "output"
 
-    S3_STORAGE_OUTPUT_URL = f"{S3_STORAGE_URL}/{S3_OUTPUT_DIR}"
+    def __init__(self, bucket_name: str):
+        # init s3 bucket attributes
+        assert bucket_name, "S3 bucket name is not defined."
+        self.__s3_storage_bucket = bucket_name
+        self.__s3_storage_url = f"s3://{bucket_name}"
+        logger.debug(f"Init S3StorageController: {bucket_name=}")
 
-    def __init__(self):
         self.__s3_client = boto3.client("s3")
         self.__s3_resource = boto3.resource("s3")
 
@@ -49,7 +47,155 @@ class S3StorageController(BaseRemoteStorageController):
         )
         return experiment_remote_path
 
+    def create_bucket(self) -> bool:
+        """
+        Note:
+        - About public access settings for bucket
+            - Public access permission by ACL is not allowed after 2023/4.
+                - https://aws.amazon.com/jp/about-aws/whats-new/2022/12/
+                    amazon-s3-automatically-enable-block-public-access-disable-
+                    access-control-lists-buckets-april-2023/
+            - The above requires that public access be configured via bucket policy.
+        """
+
+        create_config = {
+            "LocationConstraint": os.environ.get("AWS_DEFAULT_REGION"),
+        }
+
+        self.__s3_client.create_bucket(
+            Bucket=self.__s3_storage_bucket,
+            CreateBucketConfiguration=create_config,
+        )
+
+        logger.info(f"S3 bucket was successfully created. [{self.__s3_storage_bucket}]")
+
+        return True
+
+    def delete_bucket(self, force_delete=False) -> str:
+        bucket = self.__s3_resource.Bucket(self.__s3_storage_bucket)
+
+        if force_delete:
+            bucket.objects.all().delete()
+
+        bucket.delete()
+
+        logger.info(f"S3 bucket was successfully deleted. [{self.__s3_storage_bucket}]")
+
+        return True
+
     def download_all_experiments_metas(self) -> bool:
+        # Whether to use AWS CLI to download user metadata
+        USE_AWS_CLI_FOR_DOWNLOADING = (
+            False  # Currently fixed as False (aws cli is not used)
+        )
+
+        if USE_AWS_CLI_FOR_DOWNLOADING:
+            self.download_all_experiments_metas_via_aws_cli()
+        else:
+            self.download_all_experiments_metas_via_boto3()
+
+    def download_all_experiments_metas_via_boto3(self) -> bool:
+        """
+        Download experiments metadata (yaml files) from S3
+
+        # Specifications
+        - Scan the directory structure on S3 below and download only the metadata files.
+          - Structure of data storage on S3
+            - bucket1
+              - outputs/
+                - workspace1
+                  - experiment1
+                    - experiment.yaml
+                    - workflow.yaml
+                    - ...
+                  - experiment2
+                  - ...
+                - workspace2
+                - ...
+            - bucket2
+            - ...
+        """
+
+        # Search workspaces directories listing on S3
+        workspaces_response = self.__s3_client.list_objects_v2(
+            Bucket=self.__s3_storage_bucket,
+            Prefix=f"{__class__.S3_OUTPUT_DIR}/",
+            Delimiter="/",
+        )
+
+        if "CommonPrefixes" not in workspaces_response:
+            logger.warning(
+                "No workspaces dirs found in S3 "
+                f"[{self.__s3_storage_bucket}][{__class__.S3_OUTPUT_DIR}]"
+            )
+            return False
+
+        # Extract workspace directory listing
+        workspaces_dirs = [v["Prefix"] for v in workspaces_response["CommonPrefixes"]]
+        logger.debug(
+            "Processing workspaces dirs: "
+            f"[{self.__s3_storage_bucket}] {workspaces_dirs}"
+        )
+
+        metadata_filenames = ["experiment.yaml", "workflow.yaml"]
+
+        # Scan workspaces directories
+        for workspace_dir in workspaces_dirs:
+            # Search experiments directories listing on S3
+            experiments_response = self.__s3_client.list_objects_v2(
+                Bucket=self.__s3_storage_bucket, Prefix=workspace_dir, Delimiter="/"
+            )
+
+            if "CommonPrefixes" not in experiments_response:
+                "No experiments dirs found in S3"
+                f"[{self.__s3_storage_bucket}][{workspace_dir}]"
+                continue
+
+            # Extract experiments directory listing
+            experiments_dirs = [
+                v["Prefix"] for v in experiments_response["CommonPrefixes"]
+            ]
+            logger.debug(
+                "Processing experiments dirs: "
+                f"[{self.__s3_storage_bucket}] {experiments_dirs}"
+            )
+
+            # Scan experiments directories
+            for experiment_dir in experiments_dirs:
+                # Download metadata files
+                for metadata_filename in metadata_filenames:
+                    file_remote_path = experiment_dir + metadata_filename
+                    flie_local_path = os.path.join(
+                        DIRPATH.DATA_DIR, experiment_dir, metadata_filename
+                    )
+
+                    if not os.path.isfile(flie_local_path):
+                        try:
+                            # create local directory
+                            os.makedirs(os.path.dirname(flie_local_path), exist_ok=True)
+
+                            # download file
+                            logger.debug(
+                                f"Downloading from S3 [{self.__s3_storage_bucket}]"
+                                f"[{file_remote_path} -> {flie_local_path}]"
+                            )
+                            self.__s3_client.download_file(
+                                self.__s3_storage_bucket,
+                                file_remote_path,
+                                flie_local_path,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to download [{self.__s3_storage_bucket}]"
+                                f"[{file_remote_path}]: {e}"
+                            )
+                    else:
+                        logger.debug(f"skip download: {file_remote_path}")
+                        continue
+
+        return True
+
+    def download_all_experiments_metas_via_aws_cli(self) -> bool:
         """
         NOTE:
           - この処理（config yaml files の S3 からのダウンロード）では、
@@ -59,10 +205,10 @@ class S3StorageController(BaseRemoteStorageController):
             1. boto3 では、取得対象のファイルリストの Server(AWS) Side でのfilterをサポートしていない（2024.7時点）
                 - 「Prefix配下のファイルリストをすべて取得 → Client Side でのFilter」の操作手順となる
             2. また 1. の操作を行う場合、Pagination の考慮も必要となる
-          - 上記のため、ファイルリストの取得には、aws cli を利用する形式としている
-            - aws cli (`aws s3 ls`) も、基本的には Server(AWS) Side のファイルリストfilterには非対応だが、
-              `aws s3 sync` の利用により、間接的に Server(AWS) Side での filterが利用可能
-            - なお aws cli の利用は暫定的な対応であり、最終的には boto3 でfilterを実現できることが望ましい
+          - 上記のため、ファイルリストの取得には、aws cli (`aws s3 sync`) を利用する形式を、この関数では用意している
+            - `aws s3 sync` の利用により、特定のファイルのみのfilterが、簡潔に利用可能となる
+            - しかし実際には、`aws s3 sync` も内部で Client Side でのFilter を行っている様であるため、性能面の課題は残る
+            - 最終的には、 S3 APIでsyncオプションが用意され、boto3 でfilterを実現可能となることが望ましい
         """
 
         # ----------------------------------------
@@ -87,29 +233,47 @@ class S3StorageController(BaseRemoteStorageController):
                 > ... (repeat above)
             """
             aws_s3_sync_command = (
-                f"aws s3 sync {__class__.S3_STORAGE_OUTPUT_URL} {tempdir} "
+                f"aws s3 sync {self.__s3_storage_url} {tempdir} "
                 "--dryrun --exclude '*' "
                 f"--include '*/{DIRPATH.EXPERIMENT_YML}' "
                 f"--include '*/{DIRPATH.WORKFLOW_YML}' "
             )
 
             # run aws cli command
-            cmd_ret = subprocess.run(
-                aws_s3_sync_command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            assert (
-                cmd_ret.returncode == 0
-            ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+            try:
+                cmd_ret = subprocess.run(
+                    aws_s3_sync_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env={
+                        "PATH": os.environ.get("PATH"),
+                        "AWS_ACCESS_KEY_ID": os.environ.get("AWS_ACCESS_KEY_ID"),
+                        "AWS_SECRET_ACCESS_KEY": os.environ.get(
+                            "AWS_SECRET_ACCESS_KEY"
+                        ),
+                        "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION"),
+                    },
+                )
+
+                assert (
+                    cmd_ret.returncode == 0
+                ), f"Fail aws_s3_sync_command. {cmd_ret.stderr}"
+
+            except CalledProcessError as e:
+                logger.error(e)
+                logger.error(e.stderr)
+                raise e
 
             # extract target files paths from command's stdout
-            target_files_str = re.sub(
-                "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
-            ).strip()
-            target_files = target_files_str.split("\n")
+            if len(str(cmd_ret.stdout).strip()) > 0:
+                target_files_str = re.sub(
+                    "^.*(s3://[^ ]*) .*$", r"\1", cmd_ret.stdout, flags=(re.MULTILINE)
+                ).strip()
+                target_files = target_files_str.split("\n")
+            else:
+                target_files = []
 
             logger.debug(
                 "aws s3 sync result: [returncode:%d][len:%d]",
@@ -118,7 +282,8 @@ class S3StorageController(BaseRemoteStorageController):
             )
 
         logger.debug(
-            "download all medata from remote storage (s3). [count: %d]",
+            "download all medata from remote storage (s3). [%s] [count: %d]",
+            self.__s3_storage_bucket,
             len(target_files),
         )
 
@@ -130,12 +295,10 @@ class S3StorageController(BaseRemoteStorageController):
         target_files_count = len(target_files)
         for index, remote_config_yml_abs_path in enumerate(target_files):
             relative_config_yml_path = remote_config_yml_abs_path.replace(
-                f"{__class__.S3_STORAGE_OUTPUT_URL}/", ""
+                f"{self.__s3_storage_url}/", ""
             )
-            remote_config_yml_path = (
-                f"{__class__.S3_OUTPUT_DIR}/{relative_config_yml_path}"
-            )
-            local_config_yml_path = f"{DIRPATH.OUTPUT_DIR}/{relative_config_yml_path}"
+            remote_config_yml_path = relative_config_yml_path
+            local_config_yml_path = f"{DIRPATH.DATA_DIR}/{relative_config_yml_path}"
             local_config_yml_dir = os.path.dirname(local_config_yml_path)
 
             if not os.path.isfile(local_config_yml_path):
@@ -148,7 +311,7 @@ class S3StorageController(BaseRemoteStorageController):
 
                 # do download config file
                 self.__s3_client.download_file(
-                    __class__.S3_STORAGE_BUCKET,
+                    self.__s3_storage_bucket,
                     remote_config_yml_path,
                     local_config_yml_path,
                 )
@@ -170,7 +333,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "download data from remote storage (S3). [%s -> %s]",
+            "download data from remote storage (S3). [%s] [%s -> %s]",
+            self.__s3_storage_bucket,
             experiment_local_path,
             experiment_remote_path,
         )
@@ -184,14 +348,14 @@ class S3StorageController(BaseRemoteStorageController):
 
         # request s3 list_objects
         s3_list_objects = self.__s3_client.list_objects_v2(
-            Bucket=__class__.S3_STORAGE_BUCKET, Prefix=experiment_remote_path
+            Bucket=self.__s3_storage_bucket, Prefix=experiment_remote_path
         )
 
         # check copy source directory
         if not s3_list_objects or s3_list_objects.get("KeyCount", 0) == 0:
             logger.warn(
-                "remote data is not exists. [%s][%s]",
-                __class__.S3_STORAGE_BUCKET,
+                "remote data is not exists. [%s] [%s]",
+                self.__s3_storage_bucket,
                 experiment_remote_path,
             )
             return False
@@ -217,7 +381,8 @@ class S3StorageController(BaseRemoteStorageController):
             local_abs_dir = os.path.dirname(local_abs_path)
 
             logger.debug(
-                f"download data from S3 ({index+1}/{target_files_count}) "
+                f"download data from S3 [{self.__s3_storage_bucket}] "
+                f"({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
             )
 
@@ -227,12 +392,12 @@ class S3StorageController(BaseRemoteStorageController):
 
             # do download experiment files
             self.__s3_client.download_file(
-                __class__.S3_STORAGE_BUCKET, s3_file_path, local_abs_path
+                self.__s3_storage_bucket, s3_file_path, local_abs_path
             )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            self.__s3_storage_bucket, workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
         )
 
         return True
@@ -247,7 +412,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "upload data to remote storage (S3). [%s -> %s]",
+            "upload data to remote storage (S3). [%s] [%s -> %s]",
+            self.__s3_storage_bucket,
             experiment_local_path,
             experiment_remote_path,
         )
@@ -294,18 +460,19 @@ class S3StorageController(BaseRemoteStorageController):
             adjusted_target_files
         ):
             logger.debug(
-                f"upload data to S3 ({index+1}/{target_files_count}) "
+                f"upload data to S3 [{self.__s3_storage_bucket}] "
+                f"({index+1}/{target_files_count}) "
                 f"{s3_file_path} ({file_size:,} bytes)"
             )
 
             # do upload experiment files
             self.__s3_client.upload_file(
-                local_abs_path, __class__.S3_STORAGE_BUCKET, s3_file_path
+                local_abs_path, self.__s3_storage_bucket, s3_file_path
             )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.UPLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            self.__s3_storage_bucket, workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )
 
         return True
@@ -317,7 +484,8 @@ class S3StorageController(BaseRemoteStorageController):
         )
 
         logger.debug(
-            "delete data from remote storage (s3). [%s]",
+            "delete data from remote storage (s3). [%s] [%s]",
+            self.__s3_storage_bucket,
             experiment_remote_path,
         )
 
@@ -326,7 +494,7 @@ class S3StorageController(BaseRemoteStorageController):
         # ----------------------------------------
 
         # do delete data from remote storage
-        self.__s3_resource.Bucket(__class__.S3_STORAGE_BUCKET).objects.filter(
+        self.__s3_resource.Bucket(self.__s3_storage_bucket).objects.filter(
             Prefix=experiment_remote_path
         ).delete()
 

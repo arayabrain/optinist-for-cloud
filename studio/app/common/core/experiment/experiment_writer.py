@@ -77,7 +77,9 @@ class ExptConfigWriter:
 
     def add_run_info(self) -> ExptConfig:
         return (
-            self.builder.set_started_at(datetime.now().strftime(DATE_FORMAT))  # 時間を更新
+            self.builder.set_started_at(
+                datetime.now().strftime(DATE_FORMAT)
+            )  # Update time
             .set_success("running")
             .build()
         )
@@ -122,9 +124,11 @@ class ExptConfigWriter:
 class ExptDataWriter:
     def __init__(
         self,
+        remote_bucket_name: str,
         workspace_id: str,
         unique_id: str,
     ):
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
 
@@ -137,7 +141,8 @@ class ExptDataWriter:
 
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
-            result = RemoteStorageController().delete_experiment(
+            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
+            result = remote_storage_controller.delete_experiment(
                 self.workspace_id, self.unique_id
             )
 
@@ -164,7 +169,8 @@ class ExptDataWriter:
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
             # upload latest EXPERIMENT_YML
-            RemoteStorageController().upload_experiment(
+            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
+            remote_storage_controller.upload_experiment(
                 self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
             )
 

@@ -21,6 +21,7 @@ class RemoteStorageType(Enum):
 class RemoteSyncStatus(Enum):
     OK = "OK"
     NG = "NG"
+    PENDING = "PENDING"
 
 
 class RemoteSyncAction(Enum):
@@ -65,7 +66,12 @@ class RemoteSyncStatusFileUtil:
 
     @classmethod
     def create_sync_status_file(
-        cls, workspace_id: str, unique_id: str, remote_sync_action: RemoteSyncAction
+        cls,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        remote_sync_action: RemoteSyncAction,
+        status: RemoteSyncStatus,
     ) -> None:
         """
         create remote storage sync status file.
@@ -76,12 +82,45 @@ class RemoteSyncStatusFileUtil:
 
         with open(remote_sync_status_file_path, "w") as f:
             sync_status_data = {
+                "remote_bucket_name": remote_bucket_name,
                 "remote_storage_type": RemoteStorageType.get_activated_type(),
                 "action": remote_sync_action.value,
-                "status": RemoteSyncStatus.OK.value,
+                "status": status.value,
                 "timestamp": datetime.datetime.now(),
             }
             json.dump(sync_status_data, f, default=str, indent=2)
+
+    @classmethod
+    def create_sync_status_file_for_success(
+        cls,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        remote_sync_action: RemoteSyncAction,
+    ) -> None:
+        cls.create_sync_status_file(
+            remote_bucket_name,
+            workspace_id,
+            unique_id,
+            remote_sync_action,
+            RemoteSyncStatus.OK,
+        )
+
+    @classmethod
+    def create_sync_status_file_for_pending(
+        cls,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        remote_sync_action: RemoteSyncAction,
+    ) -> None:
+        cls.create_sync_status_file(
+            remote_bucket_name,
+            workspace_id,
+            unique_id,
+            remote_sync_action,
+            RemoteSyncStatus.PENDING,
+        )
 
     @classmethod
     def delete_sync_status_file(cls, workspace_id: str, unique_id: str) -> None:
@@ -94,6 +133,25 @@ class RemoteSyncStatusFileUtil:
 
         if os.path.isfile(remote_sync_status_file_path):
             os.remove(remote_sync_status_file_path)
+
+    @classmethod
+    def get_remote_bucket_name(cls, workspace_id: str, unique_id: str) -> None:
+        """
+        get remote_bucket_name from sync status file.
+        """
+        remote_sync_status_file_path = cls.make_sync_status_file_path(
+            workspace_id, unique_id
+        )
+
+        remote_bucket_name = None
+        if os.path.isfile(remote_sync_status_file_path):
+            with open(remote_sync_status_file_path) as f:
+                sync_status_data = json.load(f)
+                remote_bucket_name = sync_status_data.get("remote_bucket_name")
+
+        assert remote_bucket_name, f"Invalid remote_bucket_name: {remote_bucket_name}"
+
+        return remote_bucket_name
 
 
 class BaseRemoteStorageController(metaclass=ABCMeta):
@@ -153,8 +211,8 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
 
 
 class RemoteStorageController(BaseRemoteStorageController):
-    def __init__(self):
-        remote_storage_type = os.environ.get("REMOTE_STORAGE_TYPE")
+    def __init__(self, bucket_name: str):
+        remote_storage_type = RemoteStorageType.get_activated_type()
 
         if remote_storage_type == RemoteStorageType.MOCK.value:
             from studio.app.common.core.storage.mock_storage_controller import (
@@ -167,7 +225,7 @@ class RemoteStorageController(BaseRemoteStorageController):
                 S3StorageController,
             )
 
-            self.__controller = S3StorageController()
+            self.__controller = S3StorageController(bucket_name)
         else:
             assert False, f"Invalid remote_storage_type: {remote_storage_type}"
 
@@ -176,6 +234,43 @@ class RemoteStorageController(BaseRemoteStorageController):
 
     def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
+
+    @staticmethod
+    def create_user_bucket_name(id: int, prefix: str = "optinist-user") -> str:
+        import hashlib
+        import time
+
+        current_time = time.time()
+        hash_src = f"{id}-{current_time}"
+        hash_value = hashlib.md5(hash_src.encode()).hexdigest()
+        hash_value = hash_value[0:10]
+        new_name = f"{prefix}-{id}-{hash_value}"
+
+        return new_name
+
+    def create_bucket(self) -> bool:
+        remote_storage_type = RemoteStorageType.get_activated_type()
+        if remote_storage_type == RemoteStorageType.S3.value:
+            self.__controller.create_bucket()
+        else:
+            assert False, (
+                "This remote_storage_type "
+                f"does not support bucket: {remote_storage_type}"
+            )
+
+        return True
+
+    def delete_bucket(self, force_delete=False) -> bool:
+        remote_storage_type = RemoteStorageType.get_activated_type()
+        if remote_storage_type == RemoteStorageType.S3.value:
+            self.__controller.delete_bucket(force_delete)
+        else:
+            assert False, (
+                "This remote_storage_type "
+                f"does not support bucket: {remote_storage_type}"
+            )
+
+        return True
 
     def download_all_experiments_metas(self) -> bool:
         return self.__controller.download_all_experiments_metas()

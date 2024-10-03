@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.workspace.workspace_dependencies import is_workspace_owner
 from studio.app.optinist.core.edit_ROI import EditROI, EditRoiUtils
 from studio.app.optinist.schemas.roi import RoiList, RoiPos, RoiStatus
@@ -51,8 +52,11 @@ async def delete_roi(filepath: str, roi_list: RoiList):
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def commit_edit(filepath: str):
-    EditRoiUtils.execute(filepath)
+async def commit_edit(
+    filepath: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    EditRoiUtils.execute(filepath, remote_bucket_name)
     return True
 
 

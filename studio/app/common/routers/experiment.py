@@ -5,6 +5,7 @@ from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptExtConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
@@ -58,6 +59,11 @@ async def get_experiments(workspace_id: str):
                 # extend config to ExptExtConfig
                 config = ExptExtConfig(**config.__dict__)
                 config.is_remote_synced = is_remote_synced
+            else:
+                # extend config to ExptExtConfig
+                # Always flag as synchronized if remote storage is unused.
+                config = ExptExtConfig(**config.__dict__)
+                config.is_remote_synced = True
 
             exp_config[config.unique_id] = config
         except Exception as e:
@@ -72,8 +78,14 @@ async def get_experiments(workspace_id: str):
     response_model=ExptConfig,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def rename_experiment(workspace_id: str, unique_id: str, item: RenameItem):
+async def rename_experiment(
+    workspace_id: str,
+    unique_id: str,
+    item: RenameItem,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     config = ExptDataWriter(
+        remote_bucket_name,
         workspace_id,
         unique_id,
     ).rename(item.new_name)
@@ -88,9 +100,14 @@ async def rename_experiment(workspace_id: str, unique_id: str, item: RenameItem)
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def delete_experiment(workspace_id: str, unique_id: str):
+async def delete_experiment(
+    workspace_id: str,
+    unique_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     try:
         ExptDataWriter(
+            remote_bucket_name,
             workspace_id,
             unique_id,
         ).delete_data()
@@ -105,10 +122,15 @@ async def delete_experiment(workspace_id: str, unique_id: str):
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def delete_experiment_list(workspace_id: str, deleteItem: DeleteItem):
+async def delete_experiment_list(
+    workspace_id: str,
+    deleteItem: DeleteItem,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     try:
         for unique_id in deleteItem.uidList:
             ExptDataWriter(
+                remote_bucket_name,
                 workspace_id,
                 unique_id,
             ).delete_data()
@@ -137,8 +159,12 @@ async def download_config_experiment(workspace_id: str, unique_id: str):
     response_model=bool,
     dependencies=[Depends(is_workspace_available)],
 )
-async def sync_remote_experiment(workspace_id: str, unique_id: str):
-    remote_storage_controller = RemoteStorageController()
+async def sync_remote_experiment(
+    workspace_id: str,
+    unique_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    remote_storage_controller = RemoteStorageController(remote_bucket_name)
     result = remote_storage_controller.download_experiment(workspace_id, unique_id)
 
     if result:

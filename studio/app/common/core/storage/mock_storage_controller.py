@@ -107,7 +107,7 @@ class MockStorageController(BaseRemoteStorageController):
         )
 
         if not os.path.isdir(experiment_remote_path):
-            logger.warn("remote path is not exists. [%s]", experiment_remote_path)
+            logger.warning("remote path is not exists. [%s]", experiment_remote_path)
             return False
 
         logger.debug(
@@ -133,8 +133,8 @@ class MockStorageController(BaseRemoteStorageController):
         )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            None, workspace_id, unique_id, RemoteSyncAction.DOWNLOAD
         )
 
         return True
@@ -185,8 +185,8 @@ class MockStorageController(BaseRemoteStorageController):
             )
 
         # creating remote_sync_status file.
-        RemoteSyncStatusFileUtil.create_sync_status_file(
-            workspace_id, unique_id, RemoteSyncAction.UPLOAD
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+            None, workspace_id, unique_id, RemoteSyncAction.UPLOAD
         )
 
         return True
