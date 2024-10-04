@@ -166,7 +166,6 @@ def main(develop_mode: bool = False):
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
     parser.add_argument("--check-load-balancer", action="store_true")
-    parser.add_argument("--check-load-balancer", action="store_true")
     args = parser.parse_args()
 
     log_config_file = (
