@@ -2,6 +2,7 @@ version: "3"
 
 services:
   studio:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: studio/config/docker/Dockerfile

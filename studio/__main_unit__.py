@@ -1,6 +1,9 @@
 import argparse
+import os
 from contextlib import asynccontextmanager
+from typing import Any, Dict
 
+import aiohttp
 import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -35,12 +38,13 @@ from studio.app.common.routers import (
 from studio.app.dir_path import DIRPATH
 from studio.app.optinist.routers import hdf5, mat, nwb, roi
 
+logger = AppLogger.get_logger()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup event
     mode = "standalone" if MODE.IS_STANDALONE else "multiuser"
-    logger = AppLogger.get_logger()
     logger.info(f'"Studio" application startup complete. [mode: {mode}]')
 
     yield
@@ -50,6 +54,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(docs_url="/docs", openapi_url="/openapi", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health_check():
+    try:
+        return {"status": "healthy"}
+    except Exception as e:
+        logger.error(f"Exception in health check: {str(e)}")
+        return {
+            "status": "warning",
+            "details": {"application": "running", "error": str(e)},
+        }
+
 
 add_pagination(app)
 
@@ -118,11 +135,37 @@ async def index(request: Request):
     return await root(request)
 
 
+async def check_load_balancer() -> Dict[str, Any]:
+    server_host = os.getenv("AWS_SERVER_HOST", "localhost")
+    logger.info(f"Attempting to connect to load balancer at: http://{server_host}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{server_host}", timeout=5) as response:
+                logger.info(f"Load balancer response status: {response.status}")
+                # Consider any response as a successful connection
+                logger.info("Load balancer check passed (connection established)")
+                return {
+                    "status": "operational",
+                    "details": {
+                        "status_code": response.status,
+                        "message": "Load balancer connected, app may still be starting",
+                    },
+                }
+    except aiohttp.ClientError as e:
+        logger.error(f"Load balancer connection error: {str(e)}")
+        return {"status": "error", "details": {"error": str(e)}}
+    except Exception as e:
+        logger.exception(f"Unexpected error in check_load_balancer: {str(e)}")
+        return {"status": "error", "details": {"error": f"Unexpected error: {str(e)}"}}
+
+
 def main(develop_mode: bool = False):
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
+    parser.add_argument("--check-load-balancer", action="store_true")
     args = parser.parse_args()
 
     log_config_file = (
@@ -130,6 +173,15 @@ def main(develop_mode: bool = False):
         if MODE.IS_STANDALONE
         else f"{DIRPATH.CONFIG_DIR}/logging.multiuser.yaml"
     )
+
+    logger.info(f"Starting Optinist server on {args.host}:{args.port}")
+
+    if args.check_load_balancer:
+        import asyncio
+
+        lb_status = asyncio.run(check_load_balancer())
+        print(f"Load balancer status: {lb_status}")
+        return
 
     if develop_mode:
         reload_options = {"reload_dirs": ["studio"]} if args.reload else {}
