@@ -166,6 +166,7 @@ def main(develop_mode: bool = False):
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
     parser.add_argument("--check-load-balancer", action="store_true")
+    parser.add_argument("--check-load-balancer", action="store_true")
     args = parser.parse_args()
 
     log_config_file = (
@@ -173,6 +174,15 @@ def main(develop_mode: bool = False):
         if MODE.IS_STANDALONE
         else f"{DIRPATH.CONFIG_DIR}/logging.multiuser.yaml"
     )
+
+    logger.info(f"Starting Optinist server on {args.host}:{args.port}")
+
+    if args.check_load_balancer:
+        import asyncio
+
+        lb_status = asyncio.run(check_load_balancer())
+        print(f"Load balancer status: {lb_status}")
+        return
 
     logger.info(f"Starting Optinist server on {args.host}:{args.port}")
 
