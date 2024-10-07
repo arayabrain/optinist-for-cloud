@@ -47,5 +47,5 @@ COPY sample_data /app/sample_data
 COPY main.py alembic.ini ./
 
 # Copy the cloud-startup.sh script
-COPY studio/app/cloud-startup.sh ./
+COPY cloud-startup.sh ./
 RUN chmod +x cloud-startup.sh
