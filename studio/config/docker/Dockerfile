@@ -48,8 +48,3 @@ COPY main.py alembic.ini ./
 # Copy the cloud-startup.sh script
 COPY studio/app/cloud-startup.sh ./
 RUN chmod +x cloud-startup.sh
-
-EXPOSE 8000
-
-# Set the entrypoint to run cloud-startup.sh
-ENTRYPOINT ["./cloud-startup.sh"]
