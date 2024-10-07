@@ -26,13 +26,13 @@ alembic upgrade head
 # Check load balancer (consider removing this if not necessary)
 poetry run python main.py --check-load-balancer
 
-echo "Host: $HOST"
-echo "Port: $PORT"
+echo "Host: $BACKEND_HOST"
+echo "Port: $BACKEND_PORT"
 
-if [ -z "$HOST" ] || [ -z "$PORT" ]; then
+if [ -z "$BACKEND_HOST" ] || [ -z "$BACKEND_PORT" ]; then
     echo "Please provide HOST and PORT environment variables"
     exit 1
 fi
 
 # Start the application
-exec poetry run python main.py --host="$HOST" --port="$PORT"
+exec poetry run python main.py --host="$BACKEND_HOST" --port="$BACKEND_PORT"
