@@ -24,13 +24,24 @@ echo 'Database connection successful'
 alembic upgrade head
 
 # Check load balancer (consider removing this if not necessary)
-poetry run python main.py --check-load-balancer
+if [ -n "$AWS_SERVICE_URL" ]; then
+    response=$(curl -s -o /dev/null --max-time 10 -w "%{http_code}" "$AWS_SERVICE_URL")
+    if [ "$response" -eq 200 ]; then
+        echo "Load balancer connected, app may still be starting. Status code: $response"
+    else
+        echo "Load balancer request error.. Status code: $response"
+        exit 1
+    fi
+else
+    echo "Please provide 'AWS_SERVICE_URL' environment variables"
+    exit 1
+fi
 
 echo "Host: $BACKEND_HOST"
 echo "Port: $BACKEND_PORT"
 
 if [ -z "$BACKEND_HOST" ] || [ -z "$BACKEND_PORT" ]; then
-    echo "Please provide HOST and PORT environment variables"
+    echo "Please provide 'BACKEND_HOST' and 'BACKEND_PORT' environment variables"
     exit 1
 fi
 
