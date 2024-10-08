@@ -35,12 +35,13 @@ from studio.app.common.routers import (
 from studio.app.dir_path import DIRPATH
 from studio.app.optinist.routers import hdf5, mat, nwb, roi
 
+logger = AppLogger.get_logger()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup event
     mode = "standalone" if MODE.IS_STANDALONE else "multiuser"
-    logger = AppLogger.get_logger()
     logger.info(f'"Studio" application startup complete. [mode: {mode}]')
 
     yield
@@ -50,6 +51,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(docs_url="/docs", openapi_url="/openapi", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health_check():
+    try:
+        return {"status": "healthy"}
+    except Exception as e:
+        logger.error(f"Exception in health check: {str(e)}")
+        return {
+            "status": "warning",
+            "details": {"application": "running", "error": str(e)},
+        }
+
 
 add_pagination(app)
 
@@ -130,6 +144,8 @@ def main(develop_mode: bool = False):
         if MODE.IS_STANDALONE
         else f"{DIRPATH.CONFIG_DIR}/logging.multiuser.yaml"
     )
+
+    logger.info(f"Starting Optinist server on {args.host}:{args.port}")
 
     if develop_mode:
         reload_options = {"reload_dirs": ["studio"]} if args.reload else {}

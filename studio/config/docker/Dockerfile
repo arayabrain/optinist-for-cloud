@@ -4,7 +4,8 @@ WORKDIR /app
 
 # install default packages
 RUN apt-get --allow-releaseinfo-change update && \
-    apt-get install --no-install-recommends -y sudo procps iproute2 iputils-ping wget unzip less vim
+    apt-get install --no-install-recommends -y sudo procps iproute2 iputils-ping telnet wget curl unzip less vim \
+		default-mysql-client
 
 # install conda & packages
 RUN mkdir -p /opt/miniconda3 && \
@@ -45,4 +46,6 @@ COPY studio /app/studio
 COPY sample_data /app/sample_data
 COPY main.py alembic.ini ./
 
-EXPOSE 8000
+# Copy the cloud-startup.sh script
+COPY cloud-startup.sh ./
+RUN chmod +x cloud-startup.sh
