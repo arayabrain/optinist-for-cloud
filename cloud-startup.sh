@@ -25,13 +25,20 @@ alembic upgrade head
 
 # Check load balancer (consider removing this if not necessary)
 if [ -n "$AWS_SERVICE_URL" ]; then
-    response=$(curl -s -o /dev/null --max-time 10 -w "%{http_code}" "$AWS_SERVICE_URL")
-    if [ "$response" -eq 200 ]; then
-        echo "Load balancer connected, app may still be starting. Status code: $response"
-    else
-        echo "Load balancer request error.. Status code: $response"
-        exit 1
-    fi
+    (
+        max_tries=30
+        counter=0
+        until curl -s -o /dev/null --max-time 10 "$AWS_SERVICE_URL"
+        do
+            sleep 10
+            [[ counter -eq $max_tries ]] && echo "Load balancer not ready after 5 minutes" && break
+            echo "Attempt $counter: Waiting for load balancer..."
+            ((counter++))
+        done
+        if [ $counter -lt $max_tries ]; then
+            echo "Load balancer is ready"
+        fi
+    ) &
 else
     echo "Please provide 'AWS_SERVICE_URL' environment variables"
     exit 1
