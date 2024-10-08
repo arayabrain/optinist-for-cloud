@@ -76,7 +76,6 @@ ruamel-yaml = "^0.18.5"
 pymatreader = "^0.0.32"
 xmltodict = "*"
 boto3 = "^1.34.122"
-aiohttp = "^3.7.4"
 
 [tool.poetry.group.dev]
 optional = true
