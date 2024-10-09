@@ -72,7 +72,7 @@ async def run_result(
     nodeDict: NodeItem,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    return WorkflowResult(remote_bucket_name, workspace_id, uid).get(
+    return await WorkflowResult(remote_bucket_name, workspace_id, uid).get(
         nodeDict.pendingNodeIdList
     )
 

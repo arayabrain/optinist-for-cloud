@@ -210,7 +210,7 @@ class EditROI:
         self.__update_pickle_for_roi_edition(self.tmp_pickle_file_path, info)
         self.__save_json(info)
 
-    def commit(self):
+    async def commit(self):
         if "suite2p" in self.function_id:
             from studio.app.optinist.core.edit_ROI.wrappers.suite2p_edit_roi import (
                 commit_edit as suite2p_commit,
@@ -288,7 +288,7 @@ class EditROI:
 
             # upload update files
             remote_storage_controller = RemoteStorageController(remote_bucket_name)
-            remote_storage_controller.upload_experiment(
+            await remote_storage_controller.upload_experiment(
                 workspace_id, unique_id, upload_target_files
             )
 

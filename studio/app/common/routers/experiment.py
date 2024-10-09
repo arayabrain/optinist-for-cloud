@@ -84,7 +84,7 @@ async def rename_experiment(
     item: RenameItem,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    config = ExptDataWriter(
+    config = await ExptDataWriter(
         remote_bucket_name,
         workspace_id,
         unique_id,
@@ -106,7 +106,7 @@ async def delete_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        ExptDataWriter(
+        await ExptDataWriter(
             remote_bucket_name,
             workspace_id,
             unique_id,
@@ -129,7 +129,7 @@ async def delete_experiment_list(
 ):
     try:
         for unique_id in deleteItem.uidList:
-            ExptDataWriter(
+            await ExptDataWriter(
                 remote_bucket_name,
                 workspace_id,
                 unique_id,
@@ -165,7 +165,9 @@ async def sync_remote_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     remote_storage_controller = RemoteStorageController(remote_bucket_name)
-    result = remote_storage_controller.download_experiment(workspace_id, unique_id)
+    result = await remote_storage_controller.download_experiment(
+        workspace_id, unique_id
+    )
 
     if result:
         return True

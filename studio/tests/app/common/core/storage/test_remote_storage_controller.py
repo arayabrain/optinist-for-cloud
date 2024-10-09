@@ -8,8 +8,11 @@ Note of this file:
 import os
 import shutil
 
+import pytest
+
 from studio.app.common.core.storage.remote_storage_controller import (  # noqa: E402
     RemoteStorageController,
+    RemoteStorageType,
     RemoteSyncAction,
     RemoteSyncStatusFileUtil,
 )
@@ -64,23 +67,28 @@ def test_RemoteSyncStatusFileUtil():
     RemoteSyncStatusFileUtil.delete_sync_status_file(workspace_id, unique_id)
 
 
-def test_RemoteStorageController_crud_bucket():
+@pytest.mark.asyncio
+async def test_RemoteStorageController_crud_bucket():
     if not RemoteStorageController.use_remote_storage():
         print("RemoteStorageController is available, skip this test.")
+        return
+    elif RemoteStorageType.get_activated_type() != RemoteStorageType.S3.value:
+        print("RemoteStorageType is not covered, skip this test.")
         return
 
     new_bucket_name = "test-optinist-dummy-bucket-0123"
 
     remote_storage_controller = RemoteStorageController(new_bucket_name)
 
-    result = remote_storage_controller.create_bucket()
+    result = await remote_storage_controller.create_bucket()
     assert result, f"create bucket failed. [{new_bucket_name}]"
 
-    result = remote_storage_controller.delete_bucket(force_delete=True)
+    result = await remote_storage_controller.delete_bucket(force_delete=True)
     assert result, f"delete bucket failed. [{new_bucket_name}]"
 
 
-def test_RemoteStorageController_upload():
+@pytest.mark.asyncio
+async def test_RemoteStorageController_upload():
     if not RemoteStorageController.use_remote_storage():
         print("RemoteStorageController is available, skip this test.")
         return
@@ -89,16 +97,19 @@ def test_RemoteStorageController_upload():
 
     # upload specific files to remote
     target_files = [DIRPATH.EXPERIMENT_YML, DIRPATH.WORKFLOW_YML]
-    remote_storage_controller.upload_experiment(workspace_id, unique_id, target_files)
+    await remote_storage_controller.upload_experiment(
+        workspace_id, unique_id, target_files
+    )
 
     # delete remote files
-    remote_storage_controller.delete_experiment(workspace_id, unique_id)
+    await remote_storage_controller.delete_experiment(workspace_id, unique_id)
 
     # upload all files to remote
-    remote_storage_controller.upload_experiment(workspace_id, unique_id)
+    await remote_storage_controller.upload_experiment(workspace_id, unique_id)
 
 
-def test_RemoteStorageController_download():
+@pytest.mark.asyncio
+async def test_RemoteStorageController_download():
     if not RemoteStorageController.use_remote_storage():
         print("RemoteStorageController is available, skip this test.")
         return
@@ -115,7 +126,7 @@ def test_RemoteStorageController_download():
         shutil.rmtree(test_data_output_path)
 
     # download remote metadata files
-    remote_storage_controller.download_all_experiments_metas()
+    await remote_storage_controller.download_all_experiments_metas()
     assert os.path.isfile(
         test_data_output_experiment_yaml
     ), "download_all_experiments_metas failed.."
@@ -125,7 +136,7 @@ def test_RemoteStorageController_download():
         shutil.rmtree(test_data_output_path)
 
     # download remote files
-    remote_storage_controller.download_experiment(workspace_id, unique_id)
+    await remote_storage_controller.download_experiment(workspace_id, unique_id)
     assert os.path.isfile(
         test_data_output_experiment_yaml
     ), "download_experiment failed.."
