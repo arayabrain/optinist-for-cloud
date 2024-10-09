@@ -117,7 +117,7 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
         user_db.__dict__["role_id"] = data.role_id
 
         # create remote_storage bucket
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             new_bucket_name = RemoteStorageController.create_user_bucket_name(
                 id=user_db.id
             )
@@ -205,7 +205,7 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
         firebase_auth.delete_user(user_db.uid)
 
         # delete remote_storage bucket
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             remote_storage_controller = RemoteStorageController(
                 user_db.remote_bucket_name
             )

@@ -145,7 +145,7 @@ async def copy_sample_data(
         shutil.copytree(sample_data_dir, user_dir, dirs_exist_ok=True)
 
     # Operate remote storage data.
-    if RemoteStorageController.use_remote_storage():
+    if RemoteStorageController.is_available():
         from glob import glob
 
         # Get list of sample data names.
@@ -176,7 +176,7 @@ async def force_sync_unsynced_experiment(
     """
     Utility function: If experiment is unsynchronized, perform synchronization
     """
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         return False
 
     # check remote synced status.

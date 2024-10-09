@@ -20,7 +20,7 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
         token, user = await auth.authenticate_user(db, user_data)
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # Immediately after successful login,
             #   download all experiments metadata.
             remote_storage_controller = RemoteStorageController(user.remote_bucket_name)

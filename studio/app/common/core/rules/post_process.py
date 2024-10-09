@@ -47,7 +47,7 @@ class PostProcessRunner:
             Runner.read_input_info(__rule.input)
 
             # Operate remote storage.
-            if RemoteStorageController.use_remote_storage():
+            if RemoteStorageController.is_available():
                 # Get workspace_id, unique_id from output file path
                 ids = ExptOutputPathIds(dirname(__rule.output))
                 workspace_id = ids.workspace_id

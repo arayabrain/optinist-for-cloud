@@ -24,7 +24,7 @@ unique_id = "remote_storage_test"
 
 
 def test_initialize():
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
 
@@ -44,7 +44,7 @@ def test_initialize():
 
 
 def test_RemoteSyncStatusFileUtil():
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
 
@@ -69,10 +69,10 @@ def test_RemoteSyncStatusFileUtil():
 
 @pytest.mark.asyncio
 async def test_RemoteStorageController_crud_bucket():
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
-    elif RemoteStorageType.get_activated_type() != RemoteStorageType.S3.value:
+    elif RemoteStorageType.get_activated_type() != RemoteStorageType.S3:
         print("RemoteStorageType is not covered, skip this test.")
         return
 
@@ -89,7 +89,7 @@ async def test_RemoteStorageController_crud_bucket():
 
 @pytest.mark.asyncio
 async def test_RemoteStorageController_upload():
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
 
@@ -110,7 +110,7 @@ async def test_RemoteStorageController_upload():
 
 @pytest.mark.asyncio
 async def test_RemoteStorageController_download():
-    if not RemoteStorageController.use_remote_storage():
+    if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
 

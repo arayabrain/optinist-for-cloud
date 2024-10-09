@@ -91,7 +91,7 @@ class WorkflowRunner:
         )
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # creating remote_sync_status file.
             RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
                 self.remote_bucket_name,

@@ -35,13 +35,13 @@ class MockStorageController(BaseRemoteStorageController):
         create_directory(__class__.MOCK_INPUT_DIR)
         create_directory(__class__.MOCK_OUTPUT_DIR)
 
-    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_local_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
         )
         return experiment_local_path
 
-    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_remote_path = join_filepath(
             [__class__.MOCK_OUTPUT_DIR, workspace_id, unique_id]
         )
@@ -101,8 +101,10 @@ class MockStorageController(BaseRemoteStorageController):
 
     async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
-        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_local_path = self._make_experiment_local_path(
+            workspace_id, unique_id
+        )
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 
@@ -143,8 +145,10 @@ class MockStorageController(BaseRemoteStorageController):
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
         # make paths
-        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_local_path = self._make_experiment_local_path(
+            workspace_id, unique_id
+        )
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 
@@ -193,7 +197,7 @@ class MockStorageController(BaseRemoteStorageController):
 
     async def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 

@@ -38,7 +38,7 @@ async def get_experiments(workspace_id: str):
         join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML])
     )
 
-    use_remote_storage = RemoteStorageController.use_remote_storage()
+    use_remote_storage = RemoteStorageController.is_available()
 
     for path in config_paths:
         try:

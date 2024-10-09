@@ -13,9 +13,18 @@ class RemoteStorageType(Enum):
     MOCK = "1"
     S3 = "2"
 
-    @staticmethod
-    def get_activated_type():
-        return os.environ.get("REMOTE_STORAGE_TYPE", RemoteStorageType.NO_USE.value)
+    @classmethod
+    def get_activated_type(cls) -> "RemoteStorageType":
+        remote_storage_type_str = os.environ.get(
+            "REMOTE_STORAGE_TYPE", cls.NO_USE.value
+        )
+
+        try:
+            result = RemoteStorageType(remote_storage_type_str)
+        except ValueError:
+            result = RemoteStorageType.NO_USE
+
+        return result
 
 
 class RemoteSyncStatus(Enum):
@@ -83,7 +92,7 @@ class RemoteSyncStatusFileUtil:
         with open(remote_sync_status_file_path, "w") as f:
             sync_status_data = {
                 "remote_bucket_name": remote_bucket_name,
-                "remote_storage_type": RemoteStorageType.get_activated_type(),
+                "remote_storage_type": RemoteStorageType.get_activated_type().value,
                 "action": remote_sync_action.value,
                 "status": status.value,
                 "timestamp": datetime.datetime.now(),
@@ -155,26 +164,14 @@ class RemoteSyncStatusFileUtil:
 
 
 class BaseRemoteStorageController(metaclass=ABCMeta):
-    @staticmethod
-    def use_remote_storage():
-        """
-        Determine if remote storage is used
-        """
-        remote_storage_type = RemoteStorageType.get_activated_type()
-        use_remote_storage = remote_storage_type in [
-            RemoteStorageType.MOCK.value,
-            RemoteStorageType.S3.value,
-        ]
-        return use_remote_storage
-
     @abstractmethod
-    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         """
         make experiment data directory local path.
         """
 
     @abstractmethod
-    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         """
         make experiment data directory remote path.
         """
@@ -214,13 +211,13 @@ class RemoteStorageController(BaseRemoteStorageController):
     def __init__(self, bucket_name: str):
         remote_storage_type = RemoteStorageType.get_activated_type()
 
-        if remote_storage_type == RemoteStorageType.MOCK.value:
+        if remote_storage_type == RemoteStorageType.MOCK:
             from studio.app.common.core.storage.mock_storage_controller import (
                 MockStorageController,
             )
 
             self.__controller = MockStorageController()
-        elif remote_storage_type == RemoteStorageType.S3.value:
+        elif remote_storage_type == RemoteStorageType.S3:
             from studio.app.common.core.storage.s3_storage_controller import (
                 S3StorageController,
             )
@@ -229,11 +226,23 @@ class RemoteStorageController(BaseRemoteStorageController):
         else:
             assert False, f"Invalid remote_storage_type: {remote_storage_type}"
 
-    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
-        return self.__controller.make_experiment_local_path(workspace_id, unique_id)
+    @staticmethod
+    def is_available():
+        """
+        Determine if remote storage is available
+        """
+        remote_storage_type = RemoteStorageType.get_activated_type()
+        is_available = remote_storage_type in [
+            RemoteStorageType.MOCK,
+            RemoteStorageType.S3,
+        ]
+        return is_available
 
-    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
-        return self.__controller.make_experiment_remote_path(workspace_id, unique_id)
+    def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+        return self.__controller._make_experiment_local_path(workspace_id, unique_id)
+
+    def _make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+        return self.__controller._make_experiment_remote_path(workspace_id, unique_id)
 
     @staticmethod
     def create_user_bucket_name(id: int, prefix: str = "optinist-user") -> str:
@@ -250,24 +259,24 @@ class RemoteStorageController(BaseRemoteStorageController):
 
     async def create_bucket(self) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
-        if remote_storage_type == RemoteStorageType.S3.value:
+        if remote_storage_type == RemoteStorageType.S3:
             await self.__controller.create_bucket()
         else:
             assert False, (
                 "This remote_storage_type "
-                f"does not support bucket: {remote_storage_type}"
+                f"does not support bucket: {remote_storage_type.value}"
             )
 
         return True
 
     async def delete_bucket(self, force_delete=False) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
-        if remote_storage_type == RemoteStorageType.S3.value:
+        if remote_storage_type == RemoteStorageType.S3:
             await self.__controller.delete_bucket(force_delete)
         else:
             assert False, (
                 "This remote_storage_type "
-                f"does not support bucket: {remote_storage_type}"
+                f"does not support bucket: {remote_storage_type.value}"
             )
 
         return True

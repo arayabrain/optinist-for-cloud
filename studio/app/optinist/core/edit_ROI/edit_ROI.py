@@ -69,7 +69,7 @@ class EditRoiUtils:
         unique_id = ids.unique_id
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # creating remote_sync_status file.
             RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
                 remote_bucket_name,
@@ -264,7 +264,7 @@ class EditROI:
         )
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # Get workspace_id, unique_id from output file path
             ids = ExptOutputPathIds(self.node_dirpath)
             workspace_id = ids.workspace_id

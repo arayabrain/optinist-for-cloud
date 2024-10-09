@@ -292,7 +292,7 @@ class PostProcessResult(BaseNodeResult):
         )
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # upload latest EXPERIMENT_YML
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
             await remote_storage_controller.upload_experiment(

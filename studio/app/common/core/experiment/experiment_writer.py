@@ -140,7 +140,7 @@ class ExptDataWriter:
         result = True
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
             result = await remote_storage_controller.delete_experiment(
                 self.workspace_id, self.unique_id
@@ -167,7 +167,7 @@ class ExptDataWriter:
             yaml.dump(config, f, sort_keys=False)
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # upload latest EXPERIMENT_YML
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
             await remote_storage_controller.upload_experiment(
