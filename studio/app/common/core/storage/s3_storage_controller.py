@@ -1,6 +1,5 @@
 import os
 import re
-import shutil
 from subprocess import CalledProcessError
 
 import aioboto3
@@ -375,7 +374,7 @@ class S3StorageController(BaseRemoteStorageController):
 
         # cleaning data from local path
         if os.path.isdir(experiment_local_path):
-            shutil.rmtree(experiment_local_path)
+            await self._clear_local_experiment_data(experiment_local_path)
 
         # do download data from remote storage
         async with self.__get_s3_client() as __s3_client:

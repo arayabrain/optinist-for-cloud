@@ -11,6 +11,7 @@ from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_utils import ExptUtils
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageReader,
     RemoteSyncAction,
     RemoteSyncStatusFileUtil,
 )
@@ -179,20 +180,22 @@ async def force_sync_unsynced_experiment(
     if not RemoteStorageController.is_available():
         return False
 
-    # check remote synced status.
-    is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file(
-        workspace_id, unique_id
-    )
-
     # checked workflow status.
     is_running = workflow_status == "running"
 
+    # check remote synced status.
+    is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file_success(
+        workspace_id, unique_id
+    )
+
     # If not, perform synchronization
     if not is_running and not is_remote_synced:
-        remote_storage_controller = RemoteStorageController(remote_bucket_name)
-        result = await remote_storage_controller.download_experiment(
-            workspace_id, unique_id
-        )
+        async with RemoteStorageReader(
+            remote_bucket_name, workspace_id, unique_id
+        ) as remote_storage_controller:
+            result = await remote_storage_controller.download_experiment(
+                workspace_id, unique_id
+            )
 
         if not result:
             raise HTTPException(status_code=404, detail="sync remote experiment failed")

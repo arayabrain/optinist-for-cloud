@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageWriter,
 )
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.file_reader import JsonReader, Reader
@@ -294,12 +295,14 @@ class PostProcessResult(BaseNodeResult):
         # Operate remote storage data.
         if RemoteStorageController.is_available():
             # upload latest EXPERIMENT_YML
-            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            await remote_storage_controller.upload_experiment(
-                expt_config.workspace_id,
-                expt_config.unique_id,
-                [DIRPATH.EXPERIMENT_YML],
-            )
+            async with RemoteStorageWriter(
+                self.remote_bucket_name, expt_config.workspace_id, expt_config.unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    expt_config.workspace_id,
+                    expt_config.unique_id,
+                    [DIRPATH.EXPERIMENT_YML],
+                )
 
         return message
 

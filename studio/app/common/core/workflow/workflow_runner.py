@@ -13,8 +13,7 @@ from studio.app.common.core.snakemake.snakemake_rule import SmkRule
 from studio.app.common.core.snakemake.snakemake_writer import SmkConfigWriter
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
-    RemoteSyncAction,
-    RemoteSyncStatusFileUtil,
+    RemoteSyncLockFileUtil,
 )
 from studio.app.common.core.workflow.workflow import (
     Node,
@@ -60,6 +59,14 @@ class WorkflowRunner:
         ).write()
 
     def run_workflow(self, background_tasks):
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
         self.set_smk_config()
 
         snakemake_params: SmkParam = get_typecheck_params(
@@ -92,12 +99,9 @@ class WorkflowRunner:
 
         # Operate remote storage data.
         if RemoteStorageController.is_available():
-            # creating remote_sync_status file.
-            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
-                self.remote_bucket_name,
-                self.workspace_id,
-                self.unique_id,
-                RemoteSyncAction.UPLOAD,
+            # creating remote-sync-lock-file
+            RemoteSyncLockFileUtil.create_sync_lock_file(
+                self.workspace_id, self.unique_id
             )
 
         background_tasks.add_task(

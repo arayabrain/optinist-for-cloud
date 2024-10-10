@@ -12,7 +12,8 @@ from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
-    RemoteSyncAction,
+    RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.config_handler import ConfigReader
@@ -70,13 +71,14 @@ class EditRoiUtils:
 
         # Operate remote storage data.
         if RemoteStorageController.is_available():
-            # creating remote_sync_status file.
-            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
-                remote_bucket_name,
-                workspace_id,
-                unique_id,
-                RemoteSyncAction.UPLOAD,
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                workspace_id, unique_id, raise_error=True
             )
+
+            # creating remote-sync-lock-file
+            RemoteSyncLockFileUtil.create_sync_lock_file(workspace_id, unique_id)
 
         # Run snakemake
         result = snakemake(
@@ -270,6 +272,9 @@ class EditROI:
             workspace_id = ids.workspace_id
             unique_id = ids.unique_id
 
+            # Delete lock file created at the start of workflow.
+            RemoteSyncLockFileUtil.delete_sync_lock_file(workspace_id, unique_id)
+
             # Get remote_bucket_name
             remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
                 workspace_id, unique_id
@@ -287,10 +292,12 @@ class EditROI:
             )
 
             # upload update files
-            remote_storage_controller = RemoteStorageController(remote_bucket_name)
-            await remote_storage_controller.upload_experiment(
-                workspace_id, unique_id, upload_target_files
-            )
+            async with RemoteStorageWriter(
+                remote_bucket_name, workspace_id, unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    workspace_id, unique_id, upload_target_files
+                )
 
     def cancel(self):
         original_num_cell = len(self.output_info.get("fluorescence").data)

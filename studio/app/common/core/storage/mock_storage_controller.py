@@ -127,7 +127,7 @@ class MockStorageController(BaseRemoteStorageController):
 
         # cleaning data from local path
         if os.path.isdir(experiment_local_path):
-            shutil.rmtree(experiment_local_path)
+            await self._clear_local_experiment_data(experiment_local_path)
 
         # do copy data from remote storage
         shutil.copytree(

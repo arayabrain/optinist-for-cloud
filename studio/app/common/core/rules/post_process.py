@@ -23,6 +23,8 @@ from studio.app.common.core.snakemake.snakemake_reader import RuleConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageType,
+    RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -53,14 +55,20 @@ class PostProcessRunner:
                 workspace_id = ids.workspace_id
                 unique_id = ids.unique_id
 
-                # Transfer of processing result data to remote storage
+                # Delete lock file created at the start of workflow.
+                RemoteSyncLockFileUtil.delete_sync_lock_file(workspace_id, unique_id)
+
                 remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
                     workspace_id, unique_id
                 )
-                remote_storage_controller = RemoteStorageController(remote_bucket_name)
-                await remote_storage_controller.upload_experiment(
-                    workspace_id, unique_id
-                )
+
+                # Transfer of processing result data to remote storage
+                async with RemoteStorageWriter(
+                    remote_bucket_name, workspace_id, unique_id
+                ) as remote_storage_controller:
+                    await remote_storage_controller.upload_experiment(
+                        workspace_id, unique_id
+                    )
             else:
                 logger.debug("remote storage is unused in post_process.")
 
