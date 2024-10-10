@@ -13,6 +13,7 @@ from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageWriter,
+    RemoteSyncAction,
     RemoteSyncLockFileUtil,
     RemoteSyncStatusFileUtil,
 )
@@ -79,6 +80,15 @@ class EditRoiUtils:
 
             # creating remote-sync-lock-file
             RemoteSyncLockFileUtil.create_sync_lock_file(workspace_id, unique_id)
+
+            # creating remote_sync_status file.
+            # - The status file is used to pass bucket info to subsequent processing.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
 
         # Run snakemake
         result = snakemake(
