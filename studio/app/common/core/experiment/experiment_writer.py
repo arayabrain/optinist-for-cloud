@@ -164,6 +164,9 @@ class ExptDataWriter:
             ]
         )
 
+        # validate params
+        new_name = "" if new_name is None else new_name  # filter None
+
         # Note: "r+" option is not used here because it requires file pointer control.
         with open(filepath, "r") as f:
             config = yaml.safe_load(f)
