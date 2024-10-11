@@ -15,6 +15,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageLockError,
     RemoteStorageReader,
     RemoteSyncAction,
+    RemoteSyncLockFileUtil,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import (
@@ -48,9 +49,13 @@ async def fetch_last_experiment(
             unique_id = last_expt_config.unique_id
 
             # sync unsynced remote storage data.
-            is_remote_synced = await force_sync_unsynced_experiment(
-                remote_bucket_name, workspace_id, unique_id, last_expt_config.success
-            )
+            if RemoteStorageController.is_available():
+                is_remote_synced = await force_sync_unsynced_experiment(
+                    remote_bucket_name,
+                    workspace_id,
+                    unique_id,
+                    last_expt_config.success,
+                )
 
             # fetch workflow
             workflow_config_path = join_filepath(
@@ -108,9 +113,13 @@ async def reproduce_experiment(
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
 
             # sync unsynced remote storage data.
-            is_remote_synced = await force_sync_unsynced_experiment(
-                remote_bucket_name, workspace_id, unique_id, experiment_config.success
-            )
+            if RemoteStorageController.is_available():
+                is_remote_synced = await force_sync_unsynced_experiment(
+                    remote_bucket_name,
+                    workspace_id,
+                    unique_id,
+                    experiment_config.success,
+                )
 
             return WorkflowWithResults(
                 **asdict(experiment_config),
@@ -222,6 +231,12 @@ async def force_sync_unsynced_experiment(
     """
     if not RemoteStorageController.is_available():
         return False
+
+    # Check for remote-sync-lock-file
+    # - If lock file exists, an exception is raised (raise_error=True)
+    RemoteSyncLockFileUtil.check_sync_lock_file(
+        workspace_id, unique_id, raise_error=True
+    )
 
     # checked workflow status.
     is_running = workflow_status == "running"

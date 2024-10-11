@@ -13,6 +13,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageDeleter,
     RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
 )
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -139,6 +140,12 @@ class ExptDataWriter:
 
         # Operate remote storage data.
         if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
             # delete remote data
             async with RemoteStorageDeleter(
                 self.remote_bucket_name, self.workspace_id, self.unique_id
@@ -155,6 +162,14 @@ class ExptDataWriter:
         return result
 
     async def rename(self, new_name: str) -> ExptConfig:
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
         filepath = join_filepath(
             [
                 DIRPATH.OUTPUT_DIR,
