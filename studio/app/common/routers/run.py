@@ -1,10 +1,13 @@
 import uuid
 from typing import Dict
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageLockError,
+)
 from studio.app.common.core.workflow.workflow import Message, NodeItem, RunItem
 from studio.app.common.core.workflow.workflow_result import WorkflowResult
 from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
@@ -29,14 +32,25 @@ async def run(
     background_tasks: BackgroundTasks,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    unique_id = str(uuid.uuid4())[:8]
-    WorkflowRunner(remote_bucket_name, workspace_id, unique_id, runItem).run_workflow(
-        background_tasks
-    )
+    try:
+        unique_id = str(uuid.uuid4())[:8]
+        WorkflowRunner(
+            remote_bucket_name, workspace_id, unique_id, runItem
+        ).run_workflow(background_tasks)
 
-    logger.info("run snakemake")
+        logger.info("run snakemake")
 
-    return unique_id
+        return unique_id
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to run workflow.",
+        )
 
 
 @router.post(
@@ -51,14 +65,25 @@ async def run_id(
     background_tasks: BackgroundTasks,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    WorkflowRunner(remote_bucket_name, workspace_id, uid, runItem).run_workflow(
-        background_tasks
-    )
+    try:
+        WorkflowRunner(remote_bucket_name, workspace_id, uid, runItem).run_workflow(
+            background_tasks
+        )
 
-    logger.info("run snakemake")
-    logger.info("forcerun list: %s", runItem.forceRunList)
+        logger.info("run snakemake")
+        logger.info("forcerun list: %s", runItem.forceRunList)
 
-    return uid
+        return uid
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to run workflow.",
+        )
 
 
 @router.post(
@@ -72,9 +97,20 @@ async def run_result(
     nodeDict: NodeItem,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    return await WorkflowResult(remote_bucket_name, workspace_id, uid).get(
-        nodeDict.pendingNodeIdList
-    )
+    try:
+        return await WorkflowResult(remote_bucket_name, workspace_id, uid).get(
+            nodeDict.pendingNodeIdList
+        )
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to result workflow.",
+        )
 
 
 @router.post(
@@ -87,4 +123,15 @@ async def run_cancel(
     uid: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    return WorkflowResult(remote_bucket_name, workspace_id, uid).cancel()
+    try:
+        return WorkflowResult(remote_bucket_name, workspace_id, uid).cancel()
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cencel workflow.",
+        )

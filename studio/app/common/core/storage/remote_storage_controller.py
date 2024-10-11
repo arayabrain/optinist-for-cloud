@@ -48,7 +48,7 @@ class RemoteStorageLockError(Exception):
         self.workspace_id = workspace_id
         self.unique_id = unique_id
 
-        message = "Remote storage is temporary locked. " f"[{workspace_id}/{unique_id}]"
+        message = "Remote data is temporary locked. " f"[{workspace_id}/{unique_id}]"
         super().__init__(message)
 
 
@@ -503,7 +503,7 @@ class BaseRemoteStorageReaderWriter(metaclass=ABCMeta):
 
         is_locked = RemoteSyncLockFileUtil.check_sync_lock_file(workspace_id, unique_id)
         if is_locked:
-            logger.warning("This data is locked due to processing.")
+            logger.warning("This data is locked because it is being processed.")
             raise RemoteStorageLockError(workspace_id, unique_id)
 
         # generate remote-sync-lock-file

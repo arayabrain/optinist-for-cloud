@@ -3,14 +3,16 @@ import shutil
 from dataclasses import asdict
 
 import yaml
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_utils import ExptUtils
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageLockError,
     RemoteStorageReader,
     RemoteSyncAction,
     RemoteSyncStatusFileUtil,
@@ -28,6 +30,8 @@ from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
+logger = AppLogger.get_logger()
+
 
 @router.get(
     "/fetch/{workspace_id}",
@@ -38,32 +42,46 @@ async def fetch_last_experiment(
     workspace_id: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    last_expt_config = ExptUtils.get_last_experiment(workspace_id)
-    if last_expt_config:
-        unique_id = last_expt_config.unique_id
+    try:
+        last_expt_config = ExptUtils.get_last_experiment(workspace_id)
+        if last_expt_config:
+            unique_id = last_expt_config.unique_id
 
-        # sync unsynced remote storage data.
-        is_remote_synced = await force_sync_unsynced_experiment(
-            remote_bucket_name, workspace_id, unique_id, last_expt_config.success
-        )
+            # sync unsynced remote storage data.
+            is_remote_synced = await force_sync_unsynced_experiment(
+                remote_bucket_name, workspace_id, unique_id, last_expt_config.success
+            )
 
-        # fetch workflow
-        workflow_config_path = join_filepath(
-            [
-                DIRPATH.OUTPUT_DIR,
-                workspace_id,
-                unique_id,
-                DIRPATH.WORKFLOW_YML,
-            ]
+            # fetch workflow
+            workflow_config_path = join_filepath(
+                [
+                    DIRPATH.OUTPUT_DIR,
+                    workspace_id,
+                    unique_id,
+                    DIRPATH.WORKFLOW_YML,
+                ]
+            )
+            workflow_config = WorkflowConfigReader.read(workflow_config_path)
+            return WorkflowWithResults(
+                **asdict(last_expt_config),
+                **asdict(workflow_config),
+                is_remote_synced=is_remote_synced,
+            )
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    except HTTPException as e:
+        logger.error(e)
+        raise e
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="can not reproduce record.",
         )
-        workflow_config = WorkflowConfigReader.read(workflow_config_path)
-        return WorkflowWithResults(
-            **asdict(last_expt_config),
-            **asdict(workflow_config),
-            is_remote_synced=is_remote_synced,
-        )
-    else:
-        raise HTTPException(status_code=404)
 
 
 @router.get(
@@ -76,28 +94,46 @@ async def reproduce_experiment(
     unique_id: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    experiment_config_path = join_filepath(
-        [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
-    )
-    workflow_config_path = join_filepath(
-        [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
-    )
-    if os.path.exists(experiment_config_path) and os.path.exists(workflow_config_path):
-        experiment_config = ExptConfigReader.read(experiment_config_path)
-        workflow_config = WorkflowConfigReader.read(workflow_config_path)
-
-        # sync unsynced remote storage data.
-        is_remote_synced = await force_sync_unsynced_experiment(
-            remote_bucket_name, workspace_id, unique_id, experiment_config.success
+    try:
+        experiment_config_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
         )
-
-        return WorkflowWithResults(
-            **asdict(experiment_config),
-            **asdict(workflow_config),
-            is_remote_synced=is_remote_synced,
+        workflow_config_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
         )
-    else:
-        raise HTTPException(status_code=404, detail="file not found")
+        if os.path.exists(experiment_config_path) and os.path.exists(
+            workflow_config_path
+        ):
+            experiment_config = ExptConfigReader.read(experiment_config_path)
+            workflow_config = WorkflowConfigReader.read(workflow_config_path)
+
+            # sync unsynced remote storage data.
+            is_remote_synced = await force_sync_unsynced_experiment(
+                remote_bucket_name, workspace_id, unique_id, experiment_config.success
+            )
+
+            return WorkflowWithResults(
+                **asdict(experiment_config),
+                **asdict(workflow_config),
+                is_remote_synced=is_remote_synced,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="file not found"
+            )
+
+    except HTTPException as e:
+        logger.error(e)
+        raise e
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="can not reproduce record.",
+        )
 
 
 @router.get(
@@ -111,7 +147,9 @@ async def download_workspace_config(workspace_id: str, unique_id: str):
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath, filename=DIRPATH.WORKFLOW_YML)
     else:
-        raise HTTPException(status_code=404, detail="file not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="file not found"
+        )
 
 
 @router.post("/import")
@@ -119,10 +157,15 @@ async def import_workflow_config(file: UploadFile = File(...)):
     try:
         contents = yaml.safe_load(await file.read())
         if contents is None:
-            raise HTTPException(status_code=400, detail="Invalid yaml file")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid yaml file"
+            )
         return WorkflowConfig(**contents)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Parsing yaml failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parsing yaml failed: {str(e)}",
+        )
 
 
 @router.get(
@@ -198,6 +241,9 @@ async def force_sync_unsynced_experiment(
             )
 
         if not result:
-            raise HTTPException(status_code=404, detail="sync remote experiment failed")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="sync remote experiment failed",
+            )
 
     return True
