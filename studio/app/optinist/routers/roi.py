@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.logger import AppLogger
@@ -19,7 +19,7 @@ logger = AppLogger.get_logger()
     response_model=RoiStatus,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def status(filepath: str):
+async def status_roi(filepath: str):
     return EditROI(file_path=filepath).get_status()
 
 
@@ -83,6 +83,6 @@ async def commit_edit(
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def cancel(filepath: str):
+async def cancel_edit(filepath: str):
     EditROI(file_path=filepath).cancel()
     return True
