@@ -47,19 +47,42 @@ class MockStorageController(BaseRemoteStorageController):
         )
         return experiment_remote_path
 
-    async def download_all_experiments_metas(self) -> bool:
+    async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         # ----------------------------------------
         # make paths
         # ----------------------------------------
 
-        experiment_yml_search_path = (
-            f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.EXPERIMENT_YML}"
-        )
-        experiment_yml_paths = glob(experiment_yml_search_path, recursive=True)
-        workflow_yml_search_path = (
-            f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.WORKFLOW_YML}"
-        )
-        workflow_yml_paths = glob(workflow_yml_search_path, recursive=True)
+        if workspace_ids:  # search specified workspaces
+            # Search per workspace
+            experiment_yml_paths = []
+            workflow_yml_paths = []
+            for ws_id in workspace_ids:
+                experiment_yml_search_path = (
+                    f"{__class__.MOCK_OUTPUT_DIR}/{ws_id}/**/{DIRPATH.EXPERIMENT_YML}"
+                )
+                tmp_experiment_yml_paths = glob(
+                    experiment_yml_search_path, recursive=True
+                )
+                experiment_yml_paths.extend(tmp_experiment_yml_paths)
+                del tmp_experiment_yml_paths
+
+                workflow_yml_search_path = (
+                    f"{__class__.MOCK_OUTPUT_DIR}/{ws_id}/**/{DIRPATH.WORKFLOW_YML}"
+                )
+                tmp_workflow_yml_paths = glob(workflow_yml_search_path, recursive=True)
+                workflow_yml_paths.extend(tmp_workflow_yml_paths)
+                del tmp_workflow_yml_paths
+        else:  # search all workspaces
+            experiment_yml_search_path = (
+                f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.EXPERIMENT_YML}"
+            )
+            experiment_yml_paths = glob(experiment_yml_search_path, recursive=True)
+
+            workflow_yml_search_path = (
+                f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.WORKFLOW_YML}"
+            )
+            workflow_yml_paths = glob(workflow_yml_search_path, recursive=True)
+
         target_files = sorted(experiment_yml_paths + workflow_yml_paths)
 
         logger.debug(

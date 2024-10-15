@@ -87,7 +87,7 @@ class S3StorageController(BaseRemoteStorageController):
 
         return True
 
-    async def download_all_experiments_metas(self) -> bool:
+    async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         # Whether to use AWS CLI to download user metadata
         USE_AWS_CLI_FOR_DOWNLOADING = (
             False  # Currently fixed as False (aws cli is not used)
@@ -96,9 +96,11 @@ class S3StorageController(BaseRemoteStorageController):
         if USE_AWS_CLI_FOR_DOWNLOADING:
             self.__download_all_experiments_metas_via_aws_cli()
         else:
-            await self.__download_all_experiments_metas_via_boto3()
+            await self.__download_all_experiments_metas_via_boto3(workspace_ids)
 
-    async def __download_all_experiments_metas_via_boto3(self) -> bool:
+    async def __download_all_experiments_metas_via_boto3(
+        self, workspace_ids: list = None
+    ) -> bool:
         """
         Download experiments metadata (yaml files) from S3
 
@@ -136,10 +138,24 @@ class S3StorageController(BaseRemoteStorageController):
             return False
 
         # Extract workspace directory listing
-        workspaces_dirs = [v["Prefix"] for v in workspaces_response["CommonPrefixes"]]
+        all_workspaces_dirs = [
+            v["Prefix"] for v in workspaces_response["CommonPrefixes"]
+        ]
+
+        # filter target workspaces_dirs
+        if workspace_ids:
+            re_ids = "|".join(workspace_ids)
+            re_ids = f"({re_ids})"
+            workspaces_dirs = [
+                w for w in all_workspaces_dirs if re.search(f"/{re_ids}/$", w)
+            ]
+        else:
+            workspaces_dirs = all_workspaces_dirs
+
         logger.debug(
-            "Processing workspaces dirs: "
-            f"[{self.__s3_storage_bucket}] {workspaces_dirs}"
+            "download all medata from remote storage (s3). [%s] workspaces: %s",
+            self.__s3_storage_bucket,
+            workspaces_dirs,
         )
 
         metadata_filenames = ["experiment.yaml", "workflow.yaml"]

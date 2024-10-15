@@ -290,7 +290,7 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def download_all_experiments_metas(self) -> bool:
+    def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         """
         download all experiment metadata from remote storage.
         """
@@ -426,8 +426,13 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return True
 
-    async def download_all_experiments_metas(self) -> bool:
-        return await self.__controller.download_all_experiments_metas()
+    async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
+        """
+        Args:
+          workspace_ids:
+            List of workspace ids to be downloaded. if none, all workspaces are targeted
+        """
+        return await self.__controller.download_all_experiments_metas(workspace_ids)
 
     async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         return await self.__controller.download_experiment(workspace_id, unique_id)
