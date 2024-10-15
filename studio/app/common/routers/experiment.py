@@ -14,6 +14,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageLockError,
     RemoteStorageReader,
+    RemoteStorageSimpleReader,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -34,13 +35,35 @@ logger = AppLogger.get_logger()
     response_model=Dict[str, ExptExtConfig],
     dependencies=[Depends(is_workspace_available)],
 )
-async def get_experiments(workspace_id: str):
+async def get_experiments(
+    workspace_id: str,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
+    # search EXPERIMENT_YMLs
     exp_config = {}
     config_paths = glob(
         join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML])
     )
 
-    use_remote_storage = RemoteStorageController.is_available()
+    is_remote_storage_available = RemoteStorageController.is_available()
+
+    # NOTE: If remote_storage is available and config_paths does not exist,
+    # assume that data may exist in remote_storage and execute download of metadata.
+    if is_remote_storage_available and not config_paths:
+        async with RemoteStorageSimpleReader(
+            remote_bucket_name
+        ) as remote_storage_controller:
+            await remote_storage_controller.download_all_experiments_metas(
+                [workspace_id]
+            )
+
+        # search EXPERIMENT_YMLs, again
+        exp_config = {}
+        config_paths = glob(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML]
+            )
+        )
 
     for path in config_paths:
         try:
@@ -52,7 +75,7 @@ async def get_experiments(workspace_id: str):
                 config.function.update(config.procs)
 
             # Operate remote storage.
-            if use_remote_storage:
+            if is_remote_storage_available:
                 # check remote synced status.
                 is_remote_synced = (
                     RemoteSyncStatusFileUtil.check_sync_status_file_success(
