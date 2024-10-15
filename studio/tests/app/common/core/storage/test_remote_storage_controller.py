@@ -172,7 +172,14 @@ async def test_RemoteStorageController_download():
     async with RemoteStorageSimpleReader(
         remote_bucket_name
     ) as remote_storage_controller:
+        # download all workspaces metadata
         await remote_storage_controller.download_all_experiments_metas()
+        assert os.path.isfile(
+            test_data_output_experiment_yaml
+        ), "download_all_experiments_metas failed.."
+
+        # download specified workspaces metadata
+        await remote_storage_controller.download_all_experiments_metas([workspace_id])
         assert os.path.isfile(
             test_data_output_experiment_yaml
         ), "download_all_experiments_metas failed.."
