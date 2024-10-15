@@ -1,11 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
+from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageLockError,
+)
 from studio.app.common.core.workspace.workspace_dependencies import is_workspace_owner
 from studio.app.optinist.core.edit_ROI import EditROI, EditRoiUtils
 from studio.app.optinist.schemas.roi import RoiList, RoiPos, RoiStatus
 
 router = APIRouter(prefix="/outputs", tags=["outputs"])
+
+logger = AppLogger.get_logger()
 
 
 @router.post(
@@ -13,7 +19,7 @@ router = APIRouter(prefix="/outputs", tags=["outputs"])
     response_model=RoiStatus,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def status(filepath: str):
+async def status_roi(filepath: str):
     return EditROI(file_path=filepath).get_status()
 
 
@@ -56,7 +62,19 @@ async def commit_edit(
     filepath: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    EditRoiUtils.execute(filepath, remote_bucket_name)
+    try:
+        EditRoiUtils.execute(filepath, remote_bucket_name)
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to commit Edit ROI",
+        )
+
     return True
 
 
@@ -65,6 +83,6 @@ async def commit_edit(
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def cancel(filepath: str):
+async def cancel_edit(filepath: str):
     EditROI(file_path=filepath).cancel()
     return True

@@ -97,7 +97,7 @@ export async function downloadExperimentConfigApi(
   return response.data
 }
 
-export async function renameExperiment(
+export async function renameExperimentApi(
   workspaceId: number,
   uid: string,
   new_name: string,

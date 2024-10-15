@@ -1,6 +1,5 @@
 import os
 import re
-import shutil
 from subprocess import CalledProcessError
 
 import aioboto3
@@ -38,13 +37,13 @@ class S3StorageController(BaseRemoteStorageController):
     def __get_s3_resource(self):
         return aioboto3.Session().resource("s3")
 
-    def make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_local_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
         )
         return experiment_local_path
 
-    def make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
+    def _make_experiment_remote_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_remote_path = join_filepath(
             [__class__.S3_OUTPUT_DIR, workspace_id, unique_id]
         )
@@ -88,7 +87,7 @@ class S3StorageController(BaseRemoteStorageController):
 
         return True
 
-    async def download_all_experiments_metas(self) -> bool:
+    async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         # Whether to use AWS CLI to download user metadata
         USE_AWS_CLI_FOR_DOWNLOADING = (
             False  # Currently fixed as False (aws cli is not used)
@@ -97,9 +96,11 @@ class S3StorageController(BaseRemoteStorageController):
         if USE_AWS_CLI_FOR_DOWNLOADING:
             self.__download_all_experiments_metas_via_aws_cli()
         else:
-            await self.__download_all_experiments_metas_via_boto3()
+            await self.__download_all_experiments_metas_via_boto3(workspace_ids)
 
-    async def __download_all_experiments_metas_via_boto3(self) -> bool:
+    async def __download_all_experiments_metas_via_boto3(
+        self, workspace_ids: list = None
+    ) -> bool:
         """
         Download experiments metadata (yaml files) from S3
 
@@ -137,10 +138,24 @@ class S3StorageController(BaseRemoteStorageController):
             return False
 
         # Extract workspace directory listing
-        workspaces_dirs = [v["Prefix"] for v in workspaces_response["CommonPrefixes"]]
+        all_workspaces_dirs = [
+            v["Prefix"] for v in workspaces_response["CommonPrefixes"]
+        ]
+
+        # filter target workspaces_dirs
+        if workspace_ids:
+            re_ids = "|".join(workspace_ids)
+            re_ids = f"({re_ids})"
+            workspaces_dirs = [
+                w for w in all_workspaces_dirs if re.search(f"/{re_ids}/$", w)
+            ]
+        else:
+            workspaces_dirs = all_workspaces_dirs
+
         logger.debug(
-            "Processing workspaces dirs: "
-            f"[{self.__s3_storage_bucket}] {workspaces_dirs}"
+            "download all medata from remote storage (s3). [%s] workspaces: %s",
+            self.__s3_storage_bucket,
+            workspaces_dirs,
         )
 
         metadata_filenames = ["experiment.yaml", "workflow.yaml"]
@@ -337,8 +352,10 @@ class S3StorageController(BaseRemoteStorageController):
 
     async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
-        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_local_path = self._make_experiment_local_path(
+            workspace_id, unique_id
+        )
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 
@@ -373,7 +390,7 @@ class S3StorageController(BaseRemoteStorageController):
 
         # cleaning data from local path
         if os.path.isdir(experiment_local_path):
-            shutil.rmtree(experiment_local_path)
+            await self._clear_local_experiment_data(experiment_local_path)
 
         # do download data from remote storage
         async with self.__get_s3_client() as __s3_client:
@@ -418,8 +435,10 @@ class S3StorageController(BaseRemoteStorageController):
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
         # make paths
-        experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_local_path = self._make_experiment_local_path(
+            workspace_id, unique_id
+        )
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 
@@ -492,7 +511,7 @@ class S3StorageController(BaseRemoteStorageController):
 
     async def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
-        experiment_remote_path = self.make_experiment_remote_path(
+        experiment_remote_path = self._make_experiment_remote_path(
             workspace_id, unique_id
         )
 

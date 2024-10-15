@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from studio.app.common.core.auth.auth import authenticate_user
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageSimpleWriter,
 )
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
@@ -117,12 +118,15 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
         user_db.__dict__["role_id"] = data.role_id
 
         # create remote_storage bucket
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             new_bucket_name = RemoteStorageController.create_user_bucket_name(
                 id=user_db.id
             )
-            remote_storage_controller = RemoteStorageController(new_bucket_name)
-            await remote_storage_controller.create_bucket()
+
+            async with RemoteStorageSimpleWriter(
+                new_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.create_bucket()
 
             # store bucket info in user record
             user_db.attributes = {"remote_bucket_name": new_bucket_name}
@@ -205,11 +209,11 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
         firebase_auth.delete_user(user_db.uid)
 
         # delete remote_storage bucket
-        if RemoteStorageController.use_remote_storage():
-            remote_storage_controller = RemoteStorageController(
+        if RemoteStorageController.is_available():
+            async with RemoteStorageSimpleWriter(
                 user_db.remote_bucket_name
-            )
-            await remote_storage_controller.delete_bucket(force_delete=True)
+            ) as remote_storage_controller:
+                await remote_storage_controller.delete_bucket(force_delete=True)
 
         db.commit()
 

@@ -11,6 +11,9 @@ from studio.app.common.core.experiment.experiment_builder import ExptConfigBuild
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageDeleter,
+    RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
 )
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -133,22 +136,40 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     async def delete_data(self) -> bool:
+        result = True
+
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
+            # delete remote data
+            async with RemoteStorageDeleter(
+                self.remote_bucket_name, self.workspace_id, self.unique_id
+            ) as remote_storage_controller:
+                result = await remote_storage_controller.delete_experiment(
+                    self.workspace_id, self.unique_id
+                )
+
+        # delete local data
         shutil.rmtree(
             join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
         )
 
-        result = True
-
-        # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
-            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            result = await remote_storage_controller.delete_experiment(
-                self.workspace_id, self.unique_id
-            )
-
         return result
 
     async def rename(self, new_name: str) -> ExptConfig:
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
         filepath = join_filepath(
             [
                 DIRPATH.OUTPUT_DIR,
@@ -157,6 +178,9 @@ class ExptDataWriter:
                 DIRPATH.EXPERIMENT_YML,
             ]
         )
+
+        # validate params
+        new_name = "" if new_name is None else new_name  # filter None
 
         # Note: "r+" option is not used here because it requires file pointer control.
         with open(filepath, "r") as f:
@@ -167,12 +191,14 @@ class ExptDataWriter:
             yaml.dump(config, f, sort_keys=False)
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # upload latest EXPERIMENT_YML
-            remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            await remote_storage_controller.upload_experiment(
-                self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
-            )
+            async with RemoteStorageWriter(
+                self.remote_bucket_name, self.workspace_id, self.unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
+                )
 
         return ExptConfig(
             workspace_id=config["workspace_id"],

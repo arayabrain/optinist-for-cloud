@@ -5,6 +5,7 @@ from studio.app.common.core.auth import auth
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
+    RemoteStorageSimpleReader,
 )
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.auth import AccessToken, RefreshToken, Token, UserAuth
@@ -20,11 +21,13 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
         token, user = await auth.authenticate_user(db, user_data)
 
         # Operate remote storage data.
-        if RemoteStorageController.use_remote_storage():
+        if RemoteStorageController.is_available():
             # Immediately after successful login,
             #   download all experiments metadata.
-            remote_storage_controller = RemoteStorageController(user.remote_bucket_name)
-            await remote_storage_controller.download_all_experiments_metas()
+            async with RemoteStorageSimpleReader(
+                user.remote_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.download_all_experiments_metas()
 
     except HTTPException as e:
         logger.error(e, exc_info=True)
