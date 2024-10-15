@@ -24,7 +24,7 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
             # Immediately after successful login,
             #   download all experiments metadata.
             remote_storage_controller = RemoteStorageController(user.remote_bucket_name)
-            remote_storage_controller.download_all_experiments_metas()
+            await remote_storage_controller.download_all_experiments_metas()
 
     except HTTPException as e:
         logger.error(e, exc_info=True)

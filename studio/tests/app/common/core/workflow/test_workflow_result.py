@@ -1,6 +1,8 @@
 import os
 import shutil
 
+import pytest
+
 from studio.app.common.core.workflow.workflow import Message
 from studio.app.common.core.workflow.workflow_result import NodeResult, WorkflowResult
 from studio.app.dir_path import DIRPATH
@@ -17,13 +19,14 @@ pickle_path = (
 )
 
 
-def test_WorkflowResult_get():
+@pytest.mark.asyncio
+async def test_WorkflowResult_get():
     shutil.copytree(
         workflow_dirpath,
         output_dirpath,
         dirs_exist_ok=True,
     )
-    output = WorkflowResult(
+    output = await WorkflowResult(
         remote_bucket_name, workspace_id=workspace_id, unique_id=unique_id
     ).get(node_id_list)
 

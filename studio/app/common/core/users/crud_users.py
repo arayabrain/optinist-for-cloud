@@ -122,7 +122,7 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
                 id=user_db.id
             )
             remote_storage_controller = RemoteStorageController(new_bucket_name)
-            remote_storage_controller.create_bucket()
+            await remote_storage_controller.create_bucket()
 
             # store bucket info in user record
             user_db.attributes = {"remote_bucket_name": new_bucket_name}
@@ -209,7 +209,7 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
             remote_storage_controller = RemoteStorageController(
                 user_db.remote_bucket_name
             )
-            remote_storage_controller.delete_bucket(force_delete=True)
+            await remote_storage_controller.delete_bucket(force_delete=True)
 
         db.commit()
 

@@ -3,6 +3,7 @@
 # This file is executed by snakemake and cause the following lint errors
 # - E402: sys.path.append is required to import optinist modules
 # - F821: do not import snakemake
+import asyncio
 import json
 import os
 import sys
@@ -33,7 +34,7 @@ logger = AppLogger.get_logger()
 
 class PostProcessRunner:
     @classmethod
-    def run(cls, __rule: Rule):
+    async def run(cls, __rule: Rule):
         try:
             logger.info("start post_process runner")
 
@@ -57,7 +58,9 @@ class PostProcessRunner:
                     workspace_id, unique_id
                 )
                 remote_storage_controller = RemoteStorageController(remote_bucket_name)
-                remote_storage_controller.upload_experiment(workspace_id, unique_id)
+                await remote_storage_controller.upload_experiment(
+                    workspace_id, unique_id
+                )
             else:
                 logger.debug("remote storage is unused in post_process.")
 
@@ -91,4 +94,4 @@ if __name__ == "__main__":
     rule_config.input = snakemake.input
     rule_config.output = snakemake.output[0]
 
-    PostProcessRunner.run(rule_config)
+    asyncio.run(PostProcessRunner.run(rule_config))

@@ -33,7 +33,7 @@ class RemoteSyncStatusFileUtil:
     REMOTE_SYNC_STATUS_FILE = "remote_sync_stat.json"
 
     @classmethod
-    def make_sync_status_file_path(cls, workspace_id: str, unique_id: str) -> None:
+    def make_sync_status_file_path(cls, workspace_id: str, unique_id: str) -> str:
         """
         make remote storage sync status file path.
         """
@@ -48,7 +48,7 @@ class RemoteSyncStatusFileUtil:
     @classmethod
     def check_sync_status_file(cls, workspace_id: str, unique_id: str) -> None:
         """
-        create remote storage sync status file.
+        check remote storage sync status file.
         """
         remote_sync_status_file_path = cls.make_sync_status_file_path(
             workspace_id, unique_id
@@ -248,10 +248,10 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return new_name
 
-    def create_bucket(self) -> bool:
+    async def create_bucket(self) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
         if remote_storage_type == RemoteStorageType.S3.value:
-            self.__controller.create_bucket()
+            await self.__controller.create_bucket()
         else:
             assert False, (
                 "This remote_storage_type "
@@ -260,10 +260,10 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return True
 
-    def delete_bucket(self, force_delete=False) -> bool:
+    async def delete_bucket(self, force_delete=False) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
         if remote_storage_type == RemoteStorageType.S3.value:
-            self.__controller.delete_bucket(force_delete)
+            await self.__controller.delete_bucket(force_delete)
         else:
             assert False, (
                 "This remote_storage_type "
@@ -272,18 +272,18 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return True
 
-    def download_all_experiments_metas(self) -> bool:
-        return self.__controller.download_all_experiments_metas()
+    async def download_all_experiments_metas(self) -> bool:
+        return await self.__controller.download_all_experiments_metas()
 
-    def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return self.__controller.download_experiment(workspace_id, unique_id)
+    async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return await self.__controller.download_experiment(workspace_id, unique_id)
 
-    def upload_experiment(
+    async def upload_experiment(
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
-        return self.__controller.upload_experiment(
+        return await self.__controller.upload_experiment(
             workspace_id, unique_id, target_files
         )
 
-    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return self.__controller.delete_experiment(workspace_id, unique_id)
+    async def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
+        return await self.__controller.delete_experiment(workspace_id, unique_id)

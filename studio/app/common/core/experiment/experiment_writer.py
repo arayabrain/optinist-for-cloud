@@ -132,7 +132,7 @@ class ExptDataWriter:
         self.workspace_id = workspace_id
         self.unique_id = unique_id
 
-    def delete_data(self) -> bool:
+    async def delete_data(self) -> bool:
         shutil.rmtree(
             join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
         )
@@ -142,13 +142,13 @@ class ExptDataWriter:
         # Operate remote storage data.
         if RemoteStorageController.use_remote_storage():
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            result = remote_storage_controller.delete_experiment(
+            result = await remote_storage_controller.delete_experiment(
                 self.workspace_id, self.unique_id
             )
 
         return result
 
-    def rename(self, new_name: str) -> ExptConfig:
+    async def rename(self, new_name: str) -> ExptConfig:
         filepath = join_filepath(
             [
                 DIRPATH.OUTPUT_DIR,
@@ -170,7 +170,7 @@ class ExptDataWriter:
         if RemoteStorageController.use_remote_storage():
             # upload latest EXPERIMENT_YML
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            remote_storage_controller.upload_experiment(
+            await remote_storage_controller.upload_experiment(
                 self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
             )
 

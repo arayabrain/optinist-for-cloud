@@ -47,7 +47,7 @@ class MockStorageController(BaseRemoteStorageController):
         )
         return experiment_remote_path
 
-    def download_all_experiments_metas(self) -> bool:
+    async def download_all_experiments_metas(self) -> bool:
         # ----------------------------------------
         # make paths
         # ----------------------------------------
@@ -99,7 +99,7 @@ class MockStorageController(BaseRemoteStorageController):
 
         return True
 
-    def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
         experiment_local_path = self.make_experiment_local_path(workspace_id, unique_id)
         experiment_remote_path = self.make_experiment_remote_path(
@@ -139,7 +139,7 @@ class MockStorageController(BaseRemoteStorageController):
 
         return True
 
-    def upload_experiment(
+    async def upload_experiment(
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
         # make paths
@@ -191,7 +191,7 @@ class MockStorageController(BaseRemoteStorageController):
 
         return True
 
-    def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
+    async def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         # make paths
         experiment_remote_path = self.make_experiment_remote_path(
             workspace_id, unique_id

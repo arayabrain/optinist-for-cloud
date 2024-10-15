@@ -42,7 +42,7 @@ async def fetch_last_experiment(
         unique_id = last_expt_config.unique_id
 
         # sync unsynced remote storage data.
-        is_remote_synced = force_sync_unsynced_experiment(
+        is_remote_synced = await force_sync_unsynced_experiment(
             remote_bucket_name, workspace_id, unique_id, last_expt_config.success
         )
 
@@ -86,7 +86,7 @@ async def reproduce_experiment(
         workflow_config = WorkflowConfigReader.read(workflow_config_path)
 
         # sync unsynced remote storage data.
-        is_remote_synced = force_sync_unsynced_experiment(
+        is_remote_synced = await force_sync_unsynced_experiment(
             remote_bucket_name, workspace_id, unique_id, experiment_config.success
         )
 
@@ -170,7 +170,7 @@ async def copy_sample_data(
     return True
 
 
-def force_sync_unsynced_experiment(
+async def force_sync_unsynced_experiment(
     remote_bucket_name: str, workspace_id: str, unique_id: str, workflow_status: str
 ) -> bool:
     """
@@ -190,7 +190,9 @@ def force_sync_unsynced_experiment(
     # If not, perform synchronization
     if not is_running and not is_remote_synced:
         remote_storage_controller = RemoteStorageController(remote_bucket_name)
-        result = remote_storage_controller.download_experiment(workspace_id, unique_id)
+        result = await remote_storage_controller.download_experiment(
+            workspace_id, unique_id
+        )
 
         if not result:
             raise HTTPException(status_code=404, detail="sync remote experiment failed")

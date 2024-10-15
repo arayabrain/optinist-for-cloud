@@ -40,7 +40,7 @@ class WorkflowResult:
         self.error_filepath = join_filepath([self.workflow_dirpath, "error.log"])
         self.pid_filepath = join_filepath([self.workflow_dirpath, "pid.json"])
 
-    def get(self, nodeIdList):
+    async def get(self, nodeIdList):
         results: Dict[str, Message] = {}
 
         for node_id in nodeIdList:
@@ -73,6 +73,11 @@ class WorkflowResult:
                         node_id,
                         pickle_filepath,
                     )
+
+                    if node_result.info is not None:
+                        results[node_id] = await node_result.get()
+                        self.update_has_nwb(node_id)
+
                 # process for nodes
                 else:
                     node_result = NodeResult(
@@ -81,9 +86,9 @@ class WorkflowResult:
                         pickle_filepath,
                     )
 
-                if node_result.info is not None:
-                    results[node_id] = node_result.get()
-                    self.update_has_nwb(node_id)
+                    if node_result.info is not None:
+                        results[node_id] = node_result.get()
+                        self.update_has_nwb(node_id)
 
         self.update_has_nwb()
 
@@ -258,7 +263,7 @@ class PostProcessResult(BaseNodeResult):
         except EOFError:
             self.info = None
 
-    def get(self):
+    async def get(self):
         expt_config = ExptConfigReader.read(self.expt_filepath)
         if isinstance(self.info, (list, str)):
             expt_config.procs[self.node_id].success = "error"
@@ -290,7 +295,7 @@ class PostProcessResult(BaseNodeResult):
         if RemoteStorageController.use_remote_storage():
             # upload latest EXPERIMENT_YML
             remote_storage_controller = RemoteStorageController(self.remote_bucket_name)
-            remote_storage_controller.upload_experiment(
+            await remote_storage_controller.upload_experiment(
                 expt_config.workspace_id,
                 expt_config.unique_id,
                 [DIRPATH.EXPERIMENT_YML],
