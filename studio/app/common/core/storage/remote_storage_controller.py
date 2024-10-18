@@ -90,14 +90,24 @@ class RemoteSyncStatusFileUtil:
         return remote_sync_status
 
     @classmethod
-    def check_sync_status_file_success(cls, workspace_id: str, unique_id: str) -> bool:
+    def check_sync_status_success(cls, workspace_id: str, unique_id: str) -> bool:
         """
-        check remote storage sync status file.
+        check remote storage sync status file. (is success)
         """
         return (
             cls.check_sync_status_file(workspace_id, unique_id)
             == RemoteSyncStatus.SUCCESS
         )
+
+    @classmethod
+    def check_sync_status_unsynced(cls, workspace_id: str, unique_id: str) -> bool:
+        """
+        check remote storage sync status file. (is unsynced)
+        """
+        return cls.check_sync_status_file(workspace_id, unique_id) not in [
+            RemoteSyncStatus.PROCESSING,
+            RemoteSyncStatus.SUCCESS,
+        ]
 
     @classmethod
     def create_sync_status_file(
