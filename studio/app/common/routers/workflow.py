@@ -14,7 +14,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageLockError,
     RemoteStorageReader,
-    RemoteSyncAction,
+    RemoteStorageWriter,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import (
@@ -210,14 +210,14 @@ async def copy_sample_data(
         for sample_data_subdir in sample_data_subdirs:
             unique_id = os.path.basename(sample_data_subdir)
 
-            # Note: Force creation of remote_sync_status file
+            # Note: Force transfer of sample_data to remote storage
             #   to enable reproduction of sample data.
-            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
-                remote_bucket_name,
-                workspace_id,
-                unique_id,
-                RemoteSyncAction.DOWNLOAD,
-            )
+            async with RemoteStorageWriter(
+                remote_bucket_name, workspace_id, unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    workspace_id, unique_id
+                )
 
     return True
 
