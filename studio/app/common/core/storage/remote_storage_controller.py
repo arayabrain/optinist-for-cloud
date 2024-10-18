@@ -32,9 +32,9 @@ class RemoteStorageType(Enum):
 
 
 class RemoteSyncStatus(Enum):
-    OK = "OK"
-    NG = "NG"
-    PENDING = "PENDING"
+    SUCCESS = "success"
+    PROCESSING = "processing"
+    ERROR = "error"
 
 
 class RemoteSyncAction(Enum):
@@ -83,7 +83,7 @@ class RemoteSyncStatusFileUtil:
         if os.path.isfile(remote_sync_status_file_path):
             with open(remote_sync_status_file_path) as f:
                 sync_status_data = json.load(f)
-                status_str = sync_status_data.get("status")
+                status_str = str(sync_status_data.get("status")).upper()
                 if status_str in RemoteSyncStatus.__members__:
                     remote_sync_status = RemoteSyncStatus[status_str]
 
@@ -95,7 +95,8 @@ class RemoteSyncStatusFileUtil:
         check remote storage sync status file.
         """
         return (
-            cls.check_sync_status_file(workspace_id, unique_id) == RemoteSyncStatus.OK
+            cls.check_sync_status_file(workspace_id, unique_id)
+            == RemoteSyncStatus.SUCCESS
         )
 
     @classmethod
@@ -137,11 +138,11 @@ class RemoteSyncStatusFileUtil:
             workspace_id,
             unique_id,
             remote_sync_action,
-            RemoteSyncStatus.OK,
+            RemoteSyncStatus.SUCCESS,
         )
 
     @classmethod
-    def create_sync_status_file_for_pending(
+    def create_sync_status_file_for_processing(
         cls,
         remote_bucket_name: str,
         workspace_id: str,
@@ -153,7 +154,7 @@ class RemoteSyncStatusFileUtil:
             workspace_id,
             unique_id,
             remote_sync_action,
-            RemoteSyncStatus.PENDING,
+            RemoteSyncStatus.PROCESSING,
         )
 
     @classmethod
@@ -515,7 +516,7 @@ class BaseRemoteStorageReaderWriter(metaclass=ABCMeta):
         RemoteSyncLockFileUtil.create_sync_lock_file(workspace_id, unique_id)
 
         # generate remote-sync-status-file (for pendding)
-        RemoteSyncStatusFileUtil.create_sync_status_file_for_pending(
+        RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
             bucket_name,
             workspace_id,
             unique_id,
@@ -535,7 +536,7 @@ class BaseRemoteStorageReaderWriter(metaclass=ABCMeta):
                 self.workspace_id,
                 self.unique_id,
                 self.sync_action,
-                RemoteSyncStatus.OK,
+                RemoteSyncStatus.SUCCESS,
             )
         else:  # Processing failure
             RemoteSyncStatusFileUtil.create_sync_status_file(
@@ -543,7 +544,7 @@ class BaseRemoteStorageReaderWriter(metaclass=ABCMeta):
                 self.workspace_id,
                 self.unique_id,
                 self.sync_action,
-                RemoteSyncStatus.NG,
+                RemoteSyncStatus.ERROR,
             )
 
         # delete lock file
