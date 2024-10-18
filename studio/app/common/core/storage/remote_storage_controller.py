@@ -158,6 +158,22 @@ class RemoteSyncStatusFileUtil:
         )
 
     @classmethod
+    def create_sync_status_file_for_error(
+        cls,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        remote_sync_action: RemoteSyncAction,
+    ) -> None:
+        cls.create_sync_status_file(
+            remote_bucket_name,
+            workspace_id,
+            unique_id,
+            remote_sync_action,
+            RemoteSyncStatus.ERROR,
+        )
+
+    @classmethod
     def delete_sync_status_file(cls, workspace_id: str, unique_id: str) -> None:
         """
         delete remote storage sync status file.
@@ -290,6 +306,13 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         make experiment data directory remote path.
         """
 
+    @property
+    @abstractmethod
+    def bucket_name(self) -> str:
+        """
+        return current remotes storage bucket_name.
+        """
+
     @abstractmethod
     def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         """
@@ -403,6 +426,10 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return new_name
 
+    @property
+    def bucket_name(self) -> str:
+        return self.__controller.bucket_name
+
     async def create_bucket(self) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
         if remote_storage_type == RemoteStorageType.S3:
@@ -436,17 +463,91 @@ class RemoteStorageController(BaseRemoteStorageController):
         return await self.__controller.download_all_experiments_metas(workspace_ids)
 
     async def download_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return await self.__controller.download_experiment(workspace_id, unique_id)
+        sync_status_params = {
+            "remote_bucket_name": self.bucket_name,
+            "workspace_id": workspace_id,
+            "unique_id": unique_id,
+            "remote_sync_action": RemoteSyncAction.DOWNLOAD,
+        }
+        result = False
+
+        try:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
+                **sync_status_params
+            )
+
+            result = await self.__controller.download_experiment(
+                workspace_id, unique_id
+            )
+
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+                **sync_status_params
+            )
+        except Exception as e:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_error(
+                **sync_status_params
+            )
+            raise e
+
+        return result
 
     async def upload_experiment(
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
-        return await self.__controller.upload_experiment(
-            workspace_id, unique_id, target_files
-        )
+        sync_status_params = {
+            "remote_bucket_name": self.bucket_name,
+            "workspace_id": workspace_id,
+            "unique_id": unique_id,
+            "remote_sync_action": RemoteSyncAction.UPLOAD,
+        }
+        result = False
+
+        try:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
+                **sync_status_params
+            )
+
+            result = await self.__controller.upload_experiment(
+                workspace_id, unique_id, target_files
+            )
+
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+                **sync_status_params
+            )
+        except Exception as e:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_error(
+                **sync_status_params
+            )
+            raise e
+
+        return result
 
     async def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
-        return await self.__controller.delete_experiment(workspace_id, unique_id)
+        sync_status_params = {
+            "remote_bucket_name": self.bucket_name,
+            "workspace_id": workspace_id,
+            "unique_id": unique_id,
+            "remote_sync_action": RemoteSyncAction.DELETE,
+        }
+        result = False
+
+        try:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
+                **sync_status_params
+            )
+
+            result = await self.__controller.delete_experiment(workspace_id, unique_id)
+
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
+                **sync_status_params
+            )
+        except Exception as e:
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_error(
+                **sync_status_params
+            )
+            raise e
+
+        return result
 
 
 class BaseRemoteStorageSimpleReaderWriter(metaclass=ABCMeta):
@@ -531,20 +632,18 @@ class BaseRemoteStorageReaderWriter(metaclass=ABCMeta):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         # update remote-sync-status-file
         if not exc_type:  # Processing success
-            RemoteSyncStatusFileUtil.create_sync_status_file(
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
                 self.bucket_name,
                 self.workspace_id,
                 self.unique_id,
                 self.sync_action,
-                RemoteSyncStatus.SUCCESS,
             )
-        else:  # Processing failure
-            RemoteSyncStatusFileUtil.create_sync_status_file(
+        else:  # Processing error
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_error(
                 self.bucket_name,
                 self.workspace_id,
                 self.unique_id,
                 self.sync_action,
-                RemoteSyncStatus.ERROR,
             )
 
         # delete lock file
