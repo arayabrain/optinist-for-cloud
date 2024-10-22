@@ -48,6 +48,7 @@ async def fetch_last_experiment(
             unique_id = last_expt_config.unique_id
 
             # sync unsynced remote storage data.
+            is_remote_synced = False
             if RemoteStorageController.is_available():
                 is_remote_synced = await force_sync_unsynced_experiment(
                     remote_bucket_name,
@@ -66,6 +67,7 @@ async def fetch_last_experiment(
                 ]
             )
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
+
             return WorkflowWithResults(
                 **asdict(last_expt_config),
                 **asdict(workflow_config),
@@ -112,6 +114,7 @@ async def reproduce_experiment(
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
 
             # sync unsynced remote storage data.
+            is_remote_synced = False
             if RemoteStorageController.is_available():
                 is_remote_synced = await force_sync_unsynced_experiment(
                     remote_bucket_name,
