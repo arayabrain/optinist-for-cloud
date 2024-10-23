@@ -33,6 +33,18 @@ class MockStorageController(BaseRemoteStorageController):
         create_directory(__class__.MOCK_INPUT_DIR)
         create_directory(__class__.MOCK_OUTPUT_DIR)
 
+    def _make_input_data_local_path(self, workspace_id: str, filename: str) -> str:
+        input_data_local_path = join_filepath(
+            [DIRPATH.INPUT_DIR, workspace_id, filename]
+        )
+        return input_data_local_path
+
+    def _make_input_data_remote_path(self, workspace_id: str, filename: str) -> str:
+        input_data_remote_path = join_filepath(
+            [__class__.MOCK_INPUT_DIR, workspace_id, filename]
+        )
+        return input_data_remote_path
+
     def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_local_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
@@ -49,43 +61,112 @@ class MockStorageController(BaseRemoteStorageController):
     def bucket_name(self) -> str:
         return None  # Fixed with None in MockStorage
 
+    async def download_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_local_path = self._make_input_data_local_path(workspace_id, filename)
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        if os.path.isfile(input_data_local_path):
+            logger.debug(f"skip download input data: {input_data_remote_path}")
+            return False
+
+        if not os.path.isfile(input_data_remote_path):
+            logger.warning("remote path is not exists. [%s]", input_data_remote_path)
+            return False
+
+        logger.debug(
+            "download input data from remote storage (mock). [%s -> %s]",
+            input_data_remote_path,
+            input_data_local_path,
+        )
+
+        # ----------------------------------------
+        # exec downloading
+        # ----------------------------------------
+
+        shutil.copy(input_data_remote_path, input_data_local_path)
+
+        return True
+
+    async def upload_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_local_path = self._make_input_data_local_path(workspace_id, filename)
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        logger.debug(
+            "upload input data to remote storage (mock). [%s -> %s]",
+            input_data_local_path,
+            input_data_remote_path,
+        )
+
+        # ----------------------------------------
+        # exec uploading
+        # ----------------------------------------
+
+        input_data_remote_dir = os.path.dirname(input_data_remote_path)
+        create_directory(input_data_remote_dir)
+
+        shutil.copy(input_data_local_path, input_data_remote_path)
+
+        return True
+
+    async def delete_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        logger.debug(
+            "delete input data from remote storage (mock). [%s]",
+            input_data_remote_path,
+        )
+
+        # ----------------------------------------
+        # exec deleting
+        # ----------------------------------------
+
+        os.remove(input_data_remote_path)
+
+        return True
+
     async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         # ----------------------------------------
         # make paths
         # ----------------------------------------
 
+        metadata_filenames = [
+            DIRPATH.EXPERIMENT_YML,
+            DIRPATH.SNAKEMAKE_CONFIG_YML,
+            DIRPATH.WORKFLOW_YML,
+        ]
+
+        config_yml_paths = []
+
         if workspace_ids:  # search specified workspaces
             # Search per workspace
-            experiment_yml_paths = []
-            workflow_yml_paths = []
             for ws_id in workspace_ids:
-                experiment_yml_search_path = (
-                    f"{__class__.MOCK_OUTPUT_DIR}/{ws_id}/**/{DIRPATH.EXPERIMENT_YML}"
-                )
-                tmp_experiment_yml_paths = glob(
-                    experiment_yml_search_path, recursive=True
-                )
-                experiment_yml_paths.extend(tmp_experiment_yml_paths)
-                del tmp_experiment_yml_paths
+                for metadata_filename in metadata_filenames:
+                    config_yml_search_path = (
+                        f"{__class__.MOCK_OUTPUT_DIR}/{ws_id}/**/{metadata_filename}"
+                    )
+                    tmp_config_yml_paths = glob(config_yml_search_path, recursive=True)
+                    config_yml_paths.extend(tmp_config_yml_paths)
+                    del tmp_config_yml_paths
 
-                workflow_yml_search_path = (
-                    f"{__class__.MOCK_OUTPUT_DIR}/{ws_id}/**/{DIRPATH.WORKFLOW_YML}"
-                )
-                tmp_workflow_yml_paths = glob(workflow_yml_search_path, recursive=True)
-                workflow_yml_paths.extend(tmp_workflow_yml_paths)
-                del tmp_workflow_yml_paths
         else:  # search all workspaces
-            experiment_yml_search_path = (
-                f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.EXPERIMENT_YML}"
-            )
-            experiment_yml_paths = glob(experiment_yml_search_path, recursive=True)
+            for metadata_filename in metadata_filenames:
+                config_yml_search_path = (
+                    f"{__class__.MOCK_OUTPUT_DIR}/**/{metadata_filename}"
+                )
+                tmp_config_yml_paths = glob(config_yml_search_path, recursive=True)
+                config_yml_paths.extend(tmp_config_yml_paths)
+                del tmp_config_yml_paths
 
-            workflow_yml_search_path = (
-                f"{__class__.MOCK_OUTPUT_DIR}/**/{DIRPATH.WORKFLOW_YML}"
-            )
-            workflow_yml_paths = glob(workflow_yml_search_path, recursive=True)
-
-        target_files = sorted(experiment_yml_paths + workflow_yml_paths)
+        target_files = sorted(config_yml_paths)
 
         logger.debug(
             "download all medata from remote storage (mock). [count: %d]",

@@ -34,17 +34,23 @@ def test_initialize():
         print("RemoteStorageController is available, skip this test.")
         return
 
-    test_data_src_path = f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}"
-    test_data_output_path = f"{DIRPATH.DATA_DIR}/output/{workspace_id}/{unique_id}"
+    # ----------------------------------------
+    # copy output test data
+    # ----------------------------------------
+
+    test_data_output_src_path = (
+        f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}"
+    )
+    test_data_output_dst_path = f"{DIRPATH.DATA_DIR}/output/{workspace_id}/{unique_id}"
 
     # cleaning local storage
-    if os.path.exists(test_data_output_path):
-        shutil.rmtree(test_data_output_path)
+    if os.path.exists(test_data_output_dst_path):
+        shutil.rmtree(test_data_output_dst_path)
 
     # copy test data
     shutil.copytree(
-        test_data_src_path,
-        test_data_output_path,
+        test_data_output_src_path,
+        test_data_output_dst_path,
         dirs_exist_ok=True,
     )
 
@@ -125,7 +131,45 @@ async def test_RemoteStorageController_crud_bucket():
 
 
 @pytest.mark.asyncio
-async def test_RemoteStorageController_upload():
+async def test_RemoteStorageController_operate_input_data():
+    input_file_name = "mouse2p_short_image.tiff"
+
+    # upload input data
+    async with RemoteStorageSimpleWriter(
+        remote_bucket_name
+    ) as remote_storage_controller:
+        result = await remote_storage_controller.upload_input_data(
+            workspace_id, input_file_name
+        )
+    assert result, "upload_input_data failed.."
+
+    # cleaning local storage
+    test_input_data_local_path = (
+        f"{DIRPATH.DATA_DIR}/input/{workspace_id}/{input_file_name}"
+    )
+    os.remove(test_input_data_local_path)
+
+    # download input data
+    async with RemoteStorageSimpleReader(
+        remote_bucket_name
+    ) as remote_storage_controller:
+        result = await remote_storage_controller.download_input_data(
+            workspace_id, input_file_name
+        )
+    assert result, "download_input_data failed.."
+
+    # delete input data
+    async with RemoteStorageSimpleWriter(
+        remote_bucket_name
+    ) as remote_storage_controller:
+        result = await remote_storage_controller.delete_input_data(
+            workspace_id, input_file_name
+        )
+    assert result, "delete_input_data failed.."
+
+
+@pytest.mark.asyncio
+async def test_RemoteStorageController_upload_experiment():
     if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return
@@ -153,7 +197,7 @@ async def test_RemoteStorageController_upload():
 
 
 @pytest.mark.asyncio
-async def test_RemoteStorageController_download():
+async def test_RemoteStorageController_download_experiment():
     if not RemoteStorageController.is_available():
         print("RemoteStorageController is available, skip this test.")
         return

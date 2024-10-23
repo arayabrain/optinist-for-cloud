@@ -35,6 +35,18 @@ class S3StorageController(BaseRemoteStorageController):
     def __get_s3_resource(self):
         return aioboto3.Session().resource("s3")
 
+    def _make_input_data_local_path(self, workspace_id: str, filename: str) -> str:
+        input_data_local_path = join_filepath(
+            [DIRPATH.INPUT_DIR, workspace_id, filename]
+        )
+        return input_data_local_path
+
+    def _make_input_data_remote_path(self, workspace_id: str, filename: str) -> str:
+        input_data_remote_path = join_filepath(
+            [__class__.S3_INPUT_DIR, workspace_id, filename]
+        )
+        return input_data_remote_path
+
     def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         experiment_local_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
@@ -86,6 +98,128 @@ class S3StorageController(BaseRemoteStorageController):
             await bucket.delete()
 
         logger.info(f"S3 bucket was successfully deleted. [{self.bucket_name}]")
+
+        return True
+
+    async def download_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_local_path = self._make_input_data_local_path(workspace_id, filename)
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        if os.path.isfile(input_data_local_path):
+            logger.debug(f"skip download input data: {input_data_remote_path}")
+
+        logger.debug(
+            "download input data from remote storage (S3). [%s] [%s -> %s]",
+            self.bucket_name,
+            input_data_remote_path,
+            input_data_local_path,
+        )
+
+        # ----------------------------------------
+        # exec downloading
+        # ----------------------------------------
+
+        async with self.__get_s3_client() as __s3_client:
+            # request s3 list_objects
+            s3_list_objects = await __s3_client.list_objects_v2(
+                Bucket=self.bucket_name, Prefix=input_data_remote_path
+            )
+
+            # check copy source object
+            if not s3_list_objects or s3_list_objects.get("KeyCount", 0) == 0:
+                logger.warning(
+                    "remote data is not exists. [%s] [%s]",
+                    self.bucket_name,
+                    input_data_remote_path,
+                )
+                return False
+
+            # do download data from remote storage
+            target_files_count = len(s3_list_objects["Contents"])
+            for index, s3_object in enumerate(s3_list_objects["Contents"]):
+                s3_file_path = s3_object["Key"]
+                file_size = s3_object["Size"]
+
+                logger.debug(
+                    f"download data from S3 [{self.bucket_name}] "
+                    f"({index+1}/{target_files_count}) "
+                    f"{s3_file_path} ({file_size:,} bytes)"
+                )
+
+                await __s3_client.download_file(
+                    self.bucket_name, s3_file_path, input_data_local_path
+                )
+
+                logger.debug(
+                    f"finish download data from S3 [{self.bucket_name}] "
+                    f"{s3_file_path}"
+                )
+
+        return True
+
+    async def upload_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_local_path = self._make_input_data_local_path(workspace_id, filename)
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        logger.debug(
+            "upload data to remote storage (S3). [%s] [%s -> %s]",
+            self.bucket_name,
+            input_data_local_path,
+            input_data_remote_path,
+        )
+
+        # ----------------------------------------
+        # exec uploading
+        # ----------------------------------------
+
+        file_size = os.path.getsize(input_data_local_path)
+
+        logger.debug(
+            f"upload data to S3 [{self.bucket_name}] "
+            f"{input_data_remote_path} ({file_size:,} bytes)"
+        )
+
+        async with self.__get_s3_client() as __s3_client:
+            await __s3_client.upload_file(
+                input_data_local_path, self.bucket_name, input_data_remote_path
+            )
+
+        logger.debug(
+            f"finish upload data from S3 [{self.bucket_name}] "
+            f"{input_data_remote_path}"
+        )
+
+        return True
+
+    async def delete_input_data(self, workspace_id: str, filename: str) -> bool:
+        # make paths
+        input_data_remote_path = self._make_input_data_remote_path(
+            workspace_id, filename
+        )
+
+        logger.debug(
+            "delete input data from remote storage (s3). [%s]",
+            input_data_remote_path,
+        )
+
+        # ----------------------------------------
+        # exec deleting
+        # ----------------------------------------
+
+        async with self.__get_s3_resource() as __s3_resource:
+            bucket = await __s3_resource.Bucket(self.bucket_name)
+
+            objects_to_delete = bucket.objects.filter(Prefix=input_data_remote_path)
+            keys_to_delete = [{"Key": obj.key} async for obj in objects_to_delete]
+
+            if keys_to_delete:
+                await bucket.delete_objects(Delete={"Objects": keys_to_delete})
 
         return True
 
@@ -160,7 +294,11 @@ class S3StorageController(BaseRemoteStorageController):
             workspaces_dirs,
         )
 
-        metadata_filenames = ["experiment.yaml", "workflow.yaml"]
+        metadata_filenames = [
+            DIRPATH.EXPERIMENT_YML,
+            DIRPATH.SNAKEMAKE_CONFIG_YML,
+            DIRPATH.WORKFLOW_YML,
+        ]
 
         # Scan workspaces directories
         async with self.__get_s3_client() as __s3_client:
@@ -262,6 +400,7 @@ class S3StorageController(BaseRemoteStorageController):
                 f"aws s3 sync {self.__s3_storage_url} {tempdir} "
                 "--dryrun --exclude '*' "
                 f"--include '*/{DIRPATH.EXPERIMENT_YML}' "
+                f"--include '*/{DIRPATH.SNAKEMAKE_CONFIG_YML}' "
                 f"--include '*/{DIRPATH.WORKFLOW_YML}' "
             )
 
@@ -372,27 +511,26 @@ class S3StorageController(BaseRemoteStorageController):
         # exec downloading
         # ----------------------------------------
 
-        # request s3 list_objects
         async with self.__get_s3_client() as __s3_client:
+            # request s3 list_objects
             s3_list_objects = await __s3_client.list_objects_v2(
                 Bucket=self.bucket_name, Prefix=experiment_remote_path
             )
 
-        # check copy source directory
-        if not s3_list_objects or s3_list_objects.get("KeyCount", 0) == 0:
-            logger.warning(
-                "remote data is not exists. [%s] [%s]",
-                self.bucket_name,
-                experiment_remote_path,
-            )
-            return False
+            # check copy source directory
+            if not s3_list_objects or s3_list_objects.get("KeyCount", 0) == 0:
+                logger.warning(
+                    "remote data is not exists. [%s] [%s]",
+                    self.bucket_name,
+                    experiment_remote_path,
+                )
+                return False
 
-        # cleaning data from local path
-        if os.path.isdir(experiment_local_path):
-            await self._clear_local_experiment_data(experiment_local_path)
+            # cleaning data from local path
+            if os.path.isdir(experiment_local_path):
+                await self._clear_local_experiment_data(experiment_local_path)
 
-        # do download data from remote storage
-        async with self.__get_s3_client() as __s3_client:
+            # do download data from remote storage
             target_files_count = len(s3_list_objects["Contents"])
             for index, s3_object in enumerate(s3_list_objects["Contents"]):
                 s3_file_path = s3_object["Key"]
