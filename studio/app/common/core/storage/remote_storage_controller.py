@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.snakemake.smk_utils import SmkUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.dir_path import DIRPATH
 
@@ -536,6 +537,14 @@ class RemoteStorageController(BaseRemoteStorageController):
             result = await self.__controller.download_experiment(
                 workspace_id, unique_id
             )
+
+            # download input data
+            # *Download the input data related to the experiment data as well.
+            input_filenames = SmkUtils.get_datatypes_inputs(
+                workspace_id, unique_id, apply_basename=True
+            )
+            for input_filename in input_filenames:
+                await self.download_input_data(workspace_id, input_filename)
 
             # update sync status file
             RemoteSyncStatusFileUtil.create_sync_status_file_for_success(

@@ -1,5 +1,7 @@
 import os
 
+import yaml
+
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.workflow.workflow import NodeType, NodeTypeUtil, ProcessType
@@ -45,6 +47,35 @@ class SmkUtils:
                 return find_condaenv_filepath(conda_name)
 
         return None
+
+    @classmethod
+    def get_datatypes_inputs(
+        cls, workspace_id: str, unique_id: str, apply_basename: bool = False
+    ) -> list:
+        smk_config_yml_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.SNAKEMAKE_CONFIG_YML]
+        )
+        with open(smk_config_yml_path, "r") as f:
+            smk_config = yaml.safe_load(f)
+
+        input_paths = []
+
+        for node in smk_config["rules"].values():
+            if NodeTypeUtil.check_nodetype_from_filetype(node["type"]) == NodeType.DATA:
+                if node["type"] in [FILETYPE.IMAGE]:
+                    if apply_basename:
+                        tmp_input_paths = [os.path.basename(x) for x in node["input"]]
+                    else:
+                        tmp_input_paths = node["input"]
+                    input_paths.extend(tmp_input_paths)
+                else:
+                    if apply_basename:
+                        tmp_input_path = os.path.basename(node["input"])
+                    else:
+                        tmp_input_path = node["input"]
+                    input_paths.append(tmp_input_path)
+
+        return input_paths
 
     @classmethod
     def dict2leaf(cls, root_dict: dict, path_list):

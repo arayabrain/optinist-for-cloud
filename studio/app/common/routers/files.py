@@ -12,6 +12,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from requests.models import Response
 from tqdm import tqdm
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageSimpleWriter,
+)
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -180,7 +185,12 @@ async def set_shape(workspace_id: str, filepath: str):
     response_model=FilePath,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def create_file(workspace_id: str, filename: str, file: UploadFile = File(...)):
+async def create_file(
+    workspace_id: str,
+    filename: str,
+    file: UploadFile = File(...),
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     create_directory(join_filepath([DIRPATH.INPUT_DIR, workspace_id]))
 
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filename])
@@ -189,6 +199,14 @@ async def create_file(workspace_id: str, filename: str, file: UploadFile = File(
         shutil.copyfileobj(file.file, f)
 
     update_image_shape(workspace_id, filename)
+
+    # Operate remote storage data.
+    if RemoteStorageController.is_available():
+        # upload input data to remote storage
+        async with RemoteStorageSimpleWriter(
+            remote_bucket_name
+        ) as remote_storage_controller:
+            await remote_storage_controller.upload_input_data(workspace_id, filename)
 
     return {"file_path": filename}
 

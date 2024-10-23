@@ -223,8 +223,9 @@ async def sync_remote_experiment(
             )
 
         if not result:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="record not found"
+            )
         return result
 
     except HTTPException as e:
