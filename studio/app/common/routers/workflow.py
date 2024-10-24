@@ -14,8 +14,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageLockError,
     RemoteStorageReader,
-    RemoteSyncAction,
-    RemoteSyncLockFileUtil,
+    RemoteStorageWriter,
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import (
@@ -49,6 +48,7 @@ async def fetch_last_experiment(
             unique_id = last_expt_config.unique_id
 
             # sync unsynced remote storage data.
+            is_remote_synced = False
             if RemoteStorageController.is_available():
                 is_remote_synced = await force_sync_unsynced_experiment(
                     remote_bucket_name,
@@ -67,6 +67,7 @@ async def fetch_last_experiment(
                 ]
             )
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
+
             return WorkflowWithResults(
                 **asdict(last_expt_config),
                 **asdict(workflow_config),
@@ -113,6 +114,7 @@ async def reproduce_experiment(
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
 
             # sync unsynced remote storage data.
+            is_remote_synced = False
             if RemoteStorageController.is_available():
                 is_remote_synced = await force_sync_unsynced_experiment(
                     remote_bucket_name,
@@ -211,14 +213,14 @@ async def copy_sample_data(
         for sample_data_subdir in sample_data_subdirs:
             unique_id = os.path.basename(sample_data_subdir)
 
-            # Note: Force creation of remote_sync_status file
+            # Note: Force transfer of sample_data to remote storage
             #   to enable reproduction of sample data.
-            RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
-                remote_bucket_name,
-                workspace_id,
-                unique_id,
-                RemoteSyncAction.DOWNLOAD,
-            )
+            async with RemoteStorageWriter(
+                remote_bucket_name, workspace_id, unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    workspace_id, unique_id
+                )
 
     return True
 
@@ -229,25 +231,22 @@ async def force_sync_unsynced_experiment(
     """
     Utility function: If experiment is unsynchronized, perform synchronization
     """
+
     if not RemoteStorageController.is_available():
         return False
 
-    # Check for remote-sync-lock-file
-    # - If lock file exists, an exception is raised (raise_error=True)
-    RemoteSyncLockFileUtil.check_sync_lock_file(
-        workspace_id, unique_id, raise_error=True
-    )
-
-    # checked workflow status.
+    # If in running, return without remote sync
     is_running = workflow_status == "running"
+    if is_running:
+        return True
 
+    # If not, perform synchronization
     # check remote synced status.
-    is_remote_synced = RemoteSyncStatusFileUtil.check_sync_status_file_success(
+    is_remote_unsynced = RemoteSyncStatusFileUtil.check_sync_status_unsynced(
         workspace_id, unique_id
     )
 
-    # If not, perform synchronization
-    if not is_running and not is_remote_synced:
+    if is_remote_unsynced:
         async with RemoteStorageReader(
             remote_bucket_name, workspace_id, unique_id
         ) as remote_storage_controller:
@@ -255,10 +254,10 @@ async def force_sync_unsynced_experiment(
                 workspace_id, unique_id
             )
 
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="sync remote experiment failed",
-            )
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="sync remote experiment failed",
+                )
 
     return True
