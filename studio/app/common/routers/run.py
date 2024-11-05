@@ -1,4 +1,3 @@
-import uuid
 from typing import Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -33,7 +32,7 @@ async def run(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        unique_id = str(uuid.uuid4())[:8]
+        unique_id = WorkflowRunner.create_workflow_unique_id()
         WorkflowRunner(
             remote_bucket_name, workspace_id, unique_id, runItem
         ).run_workflow(background_tasks)
