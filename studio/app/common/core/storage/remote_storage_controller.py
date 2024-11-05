@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 from enum import Enum
 
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.snakemake.smk_utils import SmkUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.dir_path import DIRPATH
 
@@ -305,6 +306,18 @@ class RemoteSyncLockFileUtil:
 
 class BaseRemoteStorageController(metaclass=ABCMeta):
     @abstractmethod
+    def _make_input_data_local_path(self, workspace_id: str, filename: str) -> str:
+        """
+        make input data directory local path.
+        """
+
+    @abstractmethod
+    def _make_input_data_remote_path(self, workspace_id: str, filename: str) -> str:
+        """
+        make input data directory remote path.
+        """
+
+    @abstractmethod
     def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         """
         make experiment data directory local path.
@@ -324,6 +337,24 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         """
 
     @abstractmethod
+    def download_input_data(self, workspace_id: str, filename: str) -> bool:
+        """
+        download input data from remote storage.
+        """
+
+    @abstractmethod
+    def upload_input_data(self, workspace_id: str, filename: str) -> bool:
+        """
+        upload input data to remote storage.
+        """
+
+    @abstractmethod
+    def delete_input_data(self, workspace_id: str, filename: str) -> bool:
+        """
+        delete input data from remote storage.
+        """
+
+    @abstractmethod
     def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         """
         download all experiment metadata from remote storage.
@@ -340,7 +371,7 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         self, workspace_id: str, unique_id: str, target_files: list = None
     ) -> bool:
         """
-        download experiment data to remote storage.
+        upload experiment data to remote storage.
 
         Args:
             target_files list:
@@ -350,7 +381,7 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
     @abstractmethod
     def delete_experiment(self, workspace_id: str, unique_id: str) -> bool:
         """
-        delete experiment data to remote storage.
+        delete experiment data from remote storage.
         """
 
     async def _clear_local_experiment_data(self, experiment_local_path: str):
@@ -417,6 +448,12 @@ class RemoteStorageController(BaseRemoteStorageController):
         ]
         return is_available
 
+    def _make_input_data_local_path(self, workspace_id: str, filename: str) -> str:
+        return self.__controller._make_input_data_local_path(workspace_id, filename)
+
+    def _make_input_data_remote_path(self, workspace_id: str, filename: str) -> str:
+        return self.__controller._make_input_data_remote_path(workspace_id, filename)
+
     def _make_experiment_local_path(self, workspace_id: str, unique_id: str) -> str:
         return self.__controller._make_experiment_local_path(workspace_id, unique_id)
 
@@ -464,6 +501,15 @@ class RemoteStorageController(BaseRemoteStorageController):
 
         return True
 
+    async def download_input_data(self, workspace_id: str, filename: str) -> bool:
+        return await self.__controller.download_input_data(workspace_id, filename)
+
+    async def upload_input_data(self, workspace_id: str, filename: str) -> bool:
+        return await self.__controller.upload_input_data(workspace_id, filename)
+
+    async def delete_input_data(self, workspace_id: str, filename: str) -> bool:
+        return await self.__controller.delete_input_data(workspace_id, filename)
+
     async def download_all_experiments_metas(self, workspace_ids: list = None) -> bool:
         """
         Args:
@@ -482,14 +528,25 @@ class RemoteStorageController(BaseRemoteStorageController):
         result = False
 
         try:
+            # create sync status file
             RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
                 **sync_status_params
             )
 
+            # download experiment data
             result = await self.__controller.download_experiment(
                 workspace_id, unique_id
             )
 
+            # download input data
+            # *Download the input data related to the experiment data as well.
+            input_filenames = SmkUtils.get_datatypes_inputs(
+                workspace_id, unique_id, apply_basename=True
+            )
+            for input_filename in input_filenames:
+                await self.download_input_data(workspace_id, input_filename)
+
+            # update sync status file
             RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
                 **sync_status_params
             )
@@ -513,6 +570,7 @@ class RemoteStorageController(BaseRemoteStorageController):
         result = False
 
         try:
+            # create sync status file
             RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
                 **sync_status_params
             )
@@ -521,6 +579,7 @@ class RemoteStorageController(BaseRemoteStorageController):
                 workspace_id, unique_id, target_files
             )
 
+            # update sync status file
             RemoteSyncStatusFileUtil.create_sync_status_file_for_success(
                 **sync_status_params
             )
