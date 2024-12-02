@@ -1,11 +1,11 @@
-FROM --platform=linux/amd64 python:3.8.18-slim
+FROM --platform=linux/amd64 python:3.8.20-slim
 
 WORKDIR /app
 
 # install default packages
 RUN apt-get --allow-releaseinfo-change update && \
     apt-get install --no-install-recommends -y sudo procps iproute2 iputils-ping telnet wget curl unzip less vim \
-		default-mysql-client
+        default-mysql-client
 
 # install conda & packages
 RUN mkdir -p /opt/miniconda3 && \
@@ -39,6 +39,10 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install poetry && \
     poetry config virtualenvs.create false
 RUN poetry install --no-root
+
+# setup optinist: download caiman model files
+COPY studio/app/optinist/wrappers/caiman/run_download_model_files.sh ./
+RUN bash run_download_model_files.sh && rm run_download_model_files.sh
 
 # copy optinist files
 COPY frontend/build /app/frontend/build
