@@ -98,7 +98,7 @@ sleep 30
 
 # Single initial health check before load balancer check
 echo "Verifying initial health..."
-if ! curl -v http://127.0.0.1:8000/health; then
+if ! curl -v "http://${BACKEND_HOST}:${BACKEND_PORT}/health"; then
     echo "Initial health check failed"
     # Don't exit - let ECS handle it
 fi
@@ -108,13 +108,15 @@ fi
 check_load_balancer() {
     if [ -n "$AWS_SERVICE_URL" ]; then
         echo "Checking load balancer status..."
-        max_tries=30
-        counter=0
+        readonly MAX_TRIES=30
+        readonly WAIT_SECONDS=10
+        local counter=0
+
         # Try for 5 minutes (30 attempts * 10 seconds)
-        until curl -s -o /dev/null --max-time 10 "$AWS_SERVICE_URL"
+        until curl -s -o /dev/null --max-time ${WAIT_SECONDS} "$AWS_SERVICE_URL"
         do
-            sleep 10
-            [[ counter -eq $max_tries ]] && echo "Load balancer not ready after 5 minutes" && return 1
+            sleep ${WAIT_SECONDS}
+            [[ $counter -eq $MAX_TRIES ]] && echo "Load balancer not ready after 5 minutes" && return 1
             echo "Attempt $counter: Waiting for load balancer..."
             ((counter++))
         done
