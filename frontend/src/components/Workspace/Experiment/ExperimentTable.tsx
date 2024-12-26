@@ -229,6 +229,7 @@ const TableImple = memo(function TableImple() {
         </Button>
         {isOwner && (
           <Button
+            data-testid="delete-selected-button"
             sx={{
               marginBottom: (theme) => theme.spacing(1),
             }}
@@ -249,11 +250,17 @@ const TableImple = memo(function TableImple() {
         title="Delete records?"
         content={
           <>
-            {checkedList.map((uid) => (
-              <Typography key={uid}>
-                ・{experimentList[uid].name} ({uid})
-              </Typography>
-            ))}
+            {checkedList.map((uid) => {
+              const experiment = experimentList[uid]
+              return (
+                <Typography key={uid}>
+                  ・
+                  {experiment
+                    ? `${experiment.name} (${uid})`
+                    : `Unknown (${uid})`}
+                </Typography>
+              )
+            })}
           </>
         }
         iconType="warning"
@@ -371,6 +378,7 @@ const HeadItem = memo(function HeadItem({
       <TableRow>
         <TableCell padding="checkbox">
           <Checkbox
+            data-testid="select-all-checkbox"
             sx={{ visibility: checkboxVisible ? "visible" : "hidden" }}
             checked={allChecked}
             indeterminate={allCheckIndeterminate}
@@ -441,7 +449,8 @@ const RowItem = memo(function RowItem({
   const [valueEdit, setValueEdit] = useState(name)
   const dispatch = useDispatch<AppDispatch>()
   const { enqueueSnackbar } = useSnackbar()
-  const isRemoteSynced = useSelector(selectExperimentIsRemoteSynced(uid))
+  const newLocal = useSelector(selectExperimentIsRemoteSynced(uid))
+  const isRemoteSynced = newLocal
 
   const onBlurEdit = (event: FocusEvent) => {
     event.preventDefault()
@@ -566,7 +575,11 @@ const RowItem = memo(function RowItem({
           <SnakemakeDownloadButton />
         </TableCell>
         <TableCell>
-          <NWBDownloadButton name={uid} hasNWB={hasNWB} />
+          <NWBDownloadButton
+            name={uid}
+            hasNWB={hasNWB}
+            isRemoteSynced={isRemoteSynced}
+          />
         </TableCell>
         <TableCell>
           <RemoteSyncButton />

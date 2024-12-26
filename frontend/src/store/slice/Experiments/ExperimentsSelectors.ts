@@ -56,7 +56,7 @@ export const selectExperimentHasNWB = (uid: string) => (state: RootState) =>
 
 export const selectExperimentIsRemoteSynced =
   (uid: string) => (state: RootState) =>
-    selectExperiment(uid)(state).isRemoteSynced
+    selectExperiment(uid)(state)?.isRemoteSynced ?? false
 
 export const selectExperimentStatus =
   (uid: string) =>
