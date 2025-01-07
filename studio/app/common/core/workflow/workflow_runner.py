@@ -133,7 +133,9 @@ class WorkflowRunner:
             last_output=last_output,
         )
 
-        SmkConfigWriter.write(self.workspace_id, self.unique_id, asdict(flow_config))
+        SmkConfigWriter.write_raw(
+            self.workspace_id, self.unique_id, asdict(flow_config)
+        )
 
     def rulefile(self):
         endNodeList = self.get_endNodeList()

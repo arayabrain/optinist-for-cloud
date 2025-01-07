@@ -14,28 +14,29 @@ import {
 } from "api/experiments/Experiments"
 import { downloadWorkflowConfigApi } from "api/workflow/Workflow"
 import { ExperimentUidContext } from "components/Workspace/Experiment/ExperimentTable"
-import { selectExperimentIsRemoteSynced } from "store/slice/Experiments/ExperimentsSelectors"
 import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
 
 interface NWBDownloadButtonProps {
   name: string
   nodeId?: string
   hasNWB: boolean
+  isRemoteSynced: boolean
 }
 
 export const NWBDownloadButton = memo(function NWBDownloadButton({
   name,
   nodeId,
   hasNWB,
+  isRemoteSynced,
 }: NWBDownloadButtonProps) {
   const workspaceId = useSelector(selectCurrentWorkspaceId)
   const uid = useContext(ExperimentUidContext)
   const ref = useRef<HTMLAnchorElement | null>(null)
   const [url, setFileUrl] = useState<string>()
-  const isRemoteSynced = useSelector(selectExperimentIsRemoteSynced(uid))
   const { enqueueSnackbar } = useSnackbar()
 
   const onClick = async () => {
+    if (!workspaceId) return
     try {
       const responseData = await downloadExperimentNwbApi(
         workspaceId!,
@@ -65,6 +66,7 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
             download={`nwb_${name}.nwb`}
             className="hidden"
             ref={ref}
+            data-testid="nwb-download-link"
           >
             {/* 警告が出るので空文字を入れておく */}{" "}
           </a>
@@ -109,6 +111,7 @@ export const SnakemakeDownloadButton = memo(function SnakemakeDownloadButton() {
         download={`snakemake_${uid}.yaml`}
         className="hidden"
         ref={ref}
+        data-testid="snakemake-download-link"
       >
         {/* 警告が出るので空文字を入れておく */}{" "}
       </a>
@@ -139,7 +142,7 @@ export const WorkflowDownloadButton = memo(function WorkflowDownloadButton() {
 
   return (
     <>
-      <IconButton onClick={onClick}>
+      <IconButton onClick={onClick} data-testid="workflow-download-button">
         <SimCardDownloadOutlinedIcon color="primary" />
       </IconButton>
       <a
@@ -147,6 +150,7 @@ export const WorkflowDownloadButton = memo(function WorkflowDownloadButton() {
         download={`workflow_${uid}.yaml`}
         className="hidden"
         ref={ref}
+        data-testid="workflow-download-link"
       >
         {/* 警告が出るので空文字を入れておく */}{" "}
       </a>
