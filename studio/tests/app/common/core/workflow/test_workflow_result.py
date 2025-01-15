@@ -3,6 +3,7 @@ import shutil
 
 import pytest
 
+from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.workflow.workflow import Message
 from studio.app.common.core.workflow.workflow_result import NodeResult, WorkflowResult
 from studio.app.dir_path import DIRPATH
@@ -26,6 +27,10 @@ async def test_WorkflowResult_get():
         output_dirpath,
         dirs_exist_ok=True,
     )
+
+    # first, write pid_file
+    Runner.write_pid_file(output_dirpath, "xxxx_dummy_func_script.py")
+
     output = await WorkflowResult(
         remote_bucket_name, workspace_id=workspace_id, unique_id=unique_id
     ).observe(node_id_list)

@@ -4,12 +4,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageLockError,
 )
 from studio.app.common.core.workflow.workflow import Message, NodeItem, RunItem
-from studio.app.common.core.workflow.workflow_result import WorkflowResult
+from studio.app.common.core.workflow.workflow_result import (
+    WorkflowMonitor,
+    WorkflowResult,
+)
 from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
@@ -118,17 +120,9 @@ async def run_result(
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def cancel_run(
-    workspace_id: str,
-    uid: str,
-    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
-):
+async def cancel_run(workspace_id: str, uid: str):
     try:
-        return Runner(remote_bucket_name, workspace_id, uid).cancel_run()
-
-    except RemoteStorageLockError as e:
-        logger.error(e)
-        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+        return WorkflowMonitor(workspace_id, uid).cancel_run()
     except HTTPException as e:
         logger.error(e)
         raise e
