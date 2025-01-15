@@ -73,7 +73,7 @@ class WorkflowResult:
         )
 
         # observe node list
-        results = self.__observe_node_list(nodeIdList, workflow_error)
+        results = await self.__observe_node_list(nodeIdList, workflow_error)
 
         # check workflow status
         is_workflow_status_running = self.__is_workflow_status_running(
@@ -93,7 +93,7 @@ class WorkflowResult:
                 )
 
             # re-run observe node list (reflects workflow error)
-            results = self.__observe_node_list(nodeIdList, workflow_error)
+            results = await self.__observe_node_list(nodeIdList, workflow_error)
 
         return results
 
@@ -128,14 +128,14 @@ class WorkflowResult:
                 for node_pickle_path in node_pickle_files:
                     # process for procs
                     if node_id == ProcessType.POST_PROCESS.id:
-                        node_result = PostProcessResult(
+                        post_process_result = PostProcessResult(
                             self.remote_bucket_name,
                             self.workspace_id,
                             self.unique_id,
                             node_id,
                             node_pickle_path,
                         )
-                        results[node_id] = await node_result.observe()
+                        results[node_id] = await post_process_result.observe()
 
                         self.__check_has_nwb(node_id)
 
