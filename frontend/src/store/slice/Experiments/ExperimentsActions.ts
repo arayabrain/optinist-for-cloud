@@ -5,6 +5,7 @@ import {
   getExperimentsApi,
   deleteExperimentByUidApi,
   deleteExperimentByListApi,
+  copyExperimentByListApi,
   syncRemoteExperimentApi,
 } from "api/experiments/Experiments"
 import { EXPERIMENTS_SLICE_NAME } from "store/slice/Experiments/ExperimentsType"
@@ -56,6 +57,24 @@ export const deleteExperimentByList = createAsyncThunk<
   if (workspaceId) {
     try {
       const response = await deleteExperimentByListApi(workspaceId, uid)
+      return response
+    } catch (e) {
+      return thunkAPI.rejectWithValue(e)
+    }
+  } else {
+    return thunkAPI.rejectWithValue("workspace id does not exist.")
+  }
+})
+
+export const copyExperimentByList = createAsyncThunk<
+  boolean,
+  string[],
+  ThunkApiConfig
+>(`${EXPERIMENTS_SLICE_NAME}/copyExperimentByList`, async (uid, thunkAPI) => {
+  const workspaceId = selectCurrentWorkspaceId(thunkAPI.getState())
+  if (workspaceId) {
+    try {
+      const response = await copyExperimentByListApi(workspaceId, uid)
       return response
     } catch (e) {
       return thunkAPI.rejectWithValue(e)

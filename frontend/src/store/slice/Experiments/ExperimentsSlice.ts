@@ -4,6 +4,7 @@ import {
   getExperiments,
   deleteExperimentByUid,
   deleteExperimentByList,
+  copyExperimentByList,
   syncRemoteExperiment,
 } from "store/slice/Experiments/ExperimentsActions"
 import {
@@ -93,6 +94,7 @@ export const experimentsSlice = createSlice({
         isAnyOf(
           deleteExperimentByUid.pending,
           deleteExperimentByList.pending,
+          copyExperimentByList.pending,
           syncRemoteExperiment.pending,
         ),
         (state) => {
@@ -103,6 +105,8 @@ export const experimentsSlice = createSlice({
         isAnyOf(
           deleteExperimentByUid.rejected,
           deleteExperimentByList.rejected,
+          copyExperimentByList.fulfilled,
+          copyExperimentByList.rejected,
           syncRemoteExperiment.rejected,
         ),
         (state) => {

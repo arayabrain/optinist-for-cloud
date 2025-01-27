@@ -14,6 +14,7 @@ import { useSelector, useDispatch } from "react-redux"
 
 import { useSnackbar } from "notistack"
 
+import ContentCopyIcon from "@mui/icons-material/ContentCopy"
 import DeleteIcon from "@mui/icons-material/Delete"
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown"
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp"
@@ -51,6 +52,7 @@ import { ReproduceButton } from "components/Workspace/Experiment/Button/Reproduc
 import { CollapsibleTable } from "components/Workspace/Experiment/CollapsibleTable"
 import { ExperimentStatusIcon } from "components/Workspace/Experiment/ExperimentStatusIcon"
 import {
+  copyExperimentByList,
   deleteExperimentByList,
   getExperiments,
 } from "store/slice/Experiments/ExperimentsActions"
@@ -122,6 +124,7 @@ const TableImple = memo(function TableImple() {
   const dispatch = useDispatch<AppDispatch>()
   const [checkedList, setCheckedList] = useState<string[]>([])
   const [open, setOpen] = useState(false)
+  const [openCopy, setOpenCopy] = useState(false)
   const isRunning = useSelector((state: RootState) => {
     const currentUid = selectPipelineLatestUid(state)
     const isPending = selectPipelineIsStartedSuccess(state)
@@ -139,6 +142,24 @@ const TableImple = memo(function TableImple() {
     const isAsc = sortTarget === property && order === "asc"
     setOrder(isAsc ? "desc" : "asc")
     setSortTarget(property)
+  }
+
+  const onClickCopy = () => {
+    setOpenCopy(true)
+  }
+
+  const onClickOkCopy = () => {
+    dispatch(copyExperimentByList(checkedList))
+      .unwrap()
+      .then(() => {
+        dispatch(getExperiments())
+        enqueueSnackbar("Record Copied", { variant: "success" })
+      })
+      .catch(() => {
+        enqueueSnackbar("Failed to copy", { variant: "error" })
+      })
+    setCheckedList([])
+    setOpenCopy(false)
   }
 
   const onCheckBoxClick = (uid: string) => {
@@ -219,6 +240,17 @@ const TableImple = memo(function TableImple() {
         )}
         <Button
           sx={{
+            margin: (theme) => theme.spacing(0, 1, 1, 1),
+          }}
+          variant="outlined"
+          endIcon={<ContentCopyIcon />}
+          onClick={onClickCopy}
+          disabled={checkedList.length === 0 || isRunning}
+        >
+          COPY
+        </Button>
+        <Button
+          sx={{
             margin: (theme) => theme.spacing(0, 1, 1, 0),
           }}
           variant="outlined"
@@ -265,6 +297,23 @@ const TableImple = memo(function TableImple() {
         }
         iconType="warning"
         confirmLabel="delete"
+      />
+      <ConfirmDialog
+        open={openCopy}
+        setOpen={setOpenCopy}
+        onConfirm={onClickOkCopy}
+        title="Copy records?"
+        content={
+          <>
+            {checkedList.map((uid) => (
+              <Typography key={uid}>
+                ・{experimentList[uid].name} ({uid})
+              </Typography>
+            ))}
+          </>
+        }
+        iconType="warning"
+        confirmLabel="copy"
       />
       <Paper
         elevation={0}
