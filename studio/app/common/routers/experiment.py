@@ -194,7 +194,11 @@ async def delete_experiment_list(
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def copy_experiment_list(workspace_id: str, copyItem: CopyItem):
+async def copy_experiment_list(
+    workspace_id: str,
+    copyItem: CopyItem,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     logger = AppLogger.get_logger()
     logger.info(f"workspace_id: {workspace_id}, copyItem: {copyItem}")
     created_unique_ids = []  # Keep track of successfully created unique IDs
@@ -203,6 +207,7 @@ async def copy_experiment_list(workspace_id: str, copyItem: CopyItem):
             logger.info(f"copying item with unique_id of {unique_id}")
             new_unique_id = WorkflowRunner.create_workflow_unique_id()
             ExptDataWriter(
+                remote_bucket_name,
                 workspace_id,
                 unique_id,
             ).copy_data(new_unique_id)
