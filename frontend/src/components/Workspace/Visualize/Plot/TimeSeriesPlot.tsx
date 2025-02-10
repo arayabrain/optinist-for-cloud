@@ -15,8 +15,8 @@ import {
 } from "components/Workspace/FlowChart/Dialog/DialogContext"
 import { useBoxFilter } from "components/Workspace/FlowChart/Dialog/FilterContext"
 import { DisplayDataContext } from "components/Workspace/Visualize/DataContext"
+import { useVisualize } from "components/Workspace/Visualize/VisualizeContext"
 import {
-  clickRoi,
   getTimeSeriesDataById,
   getTimeSeriesInitData,
 } from "store/slice/DisplayData/DisplayDataActions"
@@ -49,7 +49,6 @@ import {
   selectVisualizeSaveFormat,
   selectImageItemRangeUnit,
 } from "store/slice/VisualizeItem/VisualizeItemSelectors"
-import { setTimeSeriesItemDrawOrderList } from "store/slice/VisualizeItem/VisualizeItemSlice"
 import { AppDispatch } from "store/store"
 
 export const TimeSeriesPlot = memo(function TimeSeriesPlot() {
@@ -112,6 +111,12 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
   const { setRoiSelected, setMaxDim } = useRoisSelected()
 
   const { filterParam, roiPath } = useBoxFilter()
+  const { setRoisClick, links } = useVisualize()
+
+  const itemIdRoi = useMemo(
+    () => Object.keys(links).find((key) => links[key] === itemId),
+    [itemId, links],
+  )
 
   const roiUniqueList = useSelector(selectRoiUniqueList(roiPath), shallowEqual)
 
@@ -343,27 +348,11 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
 
   const onLegendClick = (event: LegendClickEvent) => {
     const clickedSeriesId = dataKeys[event.curveNumber]
-
-    const newDrawOrderList = drawOrderList.includes(clickedSeriesId)
-      ? drawOrderList.filter((value) => value !== clickedSeriesId)
-      : [...drawOrderList, clickedSeriesId]
     if (dialogFilterNodeId) {
       setRoiSelected(Number(clickedSeriesId))
       return false
     }
-
-    dispatch(
-      setTimeSeriesItemDrawOrderList({
-        itemId,
-        drawOrderList: newDrawOrderList,
-      }),
-    )
-    dispatch(
-      clickRoi({
-        roiIndex: Number(clickedSeriesId),
-      }),
-    )
-
+    if (itemIdRoi) setRoisClick(Number(itemIdRoi), Number(clickedSeriesId))
     // set DisplayNumbers
     if (!drawOrderList.includes(clickedSeriesId)) {
       dispatch(getTimeSeriesDataById({ path, index: clickedSeriesId }))

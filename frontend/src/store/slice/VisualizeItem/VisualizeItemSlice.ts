@@ -689,6 +689,23 @@ export const visualaizeItemSlice = createSlice({
         targetItem.drawOrderList = drawOrderList
       }
     },
+    setTimeSeriesItemDrawOrder: (
+      state,
+      action: PayloadAction<{
+        itemId: number
+        drawOrder: string
+      }>,
+    ) => {
+      const { itemId, drawOrder } = action.payload
+      const targetItem = state.items[itemId]
+      if (isTimeSeriesItem(targetItem)) {
+        if (targetItem.drawOrderList.some((e) => e === drawOrder)) {
+          targetItem.drawOrderList = targetItem.drawOrderList.filter(
+            (e) => e !== drawOrder,
+          )
+        } else targetItem.drawOrderList.push(drawOrder)
+      }
+    },
     resetAllOrderList: (state) => {
       Object.keys(state.items).forEach((id: string | number) => {
         const targetItem = state.items[id]
@@ -721,7 +738,6 @@ export const visualaizeItemSlice = createSlice({
       const targetItem = state.items[itemId]
       if (isTimeSeriesItem(targetItem)) {
         targetItem.refImageItemId = refImageItemId ?? null
-        targetItem.drawOrderList = []
       }
     },
     setHeatMapItemShowScale: (
@@ -940,32 +956,6 @@ export const visualaizeItemSlice = createSlice({
           state.clickedRois[imageItemId] = clickedDataId
         }
         // Update drawOrderList for related time series items
-        Object.values(state.items).forEach((item) => {
-          if (isTimeSeriesItem(item)) {
-            if (
-              item.refImageItemId != null &&
-              imageItemId === item.refImageItemId
-            ) {
-              if (clickedDataId) {
-                // If clickedDataId exists, toggle its presence in drawOrderList
-                const index = item.drawOrderList.indexOf(clickedDataId)
-                if (index === -1) {
-                  item.drawOrderList.push(clickedDataId)
-                } else {
-                  item.drawOrderList.splice(index, 1)
-                }
-              } else {
-                // If clickedDataId is null (deselection), remove the previous selection
-                const previousSelection = state.clickedRois[imageItemId]
-                if (previousSelection) {
-                  item.drawOrderList = item.drawOrderList.filter(
-                    (id) => id !== previousSelection,
-                  )
-                }
-              }
-            }
-          }
-        })
       })
       .addCase(selectingImageArea.fulfilled, (state, action) => {
         const { itemId: imageItemId } = action.meta.arg
@@ -1055,6 +1045,7 @@ export const {
   setTimeSeriesItemXrangeLeft,
   setTimeSeriesItemXrangeRight,
   setTimeSeriesItemDrawOrderList,
+  setTimeSeriesItemDrawOrder,
   setTimeSeriesItemMaxIndex,
   setTimeSeriesRefImageItemId,
   setHeatMapItemShowScale,
