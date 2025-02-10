@@ -343,6 +343,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
                 if (isClickPoint) return [offset, hex]
             }
           }
+          if (!allowEditRoi && isClickPoint) return [offset, hex]
           return [offset, rgba2hex(rgba, 0.3)]
         }),
         zmin: 0,
