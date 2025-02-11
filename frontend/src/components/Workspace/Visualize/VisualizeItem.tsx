@@ -402,6 +402,9 @@ const RoiSelect = memo(function RoiSelect({
   const dispatch = useDispatch()
   const roiItemNodeId = useSelector(selectRoiItemNodeId(itemId))
   const roiItemFilePath = useSelector(selectRoiItemFilePath(itemId))
+
+  const { resetRoisClick } = useVisualize()
+
   useEffect(() => {
     if (!roiItemFilePath) return
     setRoiFilePath?.(roiItemFilePath)
@@ -413,6 +416,7 @@ const RoiSelect = memo(function RoiSelect({
     dataType: string,
     outputKey?: string,
   ) => {
+    resetRoisClick(itemId)
     dispatch(setRoiItemFilePath({ itemId, nodeId, filePath, outputKey }))
   }
   return (
