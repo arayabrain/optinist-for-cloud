@@ -699,6 +699,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
         variant: "success",
       })
       resetTimeSeries()
+      resetRoisClick(itemId)
     } catch (error) {
       enqueueSnackbar("Failed to commit Edit ROI.", { variant: "error" })
     } finally {
