@@ -7,9 +7,10 @@ import {
   useRef,
   useState,
 } from "react"
-import { useDispatch } from "react-redux"
+import { useSelector, useDispatch, shallowEqual } from "react-redux"
 
 import { getTimeSeriesDataById } from "store/slice/DisplayData/DisplayDataActions"
+import { selectStatusRoiTempAdd } from "store/slice/DisplayData/DisplayDataSelectors"
 import { selectVisualizeDataFilePath } from "store/slice/VisualizeItem/VisualizeItemSelectors"
 import {
   setTimeSeriesItemDrawOrder,
@@ -39,6 +40,10 @@ export const VisualizeProvider = ({ children }: PropsWithChildren) => {
   const [rois, setRois] = useState<{ [key: string]: number[] }>({})
   const [links, _setLinks] = useState<{ [itemId: string]: string | number }>({})
   const dispatch = useDispatch<AppDispatch>()
+  const selectedStatusTempAdd = useSelector(
+    selectStatusRoiTempAdd,
+    shallowEqual,
+  )
 
   const linksRef = useRef(links)
   const roisRef = useRef(rois)
@@ -103,9 +108,11 @@ export const VisualizeProvider = ({ children }: PropsWithChildren) => {
           store.getState() as RootState,
         )
         if (!path) return
-        await dispatch(
-          getTimeSeriesDataById({ path, index: String(e) }),
-        ).unwrap()
+        if (!selectedStatusTempAdd.includes(Number(e))) {
+          await dispatch(
+            getTimeSeriesDataById({ path, index: String(e) }),
+          ).unwrap()
+        }
       })
       return () => {
         dispatch(
@@ -120,7 +127,7 @@ export const VisualizeProvider = ({ children }: PropsWithChildren) => {
         })
       }
     },
-    [dispatch],
+    [dispatch, selectedStatusTempAdd],
   )
 
   return (

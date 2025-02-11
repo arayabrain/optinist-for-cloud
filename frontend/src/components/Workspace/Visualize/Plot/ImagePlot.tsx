@@ -519,7 +519,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
     // use as unknown because original PlotDatum does not have z property
     const point: PlotDatum = event.points[0] as unknown as PlotDatum
     if (point.curveNumber >= 1 && point.z >= 0) {
-      if (statusRoi.temp_add_roi.includes(point.z)) return
       dispatch(
         setImageItemClickedDataId({ itemId, clickedDataId: String(point.z) }),
       )

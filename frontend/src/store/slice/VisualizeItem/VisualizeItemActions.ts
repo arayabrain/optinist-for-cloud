@@ -1,7 +1,10 @@
 import { createAsyncThunk, createAction } from "@reduxjs/toolkit"
 
 import { getTimeSeriesDataById } from "store/slice/DisplayData/DisplayDataActions"
-import { selectRoiData } from "store/slice/DisplayData/DisplayDataSelectors"
+import {
+  selectRoiData,
+  selectStatusRoiTempAdd,
+} from "store/slice/DisplayData/DisplayDataSelectors"
 import { DATA_TYPE } from "store/slice/DisplayData/DisplayDataType"
 import { selectVisualizeItems } from "store/slice/VisualizeItem/VisualizeItemSelectors"
 import { setClickedData } from "store/slice/VisualizeItem/VisualizeItemSlice"
@@ -21,13 +24,15 @@ export const setImageItemClickedDataId = createAsyncThunk<
   ({ itemId, clickedDataId }, thunkAPI) => {
     thunkAPI.dispatch(setClickedData({ itemId, clickedDataId }))
     const items = selectVisualizeItems(thunkAPI.getState())
+    const tempAdd = selectStatusRoiTempAdd(thunkAPI.getState())
     Object.values(items).forEach((item) => {
       if (
         isTimeSeriesItem(item) &&
         item.filePath != null &&
         item.refImageItemId === itemId &&
         clickedDataId &&
-        !item.drawOrderList.includes(clickedDataId)
+        !item.drawOrderList.includes(clickedDataId) &&
+        !tempAdd?.includes(Number(clickedDataId))
       ) {
         thunkAPI.dispatch(
           getTimeSeriesDataById({ path: item.filePath, index: clickedDataId }),

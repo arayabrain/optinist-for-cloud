@@ -378,3 +378,8 @@ export const selectStatusRoi = createSelector(
     temp_merge_roi: statusRoi?.temp_merge_roi || [],
   }),
 )
+
+export const selectStatusRoiTempAdd = createSelector(
+  [(state: RootState) => state.displayData.statusRoi],
+  (statusRoi): number[] => statusRoi?.temp_add_roi,
+)
