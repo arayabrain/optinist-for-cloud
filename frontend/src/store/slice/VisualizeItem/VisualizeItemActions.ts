@@ -24,15 +24,15 @@ export const setImageItemClickedDataId = createAsyncThunk<
   ({ itemId, clickedDataId }, thunkAPI) => {
     thunkAPI.dispatch(setClickedData({ itemId, clickedDataId }))
     const items = selectVisualizeItems(thunkAPI.getState())
-    // const tempAdd = selectStatusRoiTempAdd(thunkAPI.getState())
+    const tempAdd = selectStatusRoiTempAdd(thunkAPI.getState())
     Object.values(items).forEach((item) => {
       if (
         isTimeSeriesItem(item) &&
         item.filePath != null &&
         item.refImageItemId === itemId &&
         clickedDataId &&
-        !item.drawOrderList.includes(clickedDataId)
-        //  && !tempAdd?.includes(Number(clickedDataId))
+        !item.drawOrderList.includes(clickedDataId) &&
+        !tempAdd?.includes(Number(clickedDataId))
       ) {
         thunkAPI.dispatch(
           getTimeSeriesDataById({ path: item.filePath, index: clickedDataId }),
