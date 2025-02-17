@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, WheelEvent } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import styled from "@emotion/styled"
 import CloseIcon from "@mui/icons-material/Close"
 import { Box, Modal } from "@mui/material"
+import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
 
 import axios from "utils/axios"
 
@@ -14,55 +15,62 @@ type Props = {
 const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const [logs, setLogs] = useState<string[]>([])
 
-  const next_offset = useRef(-1)
+  const nextOffset = useRef(-1)
   const isPending = useRef(false)
+  const isPendingPre = useRef(false)
 
   const allowEndScroll = useRef(true)
+  const scrollRef = useRef<ScrollInverted | null>(null)
 
-  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const preOffset = useRef(-1)
 
-  useEffect(() => {
-    if (!scrollRef.current || !allowEndScroll.current) return
-    const { scrollHeight, clientHeight } = scrollRef.current
-    setTimeout(() => {
-      scrollRef.current?.scrollTo({ top: scrollHeight - clientHeight })
-    }, 0)
-  }, [logs?.length])
+  const serviceLogs = useCallback((offset: number, reverse?: boolean) => {
+    return axios.get("/logs", { params: { offset, reverse } })
+  }, [])
 
-  const getData = useCallback(() => {
+  const getPrevious = useCallback(async () => {
+    if (isPendingPre.current) return
+    isPendingPre.current = true
+    try {
+      const { data } = await serviceLogs(preOffset.current)
+      if (data.prev_offset < preOffset.current) {
+        preOffset.current = data.prev_offset
+        setLogs((pre) => [...data.data, ...pre])
+      }
+    } finally {
+      isPendingPre.current = false
+    }
+  }, [serviceLogs])
+
+  const getData = useCallback(async () => {
     if (isPending.current) return
     isPending.current = true
-    axios
-      .get("/logs", {
-        params: {
-          offset: next_offset.current,
-          reverse: false,
-          line_offset: 500,
-        },
-      })
-      .then(({ data }) => {
-        isPending.current = false
-        if (data.next_offset > next_offset.current) {
-          next_offset.current = data.next_offset
-          setLogs((pre) => [...pre, ...data.data])
-        }
-      })
+    try {
+      const { data } = await serviceLogs(nextOffset.current, false)
+      if (!allowEndScroll.current) return
+      if (preOffset.current === -1) preOffset.current = data.prev_offset
+      if (data.next_offset > nextOffset.current) {
+        nextOffset.current = data.next_offset
+        setLogs((pre) => [...pre, ...data.data])
+      }
+    } finally {
+      isPending.current = false
+      setTimeout(() => {
+        if (allowEndScroll.current) getData()
+      }, 2000)
+    }
+  }, [serviceLogs])
+
+  const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
+    if (top > 3 && isUserScrolling) allowEndScroll.current = false
   }, [])
 
   useEffect(() => {
     getData()
-    const interval = setInterval(() => {
-      getData()
-    }, 2000)
-    return () => {
-      clearInterval(interval)
-    }
   }, [getData])
 
-  const onScroll = useCallback((event: WheelEvent<HTMLDivElement>) => {
-    const { scrollHeight, clientHeight, scrollTop } =
-      event.target as HTMLDivElement
-    allowEndScroll.current = scrollTop + 55 >= scrollHeight - clientHeight
+  const renderItem = useCallback(({ item }: { item: string }) => {
+    return <BoxItem>{item}</BoxItem>
   }, [])
 
   return (
@@ -72,17 +80,22 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           <ButtonClose onClick={onClose}>
             <CloseIcon />
           </ButtonClose>
-          <Box
-            ref={scrollRef}
-            overflow="auto"
-            height="100%"
+          <ScrollInverted
             onScroll={onScroll}
-          >
-            {logs.map((log, index) => (
-              <BoxItem key={`${index}_${log}`}>{log}</BoxItem>
-            ))}
-            <Box height="50px" />
-          </Box>
+            ref={scrollRef}
+            data={logs}
+            renderItem={renderItem}
+            onLayout={() => {
+              if (allowEndScroll.current) {
+                scrollRef.current?.scrollToEnd()
+              }
+            }}
+            onStartReached={getPrevious}
+            onEndReached={() => {
+              if (!allowEndScroll.current) getData()
+              allowEndScroll.current = true
+            }}
+          />
         </Content>
       </Body>
     </Modal>

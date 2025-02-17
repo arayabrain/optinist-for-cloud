@@ -2097,6 +2097,11 @@
   resolved "https://registry.yarnpkg.com/@react-dnd/shallowequal/-/shallowequal-4.0.2.tgz#d1b4befa423f692fa4abf1c79209702e7d8ae4b4"
   integrity sha512-/RVXdLvJxLg4QKvMoM5WlwNR9ViO9z8B/qPcc+C0Sa/teJY7QG7kJ441DwzOjMYEY7GmU4dj5EcGHIkKZiQZCA==
 
+"@react-scroll-inverted/react-scroll@^2.1.2":
+  version "2.1.2"
+  resolved "https://registry.yarnpkg.com/@react-scroll-inverted/react-scroll/-/react-scroll-2.1.2.tgz#e3011bed9279432e2fb182dcaf2d2f74f3c12814"
+  integrity sha512-t8bQU5V9dkPT+tcJlFeGz97KwaD0fOCIIRC3x7ho4oRzNaZUyIWMma1K/zbUXE1YzowaM0Hy9erw6lcxCfbnew==
+
 "@reactflow/background@11.3.14":
   version "11.3.14"
   resolved "https://registry.yarnpkg.com/@reactflow/background/-/background-11.3.14.tgz#778ca30174f3de77fc321459ab3789e66e71a699"
