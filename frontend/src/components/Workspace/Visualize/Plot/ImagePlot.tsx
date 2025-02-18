@@ -70,7 +70,6 @@ import {
   selectImageItemEndIndex,
   selectRoiItemFilePath,
   selectRoiItemIndex,
-  selectImageItemRoiAlpha,
   selectImageItemDuration,
   selectVisualizeItemWidth,
   selectVisualizeItemHeight,
@@ -317,7 +316,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
         colorscale: [...Array(timeDataMaxIndex + 1)].map((_, i) => {
           const offset: number = i / timeDataMaxIndex
           const rgba = getRoiColor(i)
-          const hex = rgba2hex(rgba, roiAlpha)
+          const hex = rgba2hex(rgba, 1)
 
           const isClickPoint =
             !roiClicked.length || roiClicked.some((point) => point === i)
