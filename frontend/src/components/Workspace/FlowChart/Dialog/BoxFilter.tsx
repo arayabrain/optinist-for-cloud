@@ -29,10 +29,11 @@ type InputDim = {
   max?: number | null
   min?: number | null
   multiple?: boolean
+  setError?: (v: boolean) => void
 } & InputProps
 
 const InputDim = (props: InputDim) => {
-  const { title, onChangeInput, max, multiple, min, ...p } = props
+  const { title, onChangeInput, max, multiple, min, setError, ...p } = props
   const [value, setValue] = useState<string>(p.value as string)
   const [valuePassed, setValuePassed] = useState<string>(p.value as string)
 
@@ -43,9 +44,10 @@ const InputDim = (props: InputDim) => {
 
   const validateValue = useCallback(
     (string: string, isBlur?: boolean) => {
+      let arr = string.split(",")
+      if (isBlur) arr = arr.filter(Boolean)
       if (max) {
-        return string
-          .split(",")
+        return arr
           .map((e) => {
             const dims = e.split(":")
             if (!dims.filter(Boolean).length) return e
@@ -68,7 +70,7 @@ const InputDim = (props: InputDim) => {
           })
           .join(",")
       }
-      return string
+      return arr.join(",")
     },
     [max, min],
   )
@@ -117,6 +119,10 @@ const InputDim = (props: InputDim) => {
     () => getError(value, valuePassed),
     [getError, value, valuePassed],
   )
+
+  useEffect(() => {
+    setError?.(!!error)
+  }, [error, setError])
 
   const _onBlur = useCallback(() => {
     const newValue = validateValue(value, true)
@@ -172,6 +178,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
     shallowEqual,
   )
   const { filterParam, setFilterParam } = useBoxFilter()
+  const [error, setError] = useState(false)
 
   const dataFilterParam = useMemo(() => {
     if (!filterParam) return undefined
@@ -288,6 +295,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
             onChangeInput={(v) => onChange("roi", v)}
             multiple
             max={maxRoi}
+            setError={setError}
           />
           <InputDim
             title="Time(Dim1)"
@@ -296,6 +304,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
             value={dim1 || ""}
             onChangeInput={(v) => onChange("dim1", v)}
             max={maxDim}
+            setError={setError}
           />
         </Box>
         <Box mt={2} display="flex" gap={1}>
@@ -304,6 +313,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
             size="small"
             style={{ width: 120 }}
             onClick={acceptFilter}
+            disabled={error}
           >
             APPLY
           </Button>

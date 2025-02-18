@@ -213,7 +213,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const colorscale = useSelector(selectImageItemColors(itemId))
   const alpha = useSelector(selectImageItemAlpha(itemId))
   const timeDataMaxIndex = useSelector(selectRoiItemIndex(itemId, roiFilePath))
-  const roiAlpha = useSelector(selectImageItemRoiAlpha(itemId))
   const width = useSelector(selectVisualizeItemWidth(itemId))
   const height = useSelector(selectVisualizeItemHeight(itemId))
   const [sizeDrag, setSizeDrag] = useState(initSizeDrag)
@@ -361,7 +360,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
       zsmooth,
       roiDataState,
       timeDataMaxIndex,
-      roiAlpha,
       alpha,
       action,
       roiClicked,

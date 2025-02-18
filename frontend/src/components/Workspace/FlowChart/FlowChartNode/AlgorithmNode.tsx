@@ -114,9 +114,13 @@ const AlgorithmNodeImple = memo(function AlgorithmNodeImple({
 
   const allowFilter = useMemo(
     () =>
-      ["suite2p_roi", "caiman_cnmf", "lccd_cell_detection"].includes(
-        data.label,
-      ),
+      [
+        "suite2p_roi",
+        "caiman_cnmf",
+        "lccd_cell_detection",
+        "caiman_cnmfe",
+        "cnmf_multisession",
+      ].includes(data.label),
     [data.label],
   )
 
