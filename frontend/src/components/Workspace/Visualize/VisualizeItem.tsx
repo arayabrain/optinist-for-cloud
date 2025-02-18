@@ -283,8 +283,8 @@ const RefImageItemIdSelect = memo(function RefImageItemIdSelect({
         refImageItemId: isNaN(value) ? null : value,
       }),
     )
-    if (isNaN(value)) refSub.current?.()
-    else refSub.current = setLinks(itemId, value)
+    refSub.current?.()
+    refSub.current = setLinks(itemId, value)
   }
   const selectedRefImageItemId = useSelector(
     selectTimeSeriesItemRefImageItemId(itemId),
