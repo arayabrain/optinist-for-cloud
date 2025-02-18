@@ -178,6 +178,16 @@ export const selectPipelineNodeResultOutputFilePath =
     }
   }
 
+export const selectOutputFilePathCellRoi =
+  (nodeId?: string | null) => (state: RootState) => {
+    if (!nodeId) return ""
+    const outputPaths = selectPipelineNodeResultOutputPaths(nodeId)(state)
+    if (Object.keys(outputPaths).includes("cell_roi")) {
+      return outputPaths["cell_roi"].path
+    }
+    return ""
+  }
+
 export const selectPipelineNodeResultOutputFileDataType =
   (nodeId: string, outputKey: string) => (state: RootState) => {
     const outputPaths = selectPipelineNodeResultOutputPaths(nodeId)(state)

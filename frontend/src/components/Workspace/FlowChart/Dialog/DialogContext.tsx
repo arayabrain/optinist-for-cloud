@@ -54,6 +54,7 @@ export const DialogContext = createContext<{
   onMessageError: (value: ErrorDialogValue) => void
   onOpenFilterDialog: (nodeId: string) => void
   dialogFilterNodeId?: string
+  isOutput: boolean
 }>({
   onOpenOutputDialog: () => null,
   onOpenFileSelectDialog: () => null,
@@ -61,6 +62,7 @@ export const DialogContext = createContext<{
   onOpenInputUrlDialog: () => null,
   onMessageError: () => null,
   onOpenFilterDialog: () => null,
+  isOutput: false,
 })
 
 export const RoiSelectedContext = createContext<{
