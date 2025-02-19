@@ -21,17 +21,21 @@ import { AppDispatch, RootState, store } from "store/store"
 type TVisualizeContext = {
   roisClick: { [itemId: string]: number[] }
   setRoisClick: (itemId: number, roi: number) => void
+  setRoisClickWithGetTime: (itemId: number, roi: number) => void
   resetRoisClick: (itemId: number) => void
   links: { [linkItemId: string]: string | number }
   setLinks: (itemId: number, linkItemId: number) => () => void
+  isVisualize?: boolean
 }
 
 const VisualizeContext = createContext<TVisualizeContext>({
   roisClick: {},
   setRoisClick: () => null,
+  setRoisClickWithGetTime: () => null,
   resetRoisClick: () => null,
   links: {},
   setLinks: () => () => null,
+  isVisualize: false,
 })
 
 export const useVisualize = () => useContext(VisualizeContext)
@@ -72,6 +76,32 @@ export const VisualizeProvider = ({ children }: PropsWithChildren) => {
             drawOrder: String(roi),
           }),
         )
+      }
+    },
+    [dispatch],
+  )
+  const setRoisClickWithGetTime = useCallback(
+    async (itemId: string | number, roi: number) => {
+      setRois((pre) => ({
+        ...pre,
+        [itemId]: pre[itemId]?.some((e) => e === roi)
+          ? pre[itemId].filter((e) => e !== roi)
+          : [...(pre[itemId] || []), roi],
+      }))
+      const fluorescenceId = linksRef.current[itemId]
+      if (fluorescenceId !== undefined) {
+        dispatch(
+          setTimeSeriesItemDrawOrder({
+            itemId: Number(fluorescenceId),
+            drawOrder: String(roi),
+          }),
+        )
+        const path = selectVisualizeDataFilePath(fluorescenceId as number)(
+          store.getState() as RootState,
+        )
+        await dispatch(
+          getTimeSeriesDataById({ path: path!, index: String(roi) }),
+        ).unwrap()
       }
     },
     [dispatch],
@@ -132,7 +162,15 @@ export const VisualizeProvider = ({ children }: PropsWithChildren) => {
 
   return (
     <VisualizeContext.Provider
-      value={{ roisClick: rois, setRoisClick, links, setLinks, resetRoisClick }}
+      value={{
+        roisClick: rois,
+        setRoisClick,
+        links,
+        setLinks,
+        resetRoisClick,
+        setRoisClickWithGetTime,
+        isVisualize: true,
+      }}
     >
       {children}
     </VisualizeContext.Provider>

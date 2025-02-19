@@ -223,6 +223,7 @@ const FilePathSelectItem = memo(function FilePathSelectItem({
   itemId,
 }: ItemIdProps) {
   const dispatch = useDispatch()
+  const { resetRoisClick } = useVisualize()
   const dataType = useSelector(selectVisualizeDataType(itemId))
   const selectedNodeId = useSelector(selectVisualizeDataNodeId(itemId))
   const selectedFilePath = useSelector(selectImageItemFilePath(itemId))
@@ -254,6 +255,7 @@ const FilePathSelectItem = memo(function FilePathSelectItem({
             },
       ),
     )
+    resetRoisClick(itemId)
   }
 
   return (
