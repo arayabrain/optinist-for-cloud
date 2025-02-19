@@ -186,20 +186,6 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
     return { dim1: dim1?.filter(Boolean), roi: roi?.filter(Boolean) }
   }, [filterParam])
 
-  const dimPlaceholder = useMemo(() => {
-    const dims = filterSelector?.dim1
-      ?.map((e) => [e.start, e.end].filter((e) => e || e === 0))
-      ?.filter((e) => e.length)
-    return dims?.map((e) => e.join(":"))?.toString()
-  }, [filterSelector?.dim1])
-
-  const roiPlaceholder = useMemo(() => {
-    const rois = filterSelector?.roi
-      ?.map((e) => [e.start, e.end].filter((e) => e || e === 0))
-      ?.filter((e) => e.length)
-    return rois?.map((e) => e.join(":"))?.toString()
-  }, [filterSelector?.roi])
-
   useEffect(() => {
     setFilterParam(filterSelector)
   }, [filterSelector, setFilterParam])
@@ -290,7 +276,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
           <InputDim
             title="ROI"
             name="roi"
-            placeholder={roiPlaceholder || `0:${maxRoi}`}
+            placeholder={`0:${maxRoi}`}
             value={roi || ""}
             onChangeInput={(v) => onChange("roi", v)}
             multiple
@@ -300,7 +286,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
           <InputDim
             title="Time(Dim1)"
             name="dim1"
-            placeholder={dimPlaceholder || `0:${maxDim}`}
+            placeholder={`0:${maxDim}`}
             value={dim1 || ""}
             onChangeInput={(v) => onChange("dim1", v)}
             max={maxDim}
