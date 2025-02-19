@@ -669,6 +669,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
     }
     setAction("")
     setEdit(true)
+    resetRoisClick(itemId)
     dispatch(getStatus({ path: roiFilePath, workspaceId }))
   }
 
