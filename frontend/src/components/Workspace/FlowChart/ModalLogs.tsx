@@ -69,6 +69,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   useEffect(() => {
     getData()
+    return () => {
+      clearTimeout(timeout.current)
+    }
   }, [getData])
 
   useEffect(() => {
