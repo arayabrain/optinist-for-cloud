@@ -19,6 +19,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const isPending = useRef(false)
   const isPendingPre = useRef(false)
 
+  const timeout = useRef<NodeJS.Timeout>()
+
   const allowEndScroll = useRef(true)
   const scrollRef = useRef<ScrollInverted | null>(null)
 
@@ -55,7 +57,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       }
     } finally {
       isPending.current = false
-      setTimeout(() => {
+      timeout.current = setTimeout(() => {
         if (allowEndScroll.current) getData()
       }, 2000)
     }
@@ -68,6 +70,10 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   useEffect(() => {
     getData()
   }, [getData])
+
+  useEffect(() => {
+    if (!isOpen) clearTimeout(timeout.current)
+  }, [isOpen])
 
   const renderItem = useCallback(({ item }: { item: string }) => {
     return <BoxItem>{item}</BoxItem>
