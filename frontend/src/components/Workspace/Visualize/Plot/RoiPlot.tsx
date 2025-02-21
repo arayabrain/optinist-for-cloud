@@ -123,7 +123,7 @@ const RoiPlotImple = memo(function RoiPlotImple() {
         const rgba = colorscaleRoi[new_i]
         if (
           (!dialogFilterNodeId && !roiVisualSelected?.length) ||
-          [...roisSelected, ...roiVisualSelected].includes(i)
+          [...roisSelected, ...(roiVisualSelected || [])].includes(i)
         ) {
           return [offset, rgba]
         }
