@@ -13,7 +13,7 @@
     "@mui/material": "^5.14.17",
     "@mui/x-data-grid": "^6.18.1",
     "@mui/x-tree-view": "^6.17.0",
-    "@react-scroll-inverted/react-scroll": "^2.1.2",
+    "@react-scroll-inverted/react-scroll": "^2.1.4",
     "@reduxjs/toolkit": "^1.9.7",
     "@testing-library/jest-dom": "^6.1.4",
     "@testing-library/react": "^14.1.0",

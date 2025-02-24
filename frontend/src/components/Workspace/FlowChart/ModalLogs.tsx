@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import styled from "@emotion/styled"
+import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
+import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import CloseIcon from "@mui/icons-material/Close"
 import { Box, Modal } from "@mui/material"
 import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
@@ -15,6 +17,8 @@ type Props = {
 const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const [logs, setLogs] = useState<string[]>([])
 
+  const [keyword, setKeywork] = useState("")
+
   const nextOffset = useRef(-1)
   const isPending = useRef(false)
   const isPendingPre = useRef(false)
@@ -23,26 +27,29 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   const allowEndScroll = useRef(true)
   const scrollRef = useRef<ScrollInverted | null>(null)
-
   const preOffset = useRef(-1)
+  const indexSearch = useRef(-1)
 
   const serviceLogs = useCallback((offset: number, reverse?: boolean) => {
     return axios.get("/logs", { params: { offset, reverse } })
   }, [])
 
-  const getPrevious = useCallback(async () => {
-    if (isPendingPre.current) return
-    isPendingPre.current = true
-    try {
-      const { data } = await serviceLogs(preOffset.current)
-      if (data.prev_offset < preOffset.current) {
-        preOffset.current = data.prev_offset
-        setLogs((pre) => [...data.data, ...pre])
+  const getPrevious = useCallback(
+    async (allow?: boolean) => {
+      if (isPendingPre.current && !allow) return
+      isPendingPre.current = true
+      try {
+        const { data } = await serviceLogs(preOffset.current)
+        if (data.prev_offset < preOffset.current) {
+          preOffset.current = data.prev_offset
+          setLogs((pre) => [...data.data, ...pre])
+        }
+      } finally {
+        isPendingPre.current = false
       }
-    } finally {
-      isPendingPre.current = false
-    }
-  }, [serviceLogs])
+    },
+    [serviceLogs],
+  )
 
   const getData = useCallback(async () => {
     if (isPending.current) return
@@ -68,6 +75,11 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [])
 
   useEffect(() => {
+    getPrevious(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     getData()
     return () => {
       clearTimeout(timeout.current)
@@ -78,17 +90,62 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     if (!isOpen) clearTimeout(timeout.current)
   }, [isOpen])
 
-  const renderItem = useCallback(({ item }: { item: string }) => {
-    return <BoxItem>{item}</BoxItem>
-  }, [])
+  const onChangeKeyword = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      allowEndScroll.current = !e.target.value
+      setKeywork(e.target.value)
+      indexSearch.current = logs.findIndex((el) => el.includes(e.target.value))
+      scrollRef.current?.scrollToIndex(indexSearch.current)
+    },
+    [logs],
+  )
+
+  const onNextSearch = useCallback(() => {
+    if (!keyword.trim().length) return
+    let inNext = logs.findIndex(
+      (e, i) => e.includes(keyword) && i > indexSearch.current,
+    )
+    if (inNext < 0) inNext = logs.findIndex((e) => e.includes(keyword))
+    indexSearch.current = inNext
+    scrollRef.current?.scrollToIndex(indexSearch.current)
+  }, [keyword, logs])
+
+  const onPreSearch = useCallback(() => {
+    if (!keyword.trim().length) return
+    let inNext = logs.findIndex(
+      (e, i) => e.includes(keyword) && i < indexSearch.current,
+    )
+    if (inNext < 0) {
+      inNext = [...logs].reverse().findIndex((e) => e.includes(keyword))
+    }
+    indexSearch.current = inNext
+    scrollRef.current?.scrollToIndex(indexSearch.current)
+  }, [keyword, logs])
+
+  const renderItem = useCallback(
+    ({ item }: { item: string }) => {
+      if (!keyword) return <BoxItem>{item}</BoxItem>
+      const keys = item.split(keyword)
+      if (keys.length > 1) {
+        return (
+          <BoxItem
+            dangerouslySetInnerHTML={{
+              __html: keys.join(
+                `<span style="background: #c1ddff; color: #555f64">${keyword}</span>`,
+              ),
+            }}
+          />
+        )
+      }
+      return <BoxItem>{item}</BoxItem>
+    },
+    [keyword],
+  )
 
   return (
     <Modal open={isOpen} onClose={onClose}>
       <Body>
         <Content>
-          <ButtonClose onClick={onClose}>
-            <CloseIcon />
-          </ButtonClose>
           <ScrollInverted
             onScroll={onScroll}
             ref={scrollRef}
@@ -105,11 +162,60 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
               allowEndScroll.current = true
             }}
           />
+          <BoxSearch>
+            <InputSearch placeholder="Search logs" onChange={onChangeKeyword} />
+            <Box display="flex">
+              <BoxIconSearch onClick={onPreSearch}>
+                <ArrowBackIosIcon />
+              </BoxIconSearch>
+              <BoxIconSearch onClick={onNextSearch}>
+                <ArrowForwardIosIcon />
+              </BoxIconSearch>
+            </Box>
+            <ButtonClose onClick={onClose}>
+              <CloseIcon />
+            </ButtonClose>
+          </BoxSearch>
         </Content>
       </Body>
     </Modal>
   )
 }
+
+const BoxSearch = styled(Box)`
+  position: absolute;
+  right: 0;
+  top: 0;
+  background-color: #2d404e;
+  height: 43px;
+  width: 320px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+`
+
+const InputSearch = styled("input")`
+  width: 200px;
+  height: 23;
+  background-color: transparent;
+  outline: none;
+  border: none;
+  color: white;
+  padding: 16px 10px;
+`
+
+const BoxIconSearch = styled(Box)`
+  color: #7fa2bc;
+  height: 43px;
+  width: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  svg {
+    font-size: 18px;
+  }
+`
 
 const Body = styled(Box)`
   display: flex;
@@ -125,19 +231,17 @@ const Content = styled(Box)`
   max-height: 80%;
   background-color: black;
   position: relative;
+  white-space: pre-wrap;
 `
 
 const ButtonClose = styled(Box)`
-  position: absolute;
   width: 40px;
-  height: 40px;
-  background-color: white;
+  height: 43px;
   display: flex;
   align-items: center;
   justify-content: center;
-  right: 0;
   cursor: pointer;
-  z-index: 1;
+  color: #7fa2bc;
 `
 
 const BoxItem = styled("div")`
