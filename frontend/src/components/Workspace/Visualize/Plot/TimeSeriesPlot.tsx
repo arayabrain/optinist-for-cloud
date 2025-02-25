@@ -15,7 +15,7 @@ import { LegendClickEvent } from "plotly.js"
 
 import { LinearProgress, Typography } from "@mui/material"
 
-import { getRoiDataApi, TimeSeriesData } from "api/outputs/Outputs"
+import { TimeSeriesData } from "api/outputs/Outputs"
 import {
   DialogContext,
   useRoisSelected,
@@ -40,10 +40,7 @@ import {
   selectTimesSeriesMeta,
 } from "store/slice/DisplayData/DisplayDataSelectors"
 import { selectFrameRate } from "store/slice/Experiments/ExperimentsSelectors"
-import {
-  selectOutputFilePathCellRoi,
-  selectPipelineLatestUid,
-} from "store/slice/Pipeline/PipelineSelectors"
+import { selectPipelineLatestUid } from "store/slice/Pipeline/PipelineSelectors"
 import {
   selectTimeSeriesItemDrawOrderList,
   selectTimeSeriesItemOffset,
@@ -60,7 +57,6 @@ import {
   selectVisualizeSaveFormat,
   selectImageItemRangeUnit,
 } from "store/slice/VisualizeItem/VisualizeItemSelectors"
-import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
 import { AppDispatch } from "store/store"
 
 export const TimeSeriesPlot = memo(function TimeSeriesPlot() {
@@ -103,7 +99,6 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
     selectAlgorithmDataFilterParam(nodeId),
     shallowEqual,
   )
-  const workspaceId = useSelector(selectCurrentWorkspaceId)
   const meta = useSelector(selectTimesSeriesMeta(path))
   const dataXrange = useSelector(selectTimeSeriesXrange(path))
   const dataStd = useSelector(selectTimeSeriesStd(path))
@@ -127,50 +122,18 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
   const { dialogFilterNodeId, isOutput } = useContext(DialogContext)
   const { setRoiSelected, setMaxDim } = useRoisSelected()
   const { filterParam = filterSelector, roiPath } = useBoxFilter()
-  const roiUniqueListSelector = useSelector(
-    selectRoiUniqueList(roiPath),
-    shallowEqual,
-  )
-  const [roiUniqueList, setRoiUniqueList] = useState<null | string[]>(
-    roiUniqueListSelector,
-  )
+  const roiUniqueList = useSelector(selectRoiUniqueList(roiPath))
   const { setRoisClick, links } = useVisualize()
-  const itemIdRoi = useMemo(
-    () => Object.keys(links).find((key) => links[key] === itemId),
-    [itemId, links],
-  )
-  const pathCellRoi = useSelector(selectOutputFilePathCellRoi(nodeId))
 
   const isExistFilterRoi = useMemo(
     () => filterParam?.roi?.length,
     [filterParam?.roi?.length],
   )
 
-  const getRoiUniqueList = useCallback(() => {
-    if (workspaceId && pathCellRoi) {
-      getRoiDataApi(pathCellRoi, { workspaceId }).then(({ data }) => {
-        const roi1Ddata: number[] = data[0]
-          .map((row) =>
-            Array.from(new Set(row.filter((value) => value != null))),
-          )
-          .flat()
-        const roiUniqueIds = Array.from(new Set(roi1Ddata))
-          .sort((n1, n2) => n1 - n2)
-          .map(String)
-        setRoiUniqueList(roiUniqueIds)
-      })
-    }
-  }, [pathCellRoi, workspaceId])
-
-  useEffect(() => {
-    if (isOutput && isExistFilterRoi) getRoiUniqueList()
-  }, [getRoiUniqueList, isExistFilterRoi, isOutput])
-
-  useEffect(() => {
-    if (!isOutput || dialogFilterNodeId) {
-      setRoiUniqueList(roiUniqueListSelector)
-    }
-  }, [dialogFilterNodeId, isOutput, roiUniqueListSelector])
+  const itemIdRoi = useMemo(
+    () => Object.keys(links).find((key) => links[key] === itemId),
+    [itemId, links],
+  )
 
   useEffect(() => {
     if (!timeSeriesData) return

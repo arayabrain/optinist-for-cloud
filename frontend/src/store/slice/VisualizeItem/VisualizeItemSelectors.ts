@@ -402,8 +402,11 @@ export const selectTimeSeriesItemRefRoiUniqueList =
     if (isTimeSeriesItem(item)) {
       if (item.refImageItemId != null) {
         const imageItem = selectVisualizeItems(state)[item.refImageItemId]
-        if (isImageItem(imageItem) && imageItem.roiItem?.filePath != null) {
-          return selectRoiUniqueList(imageItem.roiItem.filePath)(state)
+        if (isImageItem(imageItem) && imageItem.roiItem?.filePath) {
+          return selectRoiUniqueList(imageItem.roiItem?.filePath)(state)
+        }
+        if (isRoiItem(imageItem) && imageItem.filePath) {
+          return selectRoiUniqueList(imageItem.filePath)(state)
         }
       }
       return null
