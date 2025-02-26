@@ -1,9 +1,13 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import styled from "@emotion/styled"
+import AdbIcon from "@mui/icons-material/Adb"
 import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import CloseIcon from "@mui/icons-material/Close"
+import ErrorIcon from "@mui/icons-material/Error"
+import InfoIcon from "@mui/icons-material/Info"
+import WarningIcon from "@mui/icons-material/Warning"
 import { Box, Modal } from "@mui/material"
 import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
 
@@ -176,11 +180,40 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
               <CloseIcon />
             </ButtonClose>
           </BoxSearch>
+          <BoxFilter>
+            <MenuFilter>
+              <InfoIcon /> INFO
+            </MenuFilter>
+            <MenuFilter>
+              <AdbIcon /> DEBUG
+            </MenuFilter>
+            <MenuFilter>
+              <WarningIcon /> WARNING
+            </MenuFilter>
+            <MenuFilter>
+              <ErrorIcon /> ERROR
+            </MenuFilter>
+          </BoxFilter>
         </Content>
       </Body>
     </Modal>
   )
 }
+
+const MenuFilter = styled(Box)`
+  display: flex;
+  padding: 5px 16px;
+  align-items: center;
+  color: white;
+  cursor: pointer;
+`
+
+const BoxFilter = styled(Box)`
+  position: absolute;
+  background-color: #2d404e;
+  right: 0;
+  bottom: 0;
+`
 
 const BoxSearch = styled(Box)`
   position: absolute;
