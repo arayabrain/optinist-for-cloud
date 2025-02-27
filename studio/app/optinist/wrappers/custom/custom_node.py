@@ -14,6 +14,9 @@ from studio.app.common.dataclass import HeatMapData, ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import FluoData
 
+# from typing import Dict, Literal, Union
+
+
 # import pandas as pd
 
 
@@ -52,7 +55,10 @@ def my_function(
     params: dict = None,  # Additional parameters to customize processing
     **kwargs  # Catch-all for additional arguments
     # Function returns a dictionary containing all outputs
+    # ---- Debug here ---- #
 ) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
+    # ) -> Dict[Literal["fluo", "image", "heatmap"],
+    #       Union[FluoData, ImageData, HeatMapData]]:
     """Example template for creating analysis functions.
 
     This function shows the basic structure for creating analysis functions
