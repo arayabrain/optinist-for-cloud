@@ -95,7 +95,7 @@ class LogRecordReader(ContentUnitReader):
 
     pattern = re.compile(
         rb"^(?P<asctime>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) "
-        rb"\x1b\[\d+m(?P<levelprefix>\w+)\x1b\[0m:?\s+"
+        rb"(?:\x1b\[\d+m)?(?P<levelprefix>\w+)(?:\x1b\[0m)?:?\s+"
         rb"\[(?P<name>[^\]]+)\] "
         rb"(?P<funcName>\w+)\(\):(?P<lineno>\d+) - "
         rb"(?P<message>.*)",
