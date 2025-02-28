@@ -1,5 +1,7 @@
 import json
 import os
+import re
+from abc import ABC, abstractmethod
 from io import BufferedReader
 from typing import List
 
@@ -60,41 +62,113 @@ class JsonReader:
         return PlotMetaData(**json_data)
 
 
-class FileLinesReader:
+class ContentUnitReader(ABC):
+    """Abstract base class for defining how to read content units"""
+
+    @abstractmethod
+    def is_unit_start(self, line: bytes) -> bool:
+        """Determine if a line starts a new content unit"""
+        pass
+
+    @abstractmethod
+    def parse(self, content: bytes) -> dict:
+        """Parse a content unit into a structured format"""
+        pass
+
+
+class LineReader(ContentUnitReader):
+    """Simple line reader that treats each line as a unit"""
+
+    def is_unit_start(self, line: bytes) -> bool:
+        return True
+
+    def parse(self, content: bytes) -> dict:
+        return {"raw": content}
+
+
+class LogRecordReader(ContentUnitReader):
+    """Log record reader that treats each log entry as a unit"""
+
+    start_pattern = re.compile(
+        rb"(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})", re.MULTILINE
+    )
+
+    pattern = re.compile(
+        rb"^(?P<asctime>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) "
+        rb"\x1b\[\d+m(?P<levelprefix>\w+)\x1b\[0m:?\s+"
+        rb"\[(?P<name>[^\]]+)\] "
+        rb"(?P<funcName>\w+)\(\):(?P<lineno>\d+) - "
+        rb"(?P<message>.*)",
+        re.DOTALL,
+    )
+
+    def is_unit_start(self, line: bytes) -> bool:
+        return bool(self.start_pattern.match(line.strip()))
+
+    def parse(self, content: bytes) -> dict:
+        if not content:
+            return {"raw": b"", "parsed": False}
+
+        match = self.pattern.match(content)
+        if not match:
+            return {"raw": content, "parsed": False}
+
+        components = match.groupdict()
+
+        return {
+            "timestamp": components["asctime"],
+            "level": components["levelprefix"],
+            "name": components["name"],
+            "function": components["funcName"],
+            "line": int(components["lineno"]),
+            "message": components["message"],
+            "raw": content,
+            "parsed": True,
+        }
+
+
+class FileReader:
     def __init__(self, file_path, **kwargs):
         if not os.path.exists(file_path):
             raise Exception(f"{file_path} does not exist.")
         self.file_path = file_path
+        self.unit_reader = LineReader()
 
-    def _validate_line(self, line: bytes) -> bool:
+    def _validate_unit(self, content: bytes) -> bool:
         """
         Condition to check whether line should be included in output data.
         Modify this if you want to filter content.
         """
         return True
 
-    def _read_forward_lines(
+    def _read_forward(
         self, file: BufferedReader, offset: int, limit: int
     ) -> PaginatedLineResult:
         file.seek(offset)
-        lines = []
 
-        while len(lines) < limit:
+        units = []
+        current_unit_buffer = b""
+        while len(units) < limit:
             line = file.readline()
             if not line:
                 break
 
-            if self._validate_line(line):
-                lines.append(line)
+            if self.unit_reader.is_unit_start(line):
+                if current_unit_buffer:
+                    if self._validate_unit(current_unit_buffer):
+                        units.append(current_unit_buffer)
+                current_unit_buffer = line
+            else:
+                current_unit_buffer += line
 
-        next_offset = file.tell()
+        next_offset = file.tell() - len(current_unit_buffer)
         return PaginatedLineResult(
             next_offset=next_offset,
             prev_offset=offset,
-            data=[line.decode().strip() for line in lines],
+            data=[line.decode().strip() for line in units],
         )
 
-    def _read_backward_lines(
+    def _read_backward(
         self, file: BufferedReader, offset: int, limit: int, read_chunk_size=1024
     ) -> PaginatedLineResult:
         file.seek(0, 2)
@@ -102,8 +176,9 @@ class FileLinesReader:
         next_offset = offset = min(offset, file_size)
 
         segment = b""
-        lines = []
-        while offset > 0 and len(lines) < limit:
+        current_unit_buffer = b""
+        units = []
+        while offset > 0 and len(units) < limit:
             chunk_size = min(read_chunk_size, offset)
             offset -= chunk_size
             file.seek(offset)
@@ -118,20 +193,24 @@ class FileLinesReader:
             buffer_lines = buffer.splitlines(keepends=True)
 
             # first line may be incomplete, save it as segment to append to next chunk
-            if buffer_lines:
-                if offset > 0:
-                    segment = buffer_lines.pop(0)
+            if buffer_lines and offset > 0:
+                segment = buffer_lines.pop(0)
 
             # Prepend valid lines to `lines`
             len_buf_lines = len(buffer_lines)
             for i in range(len_buf_lines - 1, -1, -1):
                 line = buffer_lines.pop(i)
-                if self._validate_line(line):
-                    lines.insert(0, line)
 
-                    if len(lines) == limit:
-                        segment += b"".join(buffer_lines)
-                        break
+                current_unit_buffer = line + current_unit_buffer
+                if self.unit_reader.is_unit_start(line):
+                    if self._validate_unit(current_unit_buffer):
+                        units.insert(0, current_unit_buffer)
+                        current_unit_buffer = b""
+                        if len(units) == limit:
+                            segment += b"".join(buffer_lines)
+                            break
+                    else:
+                        current_unit_buffer = b""
 
         prev_offset = offset
         if segment:
@@ -140,10 +219,10 @@ class FileLinesReader:
         return PaginatedLineResult(
             next_offset=next_offset,
             prev_offset=prev_offset,
-            data=[line.decode().strip() for line in lines],
+            data=[line.decode().strip() for line in units],
         )
 
-    def read_lines_from_offset(
+    def read_from_offset(
         self,
         offset: int,
         limit: int,
@@ -155,12 +234,12 @@ class FileLinesReader:
                 offset = file.tell()
 
             if reverse:
-                return self._read_backward_lines(file, offset, limit)
+                return self._read_backward(file, offset, limit)
             else:
-                return self._read_forward_lines(file, offset, limit)
+                return self._read_forward(file, offset, limit)
 
 
-class LogReader(FileLinesReader):
+class LogReader(FileReader):
     def __init__(
         self,
         file_path=DIRPATH.LOG_FILE_PATH,
@@ -169,22 +248,24 @@ class LogReader(FileLinesReader):
     ):
         super().__init__(file_path, **kwargs)
         self.file_path = file_path
+        self.unit_reader = LogRecordReader()
 
         if LogLevel.ALL in levels:
             self.levels = []
         else:
             self.levels = [level.value.encode() for level in levels]
 
-    def _validate_line(self, line: bytes) -> bool:
+    def _validate_unit(self, content: bytes) -> bool:
+        unit_dict = self.unit_reader.parse(content)
         if self.levels:
-            return any([level in line for level in self.levels])
+            return unit_dict["level"] in self.levels
 
         return True
 
-    def read_lines(
+    def read(
         self,
         offset: int,
         limit: int = 50,
         reverse: bool = False,
     ):
-        return self.read_lines_from_offset(offset=offset, limit=limit, reverse=reverse)
+        return self.read_from_offset(offset=offset, limit=limit, reverse=reverse)

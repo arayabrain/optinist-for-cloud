@@ -19,10 +19,10 @@ async def get_log_data(
         description="The starting position in the log file from which to fetch data."
         "A value of `-1` indicates the request should start from the end of the file",
     ),
-    line_limit: int = Query(
+    limit: int = Query(
         default=50,
         gt=0,
-        description="Max number of log lines to return.",
+        description="Max number of log unit to return.",
     ),
     reverse: bool = Query(
         default=True,
@@ -31,9 +31,9 @@ async def get_log_data(
     levels: List[LogLevel] = Query(default=[LogLevel.ALL]),
 ):
     try:
-        return LogReader(levels=levels).read_lines(
+        return LogReader(levels=levels).read(
             offset=offset,
-            limit=line_limit,
+            limit=limit,
             reverse=reverse,
         )
     except Exception as e:
