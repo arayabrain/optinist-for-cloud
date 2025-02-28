@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import List, Optional
 
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -29,3 +30,12 @@ class DownloadStatus:
     total: int = 0
     current: int = 0
     error: Optional[str] = None
+
+
+class LogLevel(str, Enum):
+    ALL = "ALL"
+    INFO = "INFO"
+    ERROR = "ERROR"
+    DEBUG = "DEBUG"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"

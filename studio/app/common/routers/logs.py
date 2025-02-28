@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Query
+from typing import List
+
+from fastapi import APIRouter, HTTPException, Query
 
 from studio.app.common.core.utils.file_reader import LogReader
+from studio.app.common.schemas.files import LogLevel
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -25,9 +28,13 @@ async def get_log_data(
         default=True,
         description="Fetch logs in reverse order.",
     ),
+    levels: List[LogLevel] = Query(default=[LogLevel.ALL]),
 ):
-    return LogReader.read_lines(
-        offset=offset,
-        line_limit=line_limit,
-        reverse=reverse,
-    )
+    try:
+        return LogReader(levels=levels).read_lines(
+            offset=offset,
+            limit=line_limit,
+            reverse=reverse,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

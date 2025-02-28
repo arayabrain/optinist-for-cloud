@@ -1,7 +1,9 @@
 import json
 import os
 from io import BufferedReader
+from typing import List
 
+from studio.app.common.schemas.files import LogLevel
 from studio.app.common.schemas.outputs import (
     JsonTimeSeriesData,
     OutputData,
@@ -59,27 +61,30 @@ class JsonReader:
 
 
 class FileLinesReader:
-    @classmethod
-    def validate_line(cls, line: bytes) -> bool:
+    def __init__(self, file_path, **kwargs):
+        if not os.path.exists(file_path):
+            raise Exception(f"{file_path} does not exist.")
+        self.file_path = file_path
+
+    def _validate_line(self, line: bytes) -> bool:
         """
         Condition to check whether line should be included in output data.
         Modify this if you want to filter content.
         """
         return True
 
-    @classmethod
     def _read_forward_lines(
-        cls, file: BufferedReader, offset: int, line_limit: int
+        self, file: BufferedReader, offset: int, limit: int
     ) -> PaginatedLineResult:
         file.seek(offset)
         lines = []
 
-        while len(lines) < line_limit:
+        while len(lines) < limit:
             line = file.readline()
             if not line:
                 break
 
-            if cls.validate_line(line):
+            if self._validate_line(line):
                 lines.append(line)
 
         next_offset = file.tell()
@@ -89,9 +94,8 @@ class FileLinesReader:
             data=[line.decode().strip() for line in lines],
         )
 
-    @classmethod
     def _read_backward_lines(
-        cls, file: BufferedReader, offset: int, line_limit: int, read_chunk_size=1024
+        self, file: BufferedReader, offset: int, limit: int, read_chunk_size=1024
     ) -> PaginatedLineResult:
         file.seek(0, 2)
         file_size = file.tell()
@@ -99,21 +103,21 @@ class FileLinesReader:
 
         segment = b""
         lines = []
-        while offset > 0 and len(lines) < line_limit:
+        while offset > 0 and len(lines) < limit:
             chunk_size = min(read_chunk_size, offset)
             offset -= chunk_size
             file.seek(offset)
 
             buffer = file.read(chunk_size)
 
-            # Prepend previous segment
+            # Append previous segment
             if segment:
                 buffer += segment
                 segment = b""
 
             buffer_lines = buffer.splitlines(keepends=True)
 
-            # Check if first line is incomplete
+            # first line may be incomplete, save it as segment to append to next chunk
             if buffer_lines:
                 if offset > 0:
                     segment = buffer_lines.pop(0)
@@ -122,10 +126,10 @@ class FileLinesReader:
             len_buf_lines = len(buffer_lines)
             for i in range(len_buf_lines - 1, -1, -1):
                 line = buffer_lines.pop(i)
-                if cls.validate_line(line):
+                if self._validate_line(line):
                     lines.insert(0, line)
 
-                    if len(lines) == line_limit:
+                    if len(lines) == limit:
                         segment += b"".join(buffer_lines)
                         break
 
@@ -139,37 +143,48 @@ class FileLinesReader:
             data=[line.decode().strip() for line in lines],
         )
 
-    @classmethod
     def read_lines_from_offset(
-        cls,
-        file_path: str,
+        self,
         offset: int,
-        line_limit: int,
+        limit: int,
         reverse: bool = False,
     ) -> PaginatedLineResult:
-        if not os.path.exists(file_path):
-            raise Exception(f"{file_path} does not exist.")
-
-        with open(file_path, "rb") as file:
+        with open(self.file_path, "rb") as file:
             if offset == -1:
                 file.seek(0, 2)
                 offset = file.tell()
 
             if reverse:
-                return cls._read_backward_lines(file, offset, line_limit)
+                return self._read_backward_lines(file, offset, limit)
             else:
-                return cls._read_forward_lines(file, offset, line_limit)
+                return self._read_forward_lines(file, offset, limit)
 
 
 class LogReader(FileLinesReader):
-    file_path = DIRPATH.LOG_FILE_PATH
+    def __init__(
+        self,
+        file_path=DIRPATH.LOG_FILE_PATH,
+        levels: List[LogLevel] = [],
+        **kwargs,
+    ):
+        super().__init__(file_path, **kwargs)
+        self.file_path = file_path
 
-    @classmethod
-    def validate_line(cls, line: bytes) -> bool:
+        if LogLevel.ALL in levels:
+            self.levels = []
+        else:
+            self.levels = [level.value.encode() for level in levels]
+
+    def _validate_line(self, line: bytes) -> bool:
+        if self.levels:
+            return any([level in line for level in self.levels])
+
         return True
 
-    @classmethod
-    def read_lines(cls, offset: int, line_limit: int = 50, reverse: bool = False):
-        return cls.read_lines_from_offset(
-            cls.file_path, offset=offset, line_limit=line_limit, reverse=reverse
-        )
+    def read_lines(
+        self,
+        offset: int,
+        limit: int = 50,
+        reverse: bool = False,
+    ):
+        return self.read_lines_from_offset(offset=offset, limit=limit, reverse=reverse)
