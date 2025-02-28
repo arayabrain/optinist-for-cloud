@@ -60,19 +60,33 @@ class JsonReader:
 
 class FileLinesReader:
     @classmethod
+    def validate_line(cls, line: bytes) -> bool:
+        """
+        Condition to check whether line should be included in output data.
+        Modify this if you want to filter content.
+        """
+        return True
+
+    @classmethod
     def _read_forward_lines(
         cls, file: BufferedReader, offset: int, line_limit: int
     ) -> PaginatedLineResult:
         file.seek(offset)
         lines = []
-        for _ in range(line_limit):
+
+        while len(lines) < line_limit:
             line = file.readline()
             if not line:
                 break
-            lines.append(line.decode().strip())
+
+            if cls.validate_line(line):
+                lines.append(line)
+
         next_offset = file.tell()
         return PaginatedLineResult(
-            next_offset=next_offset, prev_offset=offset, data=lines
+            next_offset=next_offset,
+            prev_offset=offset,
+            data=[line.decode().strip() for line in lines],
         )
 
     @classmethod
@@ -83,7 +97,7 @@ class FileLinesReader:
         file_size = file.tell()
         next_offset = offset = min(offset, file_size)
 
-        segment = None
+        segment = b""
         lines = []
         while offset > 0 and len(lines) < line_limit:
             chunk_size = min(read_chunk_size, offset)
@@ -92,29 +106,37 @@ class FileLinesReader:
 
             buffer = file.read(chunk_size)
 
-            if segment is not None:
+            # Prepend previous segment
+            if segment:
                 buffer += segment
-                segment = None
+                segment = b""
 
-            lines = buffer.splitlines() + lines
+            buffer_lines = buffer.splitlines(keepends=True)
 
-            if len(lines) > line_limit:
-                lines = lines[-line_limit:]
-                segment = None
-            else:
-                segment = lines[0]
-                lines = lines[1:]
+            # Check if first line is incomplete
+            if buffer_lines:
+                if offset > 0:
+                    segment = buffer_lines.pop(0)
 
-        if segment is not None:
-            if len(lines) < line_limit:
-                lines[:0] = [segment]
-            else:
-                offset += len(segment)
+            # Prepend valid lines to `lines`
+            len_buf_lines = len(buffer_lines)
+            for i in range(len_buf_lines - 1, -1, -1):
+                line = buffer_lines.pop(i)
+                if cls.validate_line(line):
+                    lines.insert(0, line)
+
+                    if len(lines) == line_limit:
+                        segment += b"".join(buffer_lines)
+                        break
+
+        prev_offset = offset
+        if segment:
+            prev_offset = offset + len(segment)
 
         return PaginatedLineResult(
             next_offset=next_offset,
-            prev_offset=offset,
-            data=[line.decode() for line in lines],
+            prev_offset=prev_offset,
+            data=[line.decode().strip() for line in lines],
         )
 
     @classmethod
@@ -125,6 +147,9 @@ class FileLinesReader:
         line_limit: int,
         reverse: bool = False,
     ) -> PaginatedLineResult:
+        if not os.path.exists(file_path):
+            raise Exception(f"{file_path} does not exist.")
+
         with open(file_path, "rb") as file:
             if offset == -1:
                 file.seek(0, 2)
@@ -138,6 +163,10 @@ class FileLinesReader:
 
 class LogReader(FileLinesReader):
     file_path = DIRPATH.LOG_FILE_PATH
+
+    @classmethod
+    def validate_line(cls, line: bytes) -> bool:
+        return True
 
     @classmethod
     def read_lines(cls, offset: int, line_limit: int = 50, reverse: bool = False):
