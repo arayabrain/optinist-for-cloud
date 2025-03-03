@@ -15,15 +15,12 @@ from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import FluoData
 
 # from typing import Dict, Literal, Union
-
-
 # import pandas as pd
 
 
 # from studio.app.optinist.dataclass import FluoData, BehaviorData, CaimanCnmfData,
 # IscellData, LccdData, NWBFile, RoiData, SpikingActivityData, Suite2pData
 # from studio.app.common.core.experiment.experiment import ExptOutputPathIds
-
 
 # -- Import ROI detection modules --
 # Examples:
@@ -36,7 +33,6 @@ from studio.app.optinist.dataclass import FluoData
 # from studio.app.optinist.wrappers.optinist.basic_neural_analysis.eta import ETA
 # from studio.app.optinist.wrappers.optinist.my_custom_node import MyCustomNode
 
-
 # -- Import visualization modules --
 # from caiman.utils.visualization import local_correlations
 # from plotly.subplots import make_subplots
@@ -48,17 +44,14 @@ logger = AppLogger.get_logger()
 
 def my_function(
     # Required inputs
-    neural_data: ImageData,  # Fluorescence data from previous processing
+    neural_data: FluoData,  # Fluorescence data from previous processing
     output_dir: str,  # Directory to save output files
     # Optional inputs
     # iscell: IscellData = None,  # Cell classification data if needed
     params: dict = None,  # Additional parameters to customize processing
     **kwargs  # Catch-all for additional arguments
     # Function returns a dictionary containing all outputs
-    # ---- Debug here ---- #
 ) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
-    # ) -> Dict[Literal["fluo", "image", "heatmap"],
-    #       Union[FluoData, ImageData, HeatMapData]]:
     """Example template for creating analysis functions.
 
     This function shows the basic structure for creating analysis functions
@@ -105,14 +98,14 @@ def my_function(
     # Add ROIs if your analysis creates them
     nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
 
-    # Add processing results
+    # Example of adding processing results
     nwb_output[NWBDATASET.POSTPROCESS] = {
         "analysis_result": {  # Use a string as the key
             "data": example_analysis[0]  # Your analysis outputs
         }
     }
 
-    # Add column data (like classifications)
+    # Example of data in column format (e.g. for classifications)
     nwb_output[NWBDATASET.COLUMN] = {
         "my_classification": {
             "name": "my_classification",

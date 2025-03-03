@@ -10,8 +10,8 @@ Below we describe an example procedure for adding a new algorithm.
 
 **Prerequisite**
 
-- Sample Algorithm Name ... `new_algo`
-- Sample Algorithm Function Name ... `new_algo_func`
+- Sample Algorithm Name ... `custom_node`
+- Sample Algorithm Function Name ... `my_function`
 - {OPTINIST_SRC_DIR} ... Replace with the actual source storage directory path.
 
 ### 1. Prepare Necessary Directories and Files for the Algorithm
@@ -24,9 +24,9 @@ First, prepare the necessary directories and files for the algorithm.
   - xxxx/
   - yyyy/
   - ...
-  - `new_algo/` (\*1)
+  - `custom_node/` (\*1)
     - \_\_init\_\_.py (\*2)
-    - `new_algo_func.py` (\*3)
+    - `my_function.py` (\*3)
     - ... (\*4)
 
 - Explanation:
@@ -40,7 +40,7 @@ First, prepare the necessary directories and files for the algorithm.
 #### Import Statement Description
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`new_algo`/`new_algo_func`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/`my_function`.py
 
 ```python
 from studio.app.common.dataclass import *
@@ -57,22 +57,25 @@ from studio.app.common.dataclass import *
 #### Define the Input/Output of the Function and Implement the Logic.
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`new_algo`/`new_algo_func`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/`my_function`.py
 
 The function code is described below.
 
 ```python
-def new_algo_func(               # (*1)
+def my_function(                 # (*1)
         image_data: ImageData,   # (*2)
         output_dir: str,         # (*3)
         params: dict=None,       # (*4)
         **kwargs,                # (*3)
-    ) -> dict(fluo=FluoData):    # (*5)
+    ) -> dict(                   # (*5)
+      fluo=FluoData,
+      image=ImageData,
+      heatmap=HeatMapData):
     import numpy as np
     info = {
         "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),
-        "image": ImageData(np.random.rand(10, 100, 100), file_name="image"),
-        "heatmap": HeatMapData(np.random.rand(20, 20), file_name="heatmap")
+        "image": ImageData(np.random.rand(10, 512, 512), file_name="image"),
+        "heatmap": HeatMapData(example_analysis, file_name="heatmap")
     }
     return info
 ```
@@ -88,16 +91,16 @@ def new_algo_func(               # (*1)
 #### Definition of Information to be Displayed in the GUI
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`new_algo`/\_\_init\_\_.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/\_\_init\_\_.py
 
 ```python
-from studio.app.optinist.wrappers.new_algo.new_algo_func import new_algo_func
+from studio.app.optinist.wrappers.custom_node.my_function import my_function
 
-new_algo_wrapper_dict = {                       # (*1)
-    'new_algo': {                               # (*2)
-        'new_algo_func': {                      # (*3)
-            'function': new_algo_func,          # (*4)
-            'conda_name': 'new_algo',           # (*5)
+custom_wrapper_dict = {                            # (*1)
+    "custom_node": {                               # (*2)
+        "my_function": {                           # (*3)
+            "function": my_function,               # (*4)
+            "conda_name": "custom_env",            # (*5)
         },
     }
 }
@@ -121,18 +124,18 @@ Register the created algorithm to the application by adding the following settin
 from studio.app.optinist.wrappers.xxxx import xxxx_wrapper_dict
 from studio.app.optinist.wrappers.yyyy import yyyy_wrapper_dict
 ...
-from studio.app.optinist.wrappers.new_algo import new_algo_wrapper_dict    # <-- Add
+from studio.app.optinist.wrappers.custom_node import custom_wrapper_dict    # <-- Add
 
 wrapper_dict = {}
 wrapper_dict.update(**xxxx_wrapper_dict)
 wrapper_dict.update(**yyyy_wrapper_dict)
 ...
-wrapper_dict.update(**new_algo_wrapper_dict)    # <-- Add
+wrapper_dict.update(**custom_wrapper_dict)    # <-- Add
 ```
 
-After the registration process up to this point, restart the application browser to confirm that the algorithm has been added.
+After the registration, use the "Refresh Node" button next to the lefthand-side Node menu to update the web-app and check the node has been added correctly
 
-## Detailed Explanations
+## Detailed Specifications
 
 ### DataClass
 
@@ -149,41 +152,38 @@ Optinist support datatype.
 - ScatterData
 - BarData
 
-### Input & Output Handle
+### Input & Output Handles
 
-In the following example, the **new_algo_func** function takes **ImageData** and returns **FluoData**.
+In the following example, the **my_function** function takes **ImageData** and returns [**FluoData**, **ImageData**, **HeatMapData**].
 
 ```python
 from studio.app.common.dataclass import *
 
-def new_algo_func(
+def my_function(
         image_data: ImageData,
         output_dir: str,
         params: dict=None,
         **kwargs,
-    ) -> dict(fluo=FluoData):
+    ) dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
     return
 ```
 
-Restart the Application and place **new_algo_func** on the GUI , and you will see that the handle color has changed.
+Restart the Application and drag your new  **custom_node** on the GUI, hover over the inputs and outputs to see the types.
 
 ![](../_static/add_algorithm/input_output.png)
 
 ### Function Parameter Definitions
 
-Function input parameters (input on GUI) can be defined in the following file.
+Default function parameters can be defined in the following file. The user can then update these in the GUI.
 
-- {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`new_algo`/params/{algorithm_function_name}.yaml
+- {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/params/{algorithm_function_name}.yaml
 
 - Sample:
 
   ```yaml
-  new_algo_params_1:
-    filtersize1: 10
-    filtersize2: 20
-  new_algo_params_2:
-    filtersize3: 30
-    filtersize4: 40
+  window_size: 10
+  custom_params_nested:
+    threshold: 0.5
   ```
 
 - Explanation:
@@ -193,21 +193,29 @@ Function input parameters (input on GUI) can be defined in the following file.
 
 - Above we described the node input and output handle, here we describe the visualization of the result.
 - The output of the function is a dictionary. (Here we use the variable **info**.)
-- First, the **fluo** variable that is the return value of the **new_algo_func function** is output by Wrap with **FluoData**. The name of the key in this case must match the **fluo** of the return value when declaring the function.
+- First, the **fluo** variable that is the return value of the **my_function function** is output by Wrap with **FluoData**. The name of the key in this case must match the **fluo** of the return value when declaring the function.
 - In addition, variables to be visualized are wrapped with their data types and output. In this example, **ImageData** and **HeatMap** are output.
 
 ```python
-def new_algo_func(
+def my_function(
         image_data: ImageData,
         output_dir: str,
         params: dict=None,
         **kwargs,
-    ) -> dict(fluo=FluoData):
+    ) dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
     import numpy as np
     info = {
         "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),
-        "image": ImageData(np.random.rand(10, 100, 100), file_name="image"),
-        "heatmap": HeatMapData(np.random.rand(20, 20), file_name="heatmap")
+        "image": ImageData(np.random.rand(10, 512, 512), file_name="image"),
+        "heatmap": HeatMapData(example_analysis, file_name="heatmap")
+    }
+
+    # Prepare NWB file structure
+    nwb_output = {}
+    nwb_output[NWBDATASET.POSTPROCESS] = {
+        "analysis_result": {  # Use a string as the key
+            "data": example_analysis  # Your analysis outputs
+        }
     }
     return info
 ```
@@ -239,31 +247,88 @@ To do this,
    ```python
    from studio.app.common.schemas.outputs import PlotMetaData
 
-   def new_algo_func(
-       image_data: ImageData,
-       output_dir: str,
-       params: dict=None,
-       **kwargs,
-   ) -> dict(fluo=FluoData):
-     import numpy as np
-     info = {
-         "fluo": FluoData(
-           np.random.rand(100, 20), file_name="fluo"
-           meta=PlotMetaData(
-             title="my fluo",
-             xlabel="my xlabel",
-             ylabel="my ylabel",
-         ),
-         "image": ImageData(np.random.rand(10, 100, 100), file_name="image"),
-         "heatmap": HeatMapData(
-           np.random.rand(20, 20),
-           file_name="heatmap",
-           meta=PlotMetaData(
-             title="my heatmap",  # You don't have to set all attributes
-           )
-         )
-     }
-     return info
+  def my_function(
+      # Required inputs
+      neural_data: FluoData,  # Fluorescence data from previous processing
+      output_dir: str,  # Directory to save output files
+      # Optional inputs
+      # iscell: IscellData = None,  # Cell classification data if needed
+      params: dict = None,  # Additional parameters to customize processing
+      **kwargs  # Catch-all for additional arguments
+      # Function returns a dictionary containing all outputs
+  ) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
+
+      """Example template for creating analysis functions.
+
+      This function shows the basic structure for creating analysis functions
+      that work with the pipeline, including proper input handling, NWB file
+      creation, and return format.
+
+      Args:
+          neural_data: Fluorescence data from previous processing steps
+          output_dir: Directory where output files should be saved
+          iscell: Optional cell classification data
+          params: Optional dictionary of parameters to customize processing
+          **kwargs: Additional keyword arguments
+
+      Returns:
+          dict: Dictionary containing all output data and metadata
+      """
+
+      # 1. Set up logging if needed
+      logger.info("Starting my_analysis_function")
+
+      # 2. Get additional data from kwargs if needed
+      # nwbfile = kwargs.get("nwbfile", {})
+
+      # 3. Set default parameters and update with user params
+      default_params = {"window_size": 10, "threshold": 0.5}
+      if params is not None:
+          default_params.update(params)
+
+      # 4. Main analysis code goes here
+      example_fluo_data = np.random.rand(100, 20)  # Example data
+
+      example_imaging_data = np.random.rand(10, 512, 512)
+
+      example_processing = example_fluo_data > default_params["threshold"]
+
+      example_analysis = np.corrcoef(example_processing)
+      for i in range(example_analysis.shape[0]):
+          example_analysis[i, i] = np.nan
+
+      # 5. Prepare NWB file structure
+      # Create a new NWB file dictionary or update existing one
+      nwb_output = {}
+
+      # Add ROIs if your analysis creates them
+      nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
+
+      # Example of adding processing results
+      nwb_output[NWBDATASET.POSTPROCESS] = {
+          "analysis_result": {  # Use a string as the key
+              "data": example_analysis[0]  # Your analysis outputs
+          }
+      }
+
+      # Example of data in column format (e.g. for classifications)
+      nwb_output[NWBDATASET.COLUMN] = {
+          "my_classification": {
+              "name": "my_classification",
+              "description": "Description of the classification",
+              "data": example_analysis[1],
+          }
+      }
+
+      # 6. Prepare return dictionary
+      # This should contain all outputs and processed data
+      info = {
+          "fluo": FluoData(example_fluo_data, file_name="fluo"),
+          "image": ImageData(example_imaging_data, file_name="image"),
+          "heatmap": HeatMapData(example_analysis, file_name="heatmap"),
+      }
+
+      return info
    ```
 
    ```{eval-rst}

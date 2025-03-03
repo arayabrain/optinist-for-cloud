@@ -4,7 +4,7 @@ custom_wrapper_dict = {
     "custom_node": {
         "my_function": {
             "function": my_function,
-            "conda_name": "my_custom_env",
+            "conda_name": "custom_env",
         },
     }
 }
