@@ -24,7 +24,7 @@ Follow the steps in the `Install Tools` section for each platform below.
   - Mac
     - [Install Tools](../users/mac.md#install-tools)
   - Windows WSL
-    - [Install Tools](../users/windows_native.md#install-tools)
+    - [Install Tools](../users/windows_wsl.md#install-tools)
 - Other platforms
   - Windows Native
     - [Install Tools](../users/windows_native.md#install-tools)
@@ -45,7 +45,7 @@ npm install -g yarn
 ### Create Conda Environment
 
 ```bash
-conda create -n optinist_dev python=3.8 poetry
+conda create -n optinist_dev python=3.9 poetry
 conda activate optinist_dev
 ```
 

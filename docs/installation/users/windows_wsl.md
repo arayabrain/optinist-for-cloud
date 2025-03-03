@@ -9,6 +9,7 @@
 WSL (Windows Subsystem for Linux) lets you run a Linux environment directly on Windows 10 and newer versions, without the need for a traditional virtual machine.
 
 - To install WSL:
+
   1. Open PowerShell or Windows Command Prompt as Administrator
   2. Run: `wsl --install`
   3. Open a new terminal and run: `wsl`
@@ -61,7 +62,7 @@ conda config --set channel_priority flexible
 ### Create Conda Environment
 
 ```bash
-conda create -n optinist python=3.8
+conda create -n optinist python=3.9
 conda activate optinist
 ```
 

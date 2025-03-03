@@ -291,13 +291,13 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
         </Box>
         <Box mt={2} display="flex" gap={1}>
           <Button
+            color="secondary"
             variant="outlined"
             size="small"
             style={{ width: 120 }}
-            onClick={acceptFilter}
-            disabled={error}
+            onClick={resetFilter}
           >
-            APPLY
+            RESET
           </Button>
           <Button
             color="error"
@@ -309,12 +309,14 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
             CANCEL
           </Button>
           <Button
-            variant="outlined"
+            color="primary"
+            variant="contained"
             size="small"
             style={{ width: 120 }}
-            onClick={resetFilter}
+            onClick={acceptFilter}
+            disabled={error}
           >
-            RESET
+            APPLY
           </Button>
         </Box>
       </Box>

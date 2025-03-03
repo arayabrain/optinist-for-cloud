@@ -13,6 +13,7 @@ from studio.app.common.core.utils.filepath_creater import (
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import EditRoiData, FluoData, IscellData, RoiData
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 
@@ -102,21 +103,6 @@ def util_get_memmap(images: np.ndarray, file_path: str):
     return mmap_images, dims, mmap_path
 
 
-def util_recursive_flatten_params(params, result_params: dict, nest_counter=0):
-    """
-    Recursively flatten node parameters (operation for CaImAn CNMFParams)
-    """
-    # avoid infinite loops
-    assert nest_counter <= 2, f"Nest depth overflow. [{nest_counter}]"
-    nest_counter += 1
-
-    for key, nested_param in params.items():
-        if type(nested_param) is dict:
-            util_recursive_flatten_params(nested_param, result_params, nest_counter)
-        else:
-            result_params[key] = nested_param
-
-
 def util_download_model_files():
     """
     download model files for component evaluation
@@ -165,14 +151,14 @@ def caiman_cnmf(
     # NOTE: evaluate_components requires cnn_model files in caiman_data directory.
     util_download_model_files()
 
-    # flatten cmnf params segments.
-    reshaped_params = {}
-    util_recursive_flatten_params(params, reshaped_params)
+    flattened_params = {}
+    recursive_flatten_params(params, flattened_params)
+    params = flattened_params
 
-    Ain = reshaped_params.pop("Ain", None)
-    do_refit = reshaped_params.pop("do_refit", None)
-    roi_thr = reshaped_params.pop("roi_thr", None)
-    use_online = reshaped_params.pop("use_online", False)
+    Ain = params.pop("Ain", None)
+    do_refit = params.pop("do_refit", None)
+    roi_thr = params.pop("roi_thr", None)
+    use_online = params.pop("use_online", False)
 
     file_path = images.path
     if isinstance(file_path, list):
@@ -187,10 +173,10 @@ def caiman_cnmf(
     nwbfile = kwargs.get("nwbfile", {})
     fr = nwbfile.get("imaging_plane", {}).get("imaging_rate", 30)
 
-    if reshaped_params is None:
+    if params is None:
         ops = CNMFParams()
     else:
-        ops = CNMFParams(params_dict={**reshaped_params, "fr": fr})
+        ops = CNMFParams(params_dict={**params, "fr": fr})
 
     if "dview" in locals():
         stop_server(dview=dview)  # noqa: F821
@@ -205,9 +191,8 @@ def caiman_cnmf(
                 "fnames": [mmap_path],
                 # NOTE: These params uses np.inf as default in CaImAn.
                 # Yaml cannot serialize np.inf, so default value in yaml is None.
-                "max_comp_update_shape": reshaped_params["max_comp_update_shape"]
-                or np.inf,
-                "num_times_comp_updated": reshaped_params["update_num_comps"] or np.inf,
+                "max_comp_update_shape": params["max_comp_update_shape"] or np.inf,
+                "num_times_comp_updated": params["update_num_comps"] or np.inf,
             }
         )
         cnm = online_cnmf.OnACID(dview=dview, Ain=Ain, params=ops)
@@ -219,7 +204,22 @@ def caiman_cnmf(
         if do_refit:
             cnm = cnm.refit(mmap_images, dview=dview)
 
-    cnm.estimates.evaluate_components(mmap_images, cnm.params, dview=dview)
+    # Check if any components were found
+    n_components = cnm.estimates.A.shape[1] if hasattr(cnm.estimates, "A") else 0
+
+    if n_components > 0:
+        # Only evaluate components if we found some
+        cnm.estimates.evaluate_components(mmap_images, cnm.params, dview=dview)
+        idx_good = cnm.estimates.idx_components
+        idx_bad = cnm.estimates.idx_components_bad
+        if not isinstance(idx_good, list):
+            idx_good = idx_good.tolist()
+        if not isinstance(idx_bad, list):
+            idx_bad = idx_bad.tolist()
+    else:
+        # No components found
+        idx_good = []
+        idx_bad = []
 
     stop_server(dview=dview)
 
@@ -230,13 +230,6 @@ def caiman_cnmf(
     thr_method = "nrg"
     swap_dim = False
 
-    idx_good = cnm.estimates.idx_components
-    idx_bad = cnm.estimates.idx_components_bad
-    if not isinstance(idx_good, list):
-        idx_good = idx_good.tolist()
-    if not isinstance(idx_bad, list):
-        idx_bad = idx_bad.tolist()
-
     iscell = np.concatenate(
         [
             np.ones(len(idx_good), dtype=int),
@@ -244,13 +237,23 @@ def caiman_cnmf(
         ]
     )
 
-    cell_ims = get_roi(
-        cnm.estimates.A[:, idx_good], roi_thr, thr_method, swap_dim, dims
-    )
-    cell_ims = np.stack(cell_ims).astype(float)
-    cell_ims[cell_ims == 0] = np.nan
-    cell_ims -= 1
-    n_rois = len(cell_ims)
+    if len(idx_good) > 0 and hasattr(cnm.estimates, "A"):
+        cell_ims = get_roi(
+            cnm.estimates.A[:, idx_good], roi_thr, thr_method, swap_dim, dims
+        )
+        if len(cell_ims) > 0:  # Check if get_roi returned any ROIs
+            cell_ims = np.stack(cell_ims).astype(float)
+            cell_ims[cell_ims == 0] = np.nan
+            cell_ims = np.where(
+                np.isnan(cell_ims), cell_ims, cell_ims - 1
+            )  # Safer subtraction
+            n_rois = len(cell_ims)
+        else:
+            cell_ims = np.zeros((0, *dims))
+            n_rois = 0
+    else:
+        cell_ims = np.zeros((0, *dims))
+        n_rois = 0
 
     if len(idx_bad) > 0:
         non_cell_ims = get_roi(
@@ -268,26 +271,33 @@ def caiman_cnmf(
 
     n_noncell_rois = len(non_cell_ims)
 
-    im = np.vstack([cell_ims, non_cell_ims])
+    im = (
+        np.vstack([cell_ims, non_cell_ims])
+        if n_components > 0
+        else np.zeros((0, *dims))
+    )
 
-    # NWBの追加
+    # NWB additions
     nwbfile = {}
-    # NWBにROIを追加
+    # Add ROIs to NWB
     roi_list = []
-    n_cells = cnm.estimates.A.shape[-1]
-    for i in range(n_cells):
-        kargs = {}
-        kargs["image_mask"] = cnm.estimates.A.T[i].T.toarray().reshape(dims)
-        if hasattr(cnm.estimates, "accepted_list"):
-            kargs["accepted"] = i in cnm.estimates.accepted_list
-        if hasattr(cnm.estimates, "rejected_list"):
-            kargs["rejected"] = i in cnm.estimates.rejected_list
-        roi_list.append(kargs)
+    if n_components > 0:
+        for i in range(n_components):
+            kargs = {}
+            kargs["image_mask"] = cnm.estimates.A.T[i].T.toarray().reshape(dims)
+            # Safer attribute access with getattr
+            accepted_list = getattr(cnm.estimates, "accepted_list", None)
+            rejected_list = getattr(cnm.estimates, "rejected_list", None)
+            if accepted_list is not None:
+                kargs["accepted"] = i in accepted_list
+            if rejected_list is not None:
+                kargs["rejected"] = i in rejected_list
+            roi_list.append(kargs)
 
     nwbfile[NWBDATASET.ROI] = {function_id: roi_list}
     nwbfile[NWBDATASET.POSTPROCESS] = {function_id: {"all_roi_img": im}}
 
-    # iscellを追加
+    # Add iscell to NWB
     nwbfile[NWBDATASET.COLUMN] = {
         function_id: {
             "name": "iscell",
@@ -296,8 +306,16 @@ def caiman_cnmf(
         }
     }
 
-    # Fluorescence
-    fluorescence = cnm.estimates.C
+    # Fluorescence - with safety check for C attribute
+    fluorescence = (
+        (
+            cnm.estimates.C
+            if hasattr(cnm.estimates, "C")
+            else np.zeros((0, mmap_images.shape[0]))
+        )
+        if n_components > 0
+        else np.zeros((0, mmap_images.shape[0]))
+    )
 
     nwbfile[NWBDATASET.FLUORESCENCE] = {
         function_id: {
@@ -311,6 +329,9 @@ def caiman_cnmf(
         }
     }
 
+    # Create empty ROI array filled with NaN for when no components found
+    empty_roi = np.full(dims, np.nan)
+
     info = {
         "images": ImageData(
             np.array(Cn * 255, dtype=np.uint8),
@@ -320,15 +341,19 @@ def caiman_cnmf(
         "fluorescence": FluoData(fluorescence, file_name="fluorescence"),
         "iscell": IscellData(iscell, file_name="iscell"),
         "all_roi": RoiData(
-            np.nanmax(im, axis=0), output_dir=output_dir, file_name="all_roi"
+            np.nanmax(im, axis=0) if len(im) > 0 else empty_roi.copy(),
+            output_dir=output_dir,
+            file_name="all_roi",
         ),
         "cell_roi": RoiData(
-            np.nanmax(im[iscell != 0], axis=0),
+            np.nanmax(im[iscell != 0], axis=0) if len(im) > 0 else empty_roi.copy(),
             output_dir=output_dir,
             file_name="cell_roi",
         ),
         "non_cell_roi": RoiData(
-            non_cell_roi, output_dir=output_dir, file_name="non_cell_roi"
+            non_cell_roi if len(im) > 0 else empty_roi.copy(),
+            output_dir=output_dir,
+            file_name="non_cell_roi",
         ),
         "edit_roi_data": EditRoiData(mmap_images, im),
         "nwbfile": nwbfile,
