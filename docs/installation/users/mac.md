@@ -60,7 +60,7 @@ conda config --set channel_priority flexible
 ### Create Conda Environment
 
 ```bash
-conda create -n optinist python=3.8
+conda create -n optinist python=3.9
 conda activate optinist
 ```
 

@@ -45,6 +45,7 @@ import {
 } from "store/slice/FileUploader/FileUploaderActions"
 import { setInputNodeFilePath } from "store/slice/InputNode/InputNodeActions"
 import { UseRunPipelineReturnType } from "store/slice/Pipeline/PipelineHook"
+import { selectPipelineIsStartedSuccess } from "store/slice/Pipeline/PipelineSelectors"
 import { clearCurrentPipeline } from "store/slice/Pipeline/PipelineSlice"
 import { selectRightDrawerIsOpen } from "store/slice/RightDrawer/RightDrawerSelectors"
 import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
@@ -66,6 +67,7 @@ const initClearWorkflow = {
 
 const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
   const dispatch = useDispatch<AppDispatch>()
+  const isPending = useSelector(selectPipelineIsStartedSuccess)
 
   const open = useSelector(selectRightDrawerIsOpen)
   const workspaceId = useSelector(selectCurrentWorkspaceId)
@@ -198,7 +200,7 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
                     <IconButton
                       onClick={handleRefreshAlgoList}
                       color="primary"
-                      disabled={nodeRefresh} // Disable while loading
+                      disabled={nodeRefresh || !!isPending} // Disable while loading
                     >
                       {nodeRefresh ? (
                         <CircularProgress size={24} />

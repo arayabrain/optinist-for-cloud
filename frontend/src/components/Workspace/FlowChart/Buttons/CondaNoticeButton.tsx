@@ -77,9 +77,10 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
 
     // RUN reproduced workflow.
     // * Simulate RunButtons.handleClick (call PipelineHook.useRunPipeline.handleRunPipeline)
+    const newName = `setup_conda_${condaName}`
     const runPostData = selectRunPostData(store.getState())
     await dispatch(
-      run({ runPostData: { name, ...runPostData, forceRunList: [] } }),
+      run({ runPostData: { name: newName, ...runPostData, forceRunList: [] } }),
     )
       .unwrap()
       .catch(() => {

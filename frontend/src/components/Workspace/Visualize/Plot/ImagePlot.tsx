@@ -69,7 +69,6 @@ import {
   selectImageItemEndIndex,
   selectRoiItemFilePath,
   selectRoiItemIndex,
-  selectImageItemRoiAlpha,
   selectImageItemDuration,
   selectVisualizeItemWidth,
   selectVisualizeItemHeight,
