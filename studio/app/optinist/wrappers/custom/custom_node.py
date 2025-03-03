@@ -107,14 +107,14 @@ def my_function(
 
     # Add processing results
     nwb_output[NWBDATASET.POSTPROCESS] = {
-        example_analysis: {
-            "analysis_result": example_analysis[0]  # Your analysis outputs
+        "analysis_result": {  # Use a string as the key
+            "data": example_analysis[0]  # Your analysis outputs
         }
     }
 
     # Add column data (like classifications)
     nwb_output[NWBDATASET.COLUMN] = {
-        example_processing: {
+        "my_classification": {
             "name": "my_classification",
             "description": "Description of the classification",
             "data": example_analysis[1],
