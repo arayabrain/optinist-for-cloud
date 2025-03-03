@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from studio.app.common.core.utils.file_reader import LogReader
+from studio.app.common.core.utils.log_reader import LogReader
 from studio.app.common.schemas.files import LogLevel
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -31,7 +31,7 @@ async def get_log_data(
     levels: List[LogLevel] = Query(default=[LogLevel.ALL]),
 ):
     try:
-        return LogReader(levels=levels).read(
+        return LogReader(levels=levels).read_from_offset(
             offset=offset,
             limit=limit,
             reverse=reverse,

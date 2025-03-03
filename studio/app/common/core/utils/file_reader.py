@@ -1,18 +1,14 @@
 import json
 import os
-import re
 from abc import ABC, abstractmethod
 from io import BufferedReader
-from typing import List
 
-from studio.app.common.schemas.files import LogLevel
 from studio.app.common.schemas.outputs import (
     JsonTimeSeriesData,
     OutputData,
     PaginatedLineResult,
     PlotMetaData,
 )
-from studio.app.dir_path import DIRPATH
 
 
 class Reader:
@@ -75,6 +71,12 @@ class ContentUnitReader(ABC):
         """Parse a content unit into a structured format"""
         pass
 
+    def validate(self, content: bytes) -> bool:
+        """
+        Condition to check whether line should be included in output data.
+        """
+        return True
+
 
 class LineReader(ContentUnitReader):
     """Simple line reader that treats each line as a unit"""
@@ -86,60 +88,12 @@ class LineReader(ContentUnitReader):
         return {"raw": content}
 
 
-class LogRecordReader(ContentUnitReader):
-    """Log record reader that treats each log entry as a unit"""
-
-    start_pattern = re.compile(
-        rb"(?=^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})", re.MULTILINE
-    )
-
-    pattern = re.compile(
-        rb"^(?P<asctime>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) "
-        rb"(?:\x1b\[\d+m)?(?P<levelprefix>\w+)(?:\x1b\[0m)?:?\s+"
-        rb"\[(?P<name>[^\]]+)\] "
-        rb"(?P<funcName>\w+)\(\):(?P<lineno>\d+) - "
-        rb"(?P<message>.*)",
-        re.DOTALL,
-    )
-
-    def is_unit_start(self, line: bytes) -> bool:
-        return bool(self.start_pattern.match(line.strip()))
-
-    def parse(self, content: bytes) -> dict:
-        if not content:
-            return {"raw": b"", "parsed": False}
-
-        match = self.pattern.match(content)
-        if not match:
-            return {"raw": content, "parsed": False}
-
-        components = match.groupdict()
-
-        return {
-            "timestamp": components["asctime"],
-            "level": components["levelprefix"],
-            "name": components["name"],
-            "function": components["funcName"],
-            "line": int(components["lineno"]),
-            "message": components["message"],
-            "raw": content,
-            "parsed": True,
-        }
-
-
 class FileReader:
     def __init__(self, file_path, **kwargs):
         if not os.path.exists(file_path):
             raise Exception(f"{file_path} does not exist.")
         self.file_path = file_path
         self.unit_reader = LineReader()
-
-    def _validate_unit(self, content: bytes) -> bool:
-        """
-        Condition to check whether line should be included in output data.
-        Modify this if you want to filter content.
-        """
-        return True
 
     def _read_forward(
         self, file: BufferedReader, offset: int, limit: int
@@ -155,7 +109,7 @@ class FileReader:
 
             if self.unit_reader.is_unit_start(line):
                 if current_unit_buffer:
-                    if self._validate_unit(current_unit_buffer):
+                    if self.unit_reader.validate(current_unit_buffer):
                         units.append(current_unit_buffer)
                 current_unit_buffer = line
             else:
@@ -203,7 +157,7 @@ class FileReader:
 
                 current_unit_buffer = line + current_unit_buffer
                 if self.unit_reader.is_unit_start(line):
-                    if self._validate_unit(current_unit_buffer):
+                    if self.unit_reader.validate(current_unit_buffer):
                         units.insert(0, current_unit_buffer)
                         current_unit_buffer = b""
                         if len(units) == limit:
@@ -225,7 +179,7 @@ class FileReader:
     def read_from_offset(
         self,
         offset: int,
-        limit: int,
+        limit: int = 50,
         reverse: bool = False,
     ) -> PaginatedLineResult:
         with open(self.file_path, "rb") as file:
@@ -237,35 +191,3 @@ class FileReader:
                 return self._read_backward(file, offset, limit)
             else:
                 return self._read_forward(file, offset, limit)
-
-
-class LogReader(FileReader):
-    def __init__(
-        self,
-        file_path=DIRPATH.LOG_FILE_PATH,
-        levels: List[LogLevel] = [],
-        **kwargs,
-    ):
-        super().__init__(file_path, **kwargs)
-        self.file_path = file_path
-        self.unit_reader = LogRecordReader()
-
-        if LogLevel.ALL in levels:
-            self.levels = []
-        else:
-            self.levels = [level.value.encode() for level in levels]
-
-    def _validate_unit(self, content: bytes) -> bool:
-        unit_dict = self.unit_reader.parse(content)
-        if self.levels:
-            return unit_dict["level"] in self.levels
-
-        return True
-
-    def read(
-        self,
-        offset: int,
-        limit: int = 50,
-        reverse: bool = False,
-    ):
-        return self.read_from_offset(offset=offset, limit=limit, reverse=reverse)
