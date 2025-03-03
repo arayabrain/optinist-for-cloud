@@ -6,12 +6,22 @@ import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import CloseIcon from "@mui/icons-material/Close"
 import ErrorIcon from "@mui/icons-material/Error"
+import GradeIcon from "@mui/icons-material/Grade"
 import InfoIcon from "@mui/icons-material/Info"
+import SearchIcon from "@mui/icons-material/Search"
 import WarningIcon from "@mui/icons-material/Warning"
 import { Box, Modal } from "@mui/material"
 import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
 
 import axios from "utils/axios"
+
+enum TLevelsLog {
+  INFO = "INFO",
+  ERROR = "ERROR",
+  DEBUG = "DEBUG",
+  WARNING = "WARNING",
+  CRITICAL = "CRITICAL",
+}
 
 type Props = {
   isOpen?: boolean
@@ -19,45 +29,49 @@ type Props = {
 }
 
 const ModalLogs = ({ isOpen = false, onClose }: Props) => {
-  const [logs, setLogs] = useState<string[]>([])
-
   const [keyword, setKeywork] = useState("")
+  const [logs, setLogs] = useState<string[]>([])
+  const [levels, setLevels] = useState<TLevelsLog>()
+  const [openSearch, setOpenSearch] = useState(true)
 
   const nextOffset = useRef(-1)
-  const isPending = useRef(false)
-  const isPendingPre = useRef(false)
-
-  const timeout = useRef<NodeJS.Timeout>()
-
-  const allowEndScroll = useRef(true)
-  const scrollRef = useRef<ScrollInverted | null>(null)
   const preOffset = useRef(-1)
-  const indexSearch = useRef(-1)
+  const [indexSearch, setIndexSearch] = useState(-1)
+  const isPendingApi = useRef(false)
+  const isPendingApiPrev = useRef(false)
+  const allowEndScroll = useRef(true)
+  const timeoutApi = useRef<NodeJS.Timeout>()
 
-  const serviceLogs = useCallback((offset: number, reverse?: boolean) => {
-    return axios.get("/logs", { params: { offset, reverse } })
-  }, [])
+  const scrollRef = useRef<ScrollInverted | null>(null)
+  const serviceLogs = useCallback(
+    (offset: number, reverse?: boolean, limit: number = 50) => {
+      return axios.get("/logs", {
+        params: { offset, reverse, levels, limit },
+      })
+    },
+    [levels],
+  )
 
-  const getPrevious = useCallback(
-    async (allow?: boolean) => {
-      if (isPendingPre.current && !allow) return
-      isPendingPre.current = true
+  const getPreviousData = useCallback(
+    async (isForce?: boolean) => {
+      if (isPendingApiPrev.current && !isForce) return
+      isPendingApiPrev.current = true
       try {
-        const { data } = await serviceLogs(preOffset.current)
+        const { data } = await serviceLogs(preOffset.current, false, 200)
         if (data.prev_offset < preOffset.current) {
           preOffset.current = data.prev_offset
           setLogs((pre) => [...data.data, ...pre])
         }
       } finally {
-        isPendingPre.current = false
+        isPendingApiPrev.current = false
       }
     },
     [serviceLogs],
   )
 
-  const getData = useCallback(async () => {
-    if (isPending.current) return
-    isPending.current = true
+  const getNextData = useCallback(async () => {
+    if (isPendingApi.current) return
+    isPendingApi.current = true
     try {
       const { data } = await serviceLogs(nextOffset.current, false)
       if (!allowEndScroll.current) return
@@ -67,83 +81,104 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         setLogs((pre) => [...pre, ...data.data])
       }
     } finally {
-      isPending.current = false
-      timeout.current = setTimeout(() => {
-        if (allowEndScroll.current) getData()
-      }, 2000)
+      isPendingApi.current = false
     }
+    timeoutApi.current = setTimeout(getNextData, 2000)
   }, [serviceLogs])
+
+  useEffect(() => {
+    getPreviousData(true)
+  }, [getPreviousData])
+
+  useEffect(() => {
+    getNextData()
+    return () => {
+      clearTimeout(timeoutApi.current)
+    }
+  }, [getNextData])
+
+  useEffect(() => {
+    setKeywork("")
+    setLogs([])
+    allowEndScroll.current = true
+    getNextData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levels])
+
+  useEffect(() => {
+    if (keyword.length) {
+      setKeywork("")
+      allowEndScroll.current = true
+      getNextData()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSearch])
 
   const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
     if (top > 3 && isUserScrolling) allowEndScroll.current = false
   }, [])
 
-  useEffect(() => {
-    getPrevious(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    getData()
-    return () => {
-      clearTimeout(timeout.current)
-    }
-  }, [getData])
-
-  useEffect(() => {
-    if (!isOpen) clearTimeout(timeout.current)
-  }, [isOpen])
-
   const onChangeKeyword = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       allowEndScroll.current = !e.target.value
       setKeywork(e.target.value)
-      indexSearch.current = logs.findIndex((el) => el.includes(e.target.value))
-      scrollRef.current?.scrollToIndex(indexSearch.current)
+      const _indexSearch = logs.findIndex((el) =>
+        el.toLowerCase().includes(e.target.value.toLowerCase()),
+      )
+      setIndexSearch(_indexSearch)
+      if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+      if (allowEndScroll.current) getNextData()
     },
-    [logs],
+    [getNextData, logs],
   )
 
   const onNextSearch = useCallback(() => {
-    if (!keyword.trim().length) return
-    let inNext = logs.findIndex(
-      (e, i) => e.includes(keyword) && i > indexSearch.current,
+    const _indexSearch = logs.findIndex(
+      (el, i) =>
+        el.toLowerCase().includes(keyword.toLowerCase()) && i > indexSearch,
     )
-    if (inNext < 0) inNext = logs.findIndex((e) => e.includes(keyword))
-    indexSearch.current = inNext
-    scrollRef.current?.scrollToIndex(indexSearch.current)
-  }, [keyword, logs])
+    setIndexSearch(_indexSearch)
+    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+  }, [indexSearch, keyword, logs])
 
-  const onPreSearch = useCallback(() => {
-    if (!keyword.trim().length) return
-    let inNext = logs.findIndex(
-      (e, i) => e.includes(keyword) && i < indexSearch.current,
+  const onPrevSearch = useCallback(() => {
+    const _indexSearch = logs.findIndex(
+      (el, i) =>
+        el.toLowerCase().includes(keyword.toLowerCase()) && i < indexSearch,
     )
-    if (inNext < 0) {
-      inNext = [...logs].reverse().findIndex((e) => e.includes(keyword))
-    }
-    indexSearch.current = inNext
-    scrollRef.current?.scrollToIndex(indexSearch.current)
-  }, [keyword, logs])
+    setIndexSearch(_indexSearch)
+    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+  }, [indexSearch, keyword, logs])
 
   const renderItem = useCallback(
-    ({ item }: { item: string }) => {
+    ({ item, index }: { item: string; index: number }) => {
       if (!keyword) return <BoxItem>{item}</BoxItem>
-      const keys = item.split(keyword)
-      if (keys.length > 1) {
+      const indexx = item.toLowerCase().indexOf(keyword.toLowerCase())
+      const keys = [
+        item.substring(0, indexx),
+        `<span style="background: ${logs.length - 1 - indexSearch === index ? "#ff9632" : "#ffff00"}; color: #555f64">${item.substring(indexx, indexx + keyword.length)}</span>`,
+        item.substring(indexx + keyword.length, item.length),
+      ]
+      if (indexx > -1) {
         return (
           <BoxItem
             dangerouslySetInnerHTML={{
-              __html: keys.join(
-                `<span style="background: #c1ddff; color: #555f64">${keyword}</span>`,
-              ),
+              __html: keys.join(""),
             }}
           />
         )
       }
       return <BoxItem>{item}</BoxItem>
     },
-    [keyword],
+    [indexSearch, keyword, logs.length],
+  )
+
+  const onChangeTypeFilter = useCallback(
+    (t: TLevelsLog) => {
+      if (t === levels) setLevels(undefined)
+      else setLevels(t)
+    },
+    [levels],
   )
 
   return (
@@ -156,56 +191,102 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
             data={logs}
             renderItem={renderItem}
             onLayout={() => {
-              if (allowEndScroll.current) {
-                scrollRef.current?.scrollToEnd()
-              }
+              if (allowEndScroll.current) scrollRef.current?.scrollToEnd()
             }}
-            onStartReached={getPrevious}
+            onStartReached={getPreviousData}
             onEndReached={() => {
-              if (!allowEndScroll.current) getData()
+              if (keyword.length) return
+              if (!allowEndScroll.current) getNextData()
               allowEndScroll.current = true
             }}
           />
-          <BoxSearch>
-            <InputSearch placeholder="Search logs" onChange={onChangeKeyword} />
-            <Box display="flex">
-              <BoxIconSearch onClick={onPreSearch}>
-                <ArrowBackIosIcon />
-              </BoxIconSearch>
-              <BoxIconSearch onClick={onNextSearch}>
-                <ArrowForwardIosIcon />
-              </BoxIconSearch>
-            </Box>
-            <ButtonClose onClick={onClose}>
-              <CloseIcon />
-            </ButtonClose>
-          </BoxSearch>
+          {openSearch ? (
+            <BoxSearch>
+              <InputSearch
+                autoFocus
+                value={keyword}
+                placeholder="Search logs"
+                onChange={onChangeKeyword}
+              />
+              <Box display="flex">
+                <BoxIconSearch onClick={onPrevSearch}>
+                  <ArrowBackIosIcon />
+                </BoxIconSearch>
+                <BoxIconSearch onClick={onNextSearch}>
+                  <ArrowForwardIosIcon />
+                </BoxIconSearch>
+              </Box>
+              <ButtonClose onClick={() => setOpenSearch(false)}>
+                <CloseIcon />
+              </ButtonClose>
+            </BoxSearch>
+          ) : (
+            <BoxSearch width={"auto !important"}>
+              <ButtonClose onClick={() => setOpenSearch(true)}>
+                <SearchIcon />
+              </ButtonClose>
+            </BoxSearch>
+          )}
           <BoxFilter>
-            <MenuFilter>
-              <InfoIcon /> INFO
+            <MenuFilter
+              active={levels === TLevelsLog.INFO}
+              onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
+            >
+              <InfoIcon />
+              <span>{TLevelsLog.INFO}</span>
             </MenuFilter>
-            <MenuFilter>
-              <AdbIcon /> DEBUG
+            <MenuFilter
+              active={levels === TLevelsLog.WARNING}
+              onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
+            >
+              <WarningIcon />
+              <span>{TLevelsLog.WARNING}</span>
             </MenuFilter>
-            <MenuFilter>
-              <WarningIcon /> WARNING
+            <MenuFilter
+              active={levels === TLevelsLog.DEBUG}
+              onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
+            >
+              <AdbIcon />
+              <span>{TLevelsLog.DEBUG}</span>
             </MenuFilter>
-            <MenuFilter>
-              <ErrorIcon /> ERROR
+            <MenuFilter
+              active={levels === TLevelsLog.ERROR}
+              onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
+            >
+              <ErrorIcon />
+              <span>{TLevelsLog.ERROR}</span>
+            </MenuFilter>
+            <MenuFilter
+              active={levels === TLevelsLog.CRITICAL}
+              onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
+            >
+              <GradeIcon />
+              <span>{TLevelsLog.CRITICAL}</span>
             </MenuFilter>
           </BoxFilter>
+          <ButtonCloseModal onClick={onClose}>
+            <CloseIcon />
+          </ButtonCloseModal>
         </Content>
       </Body>
     </Modal>
   )
 }
 
-const MenuFilter = styled(Box)`
+const MenuFilter = styled(Box, {
+  shouldForwardProp: (props) => props !== "active",
+})<{ active: boolean }>`
   display: flex;
   padding: 5px 16px;
   align-items: center;
   color: white;
   cursor: pointer;
+  gap: 4px;
+  padding-left: 5px;
+  background-color: ${({ active }) => (active ? "blue" : "")};
+  svg {
+    width: 30px;
+  }
 `
 
 const BoxFilter = styled(Box)`
@@ -275,6 +356,13 @@ const ButtonClose = styled(Box)`
   justify-content: center;
   cursor: pointer;
   color: #7fa2bc;
+`
+
+const ButtonCloseModal = styled(ButtonClose)`
+  background-color: white;
+  position: absolute;
+  top: 0;
+  height: 40px;
 `
 
 const BoxItem = styled("div")`
