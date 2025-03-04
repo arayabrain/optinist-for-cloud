@@ -11,7 +11,7 @@ WSL (Windows Subsystem for Linux) lets you run a Linux environment directly on W
 - To install WSL:
 
   1. Open PowerShell or Windows Command Prompt as Administrator
-  2. Run: `wsl --install`
+  2. Run: `wsl --install -d Ubuntu-22.04`
   3. Open a new terminal and run: `wsl`
 
 - Important note:
@@ -83,7 +83,8 @@ export OPTINIST_DIR="your_saving_dir"
 ## 2. Run Backend
 
 ```bash
-run_optinist
+# Specify "host=0.0.0.0" to allow remote connections
+run_optinist --host=0.0.0.0 --port=8000
 ```
 
 - `run_optinist` log is as below:
@@ -98,6 +99,12 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
 
-- Launch browser, and go to `http://localhost:8000`
+- Launch browser, and go to `http://{wsl-host-ip-address}:8000`
+  - (Note) `{wsl-host-ip-address}` can be confirmed with the `ip a` command in the WSL host.
 
 Done!
+
+```{eval-rst}
+.. note::
+    * For optinist startup options, see :ref:`_optinist_startup_options`.
+```

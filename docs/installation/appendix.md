@@ -67,3 +67,18 @@ By setting the optinist startup options and configs, you can access optinist via
     On optinist host PC, access to the port specified by ``--port`` must also be allowed in the firewall settings for each Platforms(OS).
 ```
 
+
+## About running on the Cloud Platform
+
+optinist can also run on Cloud Platforms such as AWS.
+
+The actual construction procedure depends on the construction procedure of each Cloud Platforms, but the general flow is as follows.
+
+1. Provision Cloud Platform resources (EC2, etc.)
+2. Setup optinist on the resource provisioned above.
+    - See: [Installation](./users/index.rst)
+    - Ubuntu or Docker is recommended as a platform.
+3. Start optinist in network public mode
+    - See: [Allow access to optinist from another PC](#allow-access-to-optinist-from-another-pc)
+4. Configure network routing to optinist on Cloud Platform.
+5. Test & Release
