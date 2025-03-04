@@ -28,7 +28,7 @@ class LogRecordReader(ContentUnitReader):
         self.exclude_pattern: list[bytes] = [b"GET /logs", b"OPTIONS /logs"]
 
     def is_unit_start(self, line: bytes) -> bool:
-        return bool(self.start_pattern.match(line.strip()))
+        return bool(self.start_pattern.match(line))
 
     def parse(self, content: bytes) -> dict:
         if not content:
@@ -56,6 +56,9 @@ class LogRecordReader(ContentUnitReader):
             return False
 
         unit_dict = self.parse(content)
+        if not unit_dict["parsed"]:
+            return False
+
         if self.levels:
             return unit_dict["level"] in self.levels
 

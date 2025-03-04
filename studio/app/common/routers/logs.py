@@ -1,9 +1,11 @@
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
+from typing_extensions import Optional
 
 from studio.app.common.core.utils.log_reader import LogReader
 from studio.app.common.schemas.files import LogLevel
+from studio.app.common.schemas.outputs import PaginatedLineResult
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
@@ -21,18 +23,38 @@ async def get_log_data(
     ),
     limit: int = Query(
         default=50,
-        gt=0,
+        ge=0,
         description="Max number of log unit to return.",
     ),
     reverse: bool = Query(
         default=True,
         description="Fetch logs in reverse order.",
     ),
+    search: Optional[str] = Query(default=None),
     levels: List[LogLevel] = Query(default=[LogLevel.ALL]),
 ):
     try:
-        return LogReader(levels=levels).read_from_offset(
+        stop_offset = None
+        log_reader = LogReader(levels=levels)
+
+        if search:
+            text_pos = log_reader.get_text_position(search, offset, reverse)
+            stop_offset = log_reader.get_unit_position(search, text_pos, reverse)
+            if stop_offset is None:
+                return PaginatedLineResult(
+                    next_offset=offset,
+                    prev_offset=offset,
+                    data=[],
+                )
+
+            limit = 0
+            if reverse:
+                reverse = False
+                offset, stop_offset = stop_offset, offset
+
+        return log_reader.read_from_offset(
             offset=offset,
+            stop_offset=stop_offset,
             limit=limit,
             reverse=reverse,
         )

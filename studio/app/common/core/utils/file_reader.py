@@ -1,13 +1,17 @@
 import json
+import mmap
 import os
 from abc import ABC, abstractmethod
 from io import BufferedReader
+
+from typing_extensions import Optional
 
 from studio.app.common.schemas.outputs import (
     JsonTimeSeriesData,
     OutputData,
     PaginatedLineResult,
     PlotMetaData,
+    TextPosition,
 )
 
 
@@ -96,13 +100,18 @@ class FileReader:
         self.unit_reader = LineReader()
 
     def _read_forward(
-        self, file: BufferedReader, offset: int, limit: int
+        self,
+        file: BufferedReader,
+        offset: int,
+        stop_offset: Optional[int],
+        limit: int = 50,
+        include_pattern: Optional[bytes] = None,
     ) -> PaginatedLineResult:
         file.seek(offset)
 
         units = []
         current_unit_buffer = b""
-        while len(units) < limit:
+        while len(units) < (limit if limit != 0 else float("inf")):
             line = file.readline()
             if not line:
                 break
@@ -110,20 +119,34 @@ class FileReader:
             if self.unit_reader.is_unit_start(line):
                 if current_unit_buffer:
                     if self.unit_reader.validate(current_unit_buffer):
-                        units.append(current_unit_buffer)
+                        if include_pattern:
+                            if include_pattern in current_unit_buffer:
+                                units.append(current_unit_buffer)
+                        else:
+                            units.append(current_unit_buffer)
                 current_unit_buffer = line
             else:
                 current_unit_buffer += line
 
+            if stop_offset and file.tell() > stop_offset:
+                break
+
         next_offset = file.tell() - len(current_unit_buffer)
+        data = [line.decode().strip() for line in units]
+
         return PaginatedLineResult(
             next_offset=next_offset,
             prev_offset=offset,
-            data=[line.decode().strip() for line in units],
+            data=data,
         )
 
     def _read_backward(
-        self, file: BufferedReader, offset: int, limit: int, read_chunk_size=1024
+        self,
+        file: BufferedReader,
+        offset: int,
+        limit: int = 50,
+        read_chunk_size=1024,
+        include_pattern: Optional[bytes] = None,
     ) -> PaginatedLineResult:
         file.seek(0, 2)
         file_size = file.tell()
@@ -158,7 +181,11 @@ class FileReader:
                 current_unit_buffer = line + current_unit_buffer
                 if self.unit_reader.is_unit_start(line):
                     if self.unit_reader.validate(current_unit_buffer):
-                        units.insert(0, current_unit_buffer)
+                        if include_pattern:
+                            if include_pattern in current_unit_buffer:
+                                units.insert(0, current_unit_buffer)
+                        else:
+                            units.insert(0, current_unit_buffer)
                         current_unit_buffer = b""
                         if len(units) == limit:
                             segment += b"".join(buffer_lines)
@@ -170,15 +197,18 @@ class FileReader:
         if segment:
             prev_offset = offset + len(segment)
 
+        data = [line.decode().strip() for line in units]
+
         return PaginatedLineResult(
             next_offset=next_offset,
             prev_offset=prev_offset,
-            data=[line.decode().strip() for line in units],
+            data=data,
         )
 
     def read_from_offset(
         self,
         offset: int,
+        stop_offset: Optional[int] = None,
         limit: int = 50,
         reverse: bool = False,
     ) -> PaginatedLineResult:
@@ -186,8 +216,75 @@ class FileReader:
             if offset == -1:
                 file.seek(0, 2)
                 offset = file.tell()
+            if stop_offset:
+                limit = 0
+                if stop_offset == -1:
+                    file.seek(0, 2)
+                    stop_offset = file.tell()
 
             if reverse:
                 return self._read_backward(file, offset, limit)
             else:
-                return self._read_forward(file, offset, limit)
+                return self._read_forward(file, offset, stop_offset, limit)
+
+    def get_text_position(
+        self,
+        search_text: str,
+        offset: int,
+        reverse: bool = False,
+        additional_line: int = 3,
+    ) -> TextPosition:
+        position = TextPosition(
+            pos=None,
+            start_of_line=None,
+            end_of_line=None,
+        )
+        with open(self.file_path, "r+b") as file:
+            if offset == -1:
+                file.seek(0, 2)
+                offset = file.tell()
+
+            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                if reverse:
+                    pos = mm.rfind(search_text.encode("utf-8"), 0, offset)
+                    if pos == -1:
+                        return position
+                    position.pos = pos
+                    eol = mm.find(b"\n", pos, offset)
+                    position.end_of_line = offset if eol == -1 else eol
+                else:
+                    pos = mm.find(search_text.encode("utf-8"), offset, -1)
+                    if pos == -1:
+                        return position
+                    position.pos = pos
+
+                    sol = mm.rfind(b"\n", 0, pos)
+                    position.start_of_line = 0 if sol == -1 else sol
+        return position
+
+    def get_unit_position(self, search: str, text_position: TextPosition, reverse):
+        if not text_position.pos:
+            return None
+
+        with open(self.file_path, "rb") as file:
+            if reverse:
+                logs = self._read_backward(
+                    file,
+                    offset=text_position.end_of_line,
+                    limit=1,
+                    include_pattern=search.encode(),
+                )
+                if not logs.data:
+                    return None
+                return logs.prev_offset
+            else:
+                logs = self._read_forward(
+                    file,
+                    offset=text_position.start_of_line,
+                    stop_offset=None,
+                    limit=1,
+                    include_pattern=search.encode(),
+                )
+                if not logs.data:
+                    return None
+                return logs.next_offset

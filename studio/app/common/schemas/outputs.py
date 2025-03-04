@@ -27,6 +27,13 @@ class JsonTimeSeriesData(OutputData):
 
 
 @dataclass
+class TextPosition:
+    pos: Optional[int]
+    start_of_line: Optional[int]
+    end_of_line: Optional[int]
+
+
+@dataclass
 class PaginatedLineResult:
     next_offset: int
     prev_offset: int
