@@ -37,84 +37,74 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   const nextOffset = useRef(-1)
   const preOffset = useRef(-1)
-  const isPendingApi = useRef(false)
-  const isPendingApiPrev = useRef(false)
-  const isPendingApiNext = useRef(false)
   const allowEndScroll = useRef(true)
   const timeoutApi = useRef<NodeJS.Timeout>()
   const scrollRef = useRef<ScrollInverted | null>(null)
   const keywordRef = useRef(keyword)
+  const levelsRef = useRef(levels)
+  const timeoutKeyword = useRef<NodeJS.Timeout>()
 
   useEffect(() => {
     keywordRef.current = keyword
   }, [keyword])
 
+  useEffect(() => {
+    levelsRef.current = levels
+  }, [levels])
+
   const serviceLogs = useCallback(
-    (offset: number, reverse: boolean = false) => {
-      return axios.get("/logs", {
+    async (offset: number, reverse: boolean = false) => {
+      const res = await axios.get("/logs", {
         params: {
           offset,
           reverse,
-          levels,
+          levels: levelsRef.current,
           limit: 200,
           search: keywordRef.current,
         },
       })
+      if (res.config.params?.levels !== levelsRef.current) throw ""
+      if (res.config.params?.search !== keywordRef.current) throw ""
+      return res
     },
-    [levels],
+    [],
   )
 
-  const getPreviousData = useCallback(
-    async (isForce?: boolean) => {
-      if (isPendingApiPrev.current && !isForce) return
-      isPendingApiPrev.current = true
-      try {
-        const { data } = await serviceLogs(preOffset.current, true)
-        if (data.prev_offset < preOffset.current) {
-          preOffset.current = data.prev_offset
-          setLogs((pre) => [...data.data, ...pre])
-        }
-      } finally {
-        isPendingApiPrev.current = false
-      }
-    },
-    [serviceLogs],
-  )
+  const getPreviousData = useCallback(async () => {
+    const { data } = await serviceLogs(preOffset.current, true)
+    if (data.prev_offset < preOffset.current) {
+      preOffset.current = data.prev_offset
+      setLogs((pre) => [...data.data, ...pre])
+    }
+  }, [serviceLogs])
 
   const getNextData = useCallback(async () => {
-    if (isPendingApiNext.current) return
-    isPendingApiNext.current = true
-    try {
-      const { data } = await serviceLogs(preOffset.current, true)
-      if (data.prev_offset < preOffset.current) {
-        preOffset.current = data.prev_offset
-        setLogs((pre) => [...data.data, ...pre])
-      }
-    } finally {
-      isPendingApiNext.current = false
+    const { data } = await serviceLogs(preOffset.current, true)
+    if (data.prev_offset < preOffset.current) {
+      preOffset.current = data.prev_offset
+      setLogs((pre) => [...data.data, ...pre])
     }
   }, [serviceLogs])
 
   const getRealtimeData = useCallback(async () => {
-    if (isPendingApi.current) return
-    isPendingApi.current = true
+    console.log("asdas")
+    clearTimeout(timeoutApi.current)
     try {
       const { data } = await serviceLogs(nextOffset.current)
       if (!allowEndScroll.current) return
-      if (preOffset.current === -1) preOffset.current = data.prev_offset
       if (data.next_offset > nextOffset.current) {
         nextOffset.current = data.next_offset
         setLogs((pre) => [...pre, ...data.data])
       }
-    } finally {
-      isPendingApi.current = false
+      if (preOffset.current === -1) {
+        preOffset.current = data.prev_offset
+        getPreviousData()
+      }
+    } catch {
+      /* empty */
     }
     timeoutApi.current = setTimeout(getRealtimeData, 2000)
-  }, [serviceLogs])
-
-  useEffect(() => {
-    getPreviousData(true)
-  }, [getPreviousData])
+  }, [getPreviousData, serviceLogs])
 
   useEffect(() => {
     getRealtimeData()
@@ -124,10 +114,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [getRealtimeData])
 
   useEffect(() => {
-    setKeywork("")
+    nextOffset.current = -1
+    preOffset.current = -1
     setLogs([])
-    allowEndScroll.current = true
-    getRealtimeData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levels])
 
@@ -163,7 +152,10 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       )
       setIndexSearch(_indexSearch)
       if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
-      if (allowEndScroll.current) getRealtimeData()
+      clearTimeout(timeoutKeyword.current)
+      timeoutKeyword.current = setTimeout(() => {
+        if (allowEndScroll.current) getRealtimeData()
+      }, 300)
     },
     [getRealtimeData, logs],
   )
@@ -187,7 +179,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         el.toLowerCase().includes(keyword.toLowerCase()) && i < indexSearch,
     )
     if (_indexSearch < 0) {
-      getPreviousData(true)
+      getPreviousData()
       return
     }
     setIndexSearch(_indexSearch)
