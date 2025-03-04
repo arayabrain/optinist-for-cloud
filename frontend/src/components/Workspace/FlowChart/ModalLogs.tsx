@@ -33,20 +33,31 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const [logs, setLogs] = useState<string[]>([])
   const [levels, setLevels] = useState<TLevelsLog>()
   const [openSearch, setOpenSearch] = useState(true)
+  const [indexSearch, setIndexSearch] = useState(-1)
 
   const nextOffset = useRef(-1)
   const preOffset = useRef(-1)
-  const [indexSearch, setIndexSearch] = useState(-1)
   const isPendingApi = useRef(false)
   const isPendingApiPrev = useRef(false)
   const allowEndScroll = useRef(true)
   const timeoutApi = useRef<NodeJS.Timeout>()
-
   const scrollRef = useRef<ScrollInverted | null>(null)
+  const keywordRef = useRef(keyword)
+
+  useEffect(() => {
+    keywordRef.current = keyword
+  }, [keyword])
+
   const serviceLogs = useCallback(
-    (offset: number, reverse?: boolean, limit: number = 50) => {
+    (offset: number, reverse: boolean = false) => {
       return axios.get("/logs", {
-        params: { offset, reverse, levels, limit },
+        params: {
+          offset,
+          reverse,
+          levels,
+          limit: 200,
+          search: keywordRef.current,
+        },
       })
     },
     [levels],
@@ -57,7 +68,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       if (isPendingApiPrev.current && !isForce) return
       isPendingApiPrev.current = true
       try {
-        const { data } = await serviceLogs(preOffset.current, false, 200)
+        const { data } = await serviceLogs(preOffset.current, true)
         if (data.prev_offset < preOffset.current) {
           preOffset.current = data.prev_offset
           setLogs((pre) => [...data.data, ...pre])
@@ -73,7 +84,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     if (isPendingApi.current) return
     isPendingApi.current = true
     try {
-      const { data } = await serviceLogs(nextOffset.current, false)
+      const { data } = await serviceLogs(nextOffset.current)
       if (!allowEndScroll.current) return
       if (preOffset.current === -1) preOffset.current = data.prev_offset
       if (data.next_offset > nextOffset.current) {
@@ -114,6 +125,16 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSearch])
 
+  useEffect(() => {
+    if (keywordRef.current.length) {
+      const _indexSearch = logs.findIndex((el) =>
+        el.toLowerCase().includes(keywordRef.current.toLowerCase()),
+      )
+      setIndexSearch(_indexSearch)
+      if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
+    }
+  }, [logs])
+
   const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
     if (top > 3 && isUserScrolling) allowEndScroll.current = false
   }, [])
@@ -126,7 +147,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         el.toLowerCase().includes(e.target.value.toLowerCase()),
       )
       setIndexSearch(_indexSearch)
-      if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+      if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
       if (allowEndScroll.current) getNextData()
     },
     [getNextData, logs],
@@ -137,18 +158,26 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       (el, i) =>
         el.toLowerCase().includes(keyword.toLowerCase()) && i > indexSearch,
     )
+    if (_indexSearch < 0) {
+      getNextData()
+      return
+    }
     setIndexSearch(_indexSearch)
-    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
-  }, [indexSearch, keyword, logs])
+    if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
+  }, [getNextData, indexSearch, keyword, logs])
 
   const onPrevSearch = useCallback(() => {
     const _indexSearch = logs.findIndex(
       (el, i) =>
         el.toLowerCase().includes(keyword.toLowerCase()) && i < indexSearch,
     )
+    if (_indexSearch < 0) {
+      getPreviousData(true)
+      return
+    }
     setIndexSearch(_indexSearch)
-    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
-  }, [indexSearch, keyword, logs])
+    if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
+  }, [getPreviousData, indexSearch, keyword, logs])
 
   const renderItem = useCallback(
     ({ item, index }: { item: string; index: number }) => {
@@ -181,6 +210,21 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     [levels],
   )
 
+  const onStartReached = useCallback(() => {
+    if (keyword.length) return
+    getPreviousData()
+  }, [getPreviousData, keyword.length])
+
+  const onEndReached = useCallback(() => {
+    if (keyword.length) return
+    if (!allowEndScroll.current) getNextData()
+    allowEndScroll.current = true
+  }, [getNextData, keyword.length])
+
+  const onLayout = useCallback(() => {
+    if (allowEndScroll.current) scrollRef.current?.scrollToEnd()
+  }, [])
+
   return (
     <Modal open={isOpen} onClose={onClose}>
       <Body>
@@ -190,15 +234,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
             ref={scrollRef}
             data={logs}
             renderItem={renderItem}
-            onLayout={() => {
-              if (allowEndScroll.current) scrollRef.current?.scrollToEnd()
-            }}
-            onStartReached={getPreviousData}
-            onEndReached={() => {
-              if (keyword.length) return
-              if (!allowEndScroll.current) getNextData()
-              allowEndScroll.current = true
-            }}
+            onLayout={onLayout}
+            onStartReached={onStartReached}
+            onEndReached={onEndReached}
           />
           {openSearch ? (
             <BoxSearch>
