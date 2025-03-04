@@ -81,7 +81,11 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   )
 
   const getNextData = useCallback(async () => {
-    if (isPendingApi.current) return
+    if (isPendingApi.current) {
+      clearTimeout(timeoutApi.current)
+      timeoutApi.current = setTimeout(getNextData, 2000)
+      return
+    }
     isPendingApi.current = true
     try {
       const { data } = await serviceLogs(nextOffset.current)
