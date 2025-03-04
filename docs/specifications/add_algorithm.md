@@ -130,7 +130,7 @@ wrapper_dict.update(**yyyy_wrapper_dict)
 wrapper_dict.update(**new_algo_wrapper_dict)    # <-- Add
 ```
 
-After the registration process up to this point, restart the application browser to confirm that the algorithm has been added.
+After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
 ## Detailed Explanations
 
