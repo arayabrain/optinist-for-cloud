@@ -39,6 +39,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const preOffset = useRef(-1)
   const isPendingApi = useRef(false)
   const isPendingApiPrev = useRef(false)
+  const isPendingApiNext = useRef(false)
   const allowEndScroll = useRef(true)
   const timeoutApi = useRef<NodeJS.Timeout>()
   const scrollRef = useRef<ScrollInverted | null>(null)
@@ -81,11 +82,21 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   )
 
   const getNextData = useCallback(async () => {
-    if (isPendingApi.current) {
-      clearTimeout(timeoutApi.current)
-      timeoutApi.current = setTimeout(getNextData, 2000)
-      return
+    if (isPendingApiNext.current) return
+    isPendingApiNext.current = true
+    try {
+      const { data } = await serviceLogs(preOffset.current, true)
+      if (data.prev_offset < preOffset.current) {
+        preOffset.current = data.prev_offset
+        setLogs((pre) => [...data.data, ...pre])
+      }
+    } finally {
+      isPendingApiNext.current = false
     }
+  }, [serviceLogs])
+
+  const getRealtimeData = useCallback(async () => {
+    if (isPendingApi.current) return
     isPendingApi.current = true
     try {
       const { data } = await serviceLogs(nextOffset.current)
@@ -98,7 +109,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     } finally {
       isPendingApi.current = false
     }
-    timeoutApi.current = setTimeout(getNextData, 2000)
+    timeoutApi.current = setTimeout(getRealtimeData, 2000)
   }, [serviceLogs])
 
   useEffect(() => {
@@ -106,17 +117,17 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [getPreviousData])
 
   useEffect(() => {
-    getNextData()
+    getRealtimeData()
     return () => {
       clearTimeout(timeoutApi.current)
     }
-  }, [getNextData])
+  }, [getRealtimeData])
 
   useEffect(() => {
     setKeywork("")
     setLogs([])
     allowEndScroll.current = true
-    getNextData()
+    getRealtimeData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levels])
 
@@ -124,7 +135,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     if (keyword.length) {
       setKeywork("")
       allowEndScroll.current = true
-      getNextData()
+      getRealtimeData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSearch])
@@ -152,9 +163,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       )
       setIndexSearch(_indexSearch)
       if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
-      if (allowEndScroll.current) getNextData()
+      if (allowEndScroll.current) getRealtimeData()
     },
-    [getNextData, logs],
+    [getRealtimeData, logs],
   )
 
   const onNextSearch = useCallback(() => {
@@ -221,9 +232,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   const onEndReached = useCallback(() => {
     if (keyword.length) return
-    if (!allowEndScroll.current) getNextData()
+    if (!allowEndScroll.current) getRealtimeData()
     allowEndScroll.current = true
-  }, [getNextData, keyword.length])
+  }, [getRealtimeData, keyword.length])
 
   const onLayout = useCallback(() => {
     if (allowEndScroll.current) scrollRef.current?.scrollToEnd()
