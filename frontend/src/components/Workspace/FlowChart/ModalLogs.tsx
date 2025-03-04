@@ -1,5 +1,7 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
 
+import qs from "qs"
+
 import styled from "@emotion/styled"
 import AdbIcon from "@mui/icons-material/Adb"
 import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
@@ -23,6 +25,12 @@ enum TLevelsLog {
   CRITICAL = "CRITICAL",
 }
 
+type TParams = {
+  levels?: TLevelsLog[]
+  limit: number
+  search?: string
+}
+
 type Props = {
   isOpen?: boolean
   onClose?: () => void
@@ -31,79 +39,91 @@ type Props = {
 const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const [keyword, setKeywork] = useState("")
   const [logs, setLogs] = useState<string[]>([])
-  const [levels, setLevels] = useState<TLevelsLog>()
+  const [levels, setLevels] = useState<TLevelsLog[]>()
   const [openSearch, setOpenSearch] = useState(true)
   const [indexSearch, setIndexSearch] = useState(-1)
 
-  const nextOffset = useRef(-1)
-  const preOffset = useRef(-1)
-  const allowEndScroll = useRef(true)
-  const timeoutApi = useRef<NodeJS.Timeout>()
   const scrollRef = useRef<ScrollInverted | null>(null)
-  const keywordRef = useRef(keyword)
-  const levelsRef = useRef(levels)
-  const timeoutKeyword = useRef<NodeJS.Timeout>()
+  const params = useRef<TParams>({ limit: 200 })
+  const timeoutApi = useRef<NodeJS.Timeout>()
+  const offset = useRef({ next: -1, pre: -1 })
+  const allowScrollToEnd = useRef(true)
+  const pending = useRef({
+    realtime: false,
+    pre: false,
+    next: false,
+    startReached: false,
+    endReached: false,
+  })
 
-  useEffect(() => {
-    keywordRef.current = keyword
-  }, [keyword])
+  const getIndexKeyword = useCallback((key: string, _logs: string[]) => {
+    if (!key) return
+    const _indexSearch = _logs.findIndex((el) =>
+      el.toLowerCase().includes(key.toLowerCase()),
+    )
+    setIndexSearch(_indexSearch)
+    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+  }, [])
 
-  useEffect(() => {
-    levelsRef.current = levels
-  }, [levels])
-
-  const serviceLogs = useCallback(
-    async (offset: number, reverse: boolean = false) => {
-      const res = await axios.get("/logs", {
-        params: {
-          offset,
-          reverse,
-          levels: levelsRef.current,
-          limit: 200,
-          search: keywordRef.current,
-        },
-      })
-      if (res.config.params?.levels !== levelsRef.current) throw ""
-      if (res.config.params?.search !== keywordRef.current) throw ""
-      return res
-    },
-    [],
-  )
+  const serviceLogs = useCallback(async (offset: number, reverse: boolean) => {
+    const res = await axios.get("/logs", {
+      params: { ...params.current, offset, reverse },
+      paramsSerializer: (params) => {
+        // eslint-disable-next-line import/no-named-as-default-member
+        return qs.stringify(params, { arrayFormat: "repeat" })
+      },
+    })
+    return res
+  }, [])
 
   const getPreviousData = useCallback(async () => {
-    const { data } = await serviceLogs(preOffset.current, true)
-    if (data.prev_offset < preOffset.current) {
-      preOffset.current = data.prev_offset
-      setLogs((pre) => [...data.data, ...pre])
+    if (pending.current.pre) return
+    pending.current.pre = true
+    try {
+      const { data } = await serviceLogs(offset.current.pre, true)
+      if (data.prev_offset < offset.current.pre) {
+        offset.current.pre = data.prev_offset
+        setLogs((pre) => [...data.data, ...pre])
+      }
+    } finally {
+      pending.current.pre = false
     }
   }, [serviceLogs])
 
-  const getNextData = useCallback(async () => {
-    const { data } = await serviceLogs(preOffset.current, true)
-    if (data.prev_offset < preOffset.current) {
-      preOffset.current = data.prev_offset
-      setLogs((pre) => [...data.data, ...pre])
+  const getNextFindData = useCallback(async () => {
+    if (pending.current.next) return
+    pending.current.next = true
+    try {
+      const { data } = await serviceLogs(offset.current.next, false)
+      if (data.next_offset > offset.current.next) {
+        offset.current.next = data.next_offset
+        setLogs((pre) => [...pre, ...data.data])
+      }
+    } finally {
+      pending.current.next = false
     }
   }, [serviceLogs])
 
   const getRealtimeData = useCallback(async () => {
-    console.log("asdas")
+    if (pending.current.realtime) return
+    pending.current.realtime = true
     clearTimeout(timeoutApi.current)
     try {
-      const { data } = await serviceLogs(nextOffset.current)
-      if (!allowEndScroll.current) return
-      if (data.next_offset > nextOffset.current) {
-        nextOffset.current = data.next_offset
+      const { data } = await serviceLogs(offset.current.next, false)
+      if (data.next_offset > offset.current.next) {
+        offset.current.next = data.next_offset
         setLogs((pre) => [...pre, ...data.data])
       }
-      if (preOffset.current === -1) {
-        preOffset.current = data.prev_offset
-        getPreviousData()
+      if (offset.current.pre === -1 && data.prev_offset !== -1) {
+        offset.current.pre = data.prev_offset
+        await getPreviousData()
       }
-    } catch {
-      /* empty */
+    } finally {
+      pending.current.realtime = false
     }
-    timeoutApi.current = setTimeout(getRealtimeData, 2000)
+    if (!params.current.search) {
+      timeoutApi.current = setTimeout(getRealtimeData, 2000)
+    }
   }, [getPreviousData, serviceLogs])
 
   useEffect(() => {
@@ -114,77 +134,96 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [getRealtimeData])
 
   useEffect(() => {
-    nextOffset.current = -1
-    preOffset.current = -1
-    setLogs([])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levels])
-
-  useEffect(() => {
-    if (keyword.length) {
-      setKeywork("")
-      allowEndScroll.current = true
-      getRealtimeData()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setKeywork("")
+    params.current.search = undefined
   }, [openSearch])
 
   useEffect(() => {
-    if (keywordRef.current.length) {
-      const _indexSearch = logs.findIndex((el) =>
-        el.toLowerCase().includes(keywordRef.current.toLowerCase()),
-      )
-      setIndexSearch(_indexSearch)
-      if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
-    }
-  }, [logs])
+    params.current.levels = levels
+    offset.current = { next: -1, pre: -1 }
+    setLogs([])
+    getRealtimeData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [levels])
 
-  const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
-    if (top > 3 && isUserScrolling) allowEndScroll.current = false
-  }, [])
-
-  const onChangeKeyword = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      allowEndScroll.current = !e.target.value
-      setKeywork(e.target.value)
-      const _indexSearch = logs.findIndex((el) =>
-        el.toLowerCase().includes(e.target.value.toLowerCase()),
-      )
-      setIndexSearch(_indexSearch)
-      if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
-      clearTimeout(timeoutKeyword.current)
-      timeoutKeyword.current = setTimeout(() => {
-        if (allowEndScroll.current) getRealtimeData()
-      }, 300)
+  const onChangeTypeFilter = useCallback(
+    (t: TLevelsLog) => {
+      if (levels?.includes(t)) setLevels(levels.filter((e) => e !== t))
+      else setLevels((pre) => [...(pre || []), t])
     },
-    [getRealtimeData, logs],
+    [levels],
   )
-
-  const onNextSearch = useCallback(() => {
-    const _indexSearch = logs.findIndex(
-      (el, i) =>
-        el.toLowerCase().includes(keyword.toLowerCase()) && i > indexSearch,
-    )
-    if (_indexSearch < 0) {
-      getNextData()
-      return
-    }
-    setIndexSearch(_indexSearch)
-    if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
-  }, [getNextData, indexSearch, keyword, logs])
 
   const onPrevSearch = useCallback(() => {
     const _indexSearch = logs.findIndex(
-      (el, i) =>
-        el.toLowerCase().includes(keyword.toLowerCase()) && i < indexSearch,
+      (el, index) =>
+        el.toLowerCase().includes(keyword.toLowerCase()) && index < indexSearch,
     )
-    if (_indexSearch < 0) {
-      getPreviousData()
-      return
+    if (_indexSearch < 0) getPreviousData()
+    else {
+      setIndexSearch(_indexSearch)
+      scrollRef.current?.scrollIntoView(_indexSearch)
     }
-    setIndexSearch(_indexSearch)
-    if (_indexSearch > -1) scrollRef.current?.scrollIntoView(_indexSearch)
   }, [getPreviousData, indexSearch, keyword, logs])
+
+  const onNextSearch = useCallback(() => {
+    const _indexSearch = logs.findIndex(
+      (el, index) =>
+        el.toLowerCase().includes(keyword.toLowerCase()) && index > indexSearch,
+    )
+    if (_indexSearch < 0) getNextFindData()
+    else {
+      setIndexSearch(_indexSearch)
+      scrollRef.current?.scrollIntoView(_indexSearch)
+    }
+  }, [getNextFindData, indexSearch, keyword, logs])
+
+  const onChangeKeyword = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const _keyword = e.target.value
+      allowScrollToEnd.current = !!_keyword
+      setKeywork(_keyword)
+      params.current.search = _keyword
+      if (_keyword) clearTimeout(timeoutApi.current)
+      getIndexKeyword(_keyword, logs)
+    },
+    [getIndexKeyword, logs],
+  )
+
+  const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
+    if (top > 3 && isUserScrolling) {
+      allowScrollToEnd.current = false
+      clearTimeout(timeoutApi.current)
+    }
+  }, [])
+
+  const onStartReached = useCallback(async () => {
+    if (pending.current.startReached || keyword.length) return
+    pending.current.startReached = true
+    try {
+      await getPreviousData()
+    } finally {
+      pending.current.startReached = false
+    }
+  }, [getPreviousData, keyword.length])
+
+  const onEndReached = useCallback(async () => {
+    if (pending.current.endReached || keyword.length) return
+    pending.current.endReached = true
+    try {
+      if (!allowScrollToEnd.current) {
+        allowScrollToEnd.current = true
+        await getRealtimeData()
+      }
+    } finally {
+      pending.current.endReached = false
+    }
+  }, [getRealtimeData, keyword.length])
+
+  const onLayout = useCallback(() => {
+    if (allowScrollToEnd.current) scrollRef.current?.scrollToEnd()
+    else getIndexKeyword(keyword, logs)
+  }, [getIndexKeyword, keyword, logs])
 
   const renderItem = useCallback(
     ({ item, index }: { item: string; index: number }) => {
@@ -208,29 +247,6 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     },
     [indexSearch, keyword, logs.length],
   )
-
-  const onChangeTypeFilter = useCallback(
-    (t: TLevelsLog) => {
-      if (t === levels) setLevels(undefined)
-      else setLevels(t)
-    },
-    [levels],
-  )
-
-  const onStartReached = useCallback(() => {
-    if (keyword.length) return
-    getPreviousData()
-  }, [getPreviousData, keyword.length])
-
-  const onEndReached = useCallback(() => {
-    if (keyword.length) return
-    if (!allowEndScroll.current) getRealtimeData()
-    allowEndScroll.current = true
-  }, [getRealtimeData, keyword.length])
-
-  const onLayout = useCallback(() => {
-    if (allowEndScroll.current) scrollRef.current?.scrollToEnd()
-  }, [])
 
   return (
     <Modal open={isOpen} onClose={onClose}>
@@ -274,35 +290,35 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           )}
           <BoxFilter>
             <MenuFilter
-              active={levels === TLevelsLog.INFO}
+              active={levels?.includes(TLevelsLog.INFO)}
               onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
             >
               <InfoIcon />
               <span>{TLevelsLog.INFO}</span>
             </MenuFilter>
             <MenuFilter
-              active={levels === TLevelsLog.WARNING}
+              active={levels?.includes(TLevelsLog.WARNING)}
               onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
             >
               <WarningIcon />
               <span>{TLevelsLog.WARNING}</span>
             </MenuFilter>
             <MenuFilter
-              active={levels === TLevelsLog.DEBUG}
+              active={levels?.includes(TLevelsLog.DEBUG)}
               onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
             >
               <AdbIcon />
               <span>{TLevelsLog.DEBUG}</span>
             </MenuFilter>
             <MenuFilter
-              active={levels === TLevelsLog.ERROR}
+              active={levels?.includes(TLevelsLog.ERROR)}
               onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
             >
               <ErrorIcon />
               <span>{TLevelsLog.ERROR}</span>
             </MenuFilter>
             <MenuFilter
-              active={levels === TLevelsLog.CRITICAL}
+              active={levels?.includes(TLevelsLog.CRITICAL)}
               onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
             >
               <GradeIcon />
@@ -320,7 +336,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
 const MenuFilter = styled(Box, {
   shouldForwardProp: (props) => props !== "active",
-})<{ active: boolean }>`
+})<{ active?: boolean }>`
   display: flex;
   padding: 5px 16px;
   align-items: center;
