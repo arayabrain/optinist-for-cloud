@@ -591,3 +591,5 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
     - fluorescence
       - processing/ophys/suite2p_roi_UNIQUE-ID/Fluorescence/data
       - processing/ophys/caiman_cnmf_UNIQUE-ID/Fluorescence/data
+- **Parameters:**
+  - **transpose** [bool, default: False]: Whether to transpose the neural data matrix.
