@@ -10,8 +10,7 @@ Below we describe an example procedure for adding a new algorithm.
 
 **Prerequisite**
 
-- Sample Algorithm Name ... `custom_node`
-- Sample Algorithm Function Name ... `my_function`
+- Sample Algorithm Function Name ... `new_algo_func`
 - {OPTINIST_SRC_DIR} ... Replace with the actual source storage directory path.
 
 ### 1. Prepare Necessary Directories and Files for the Algorithm
@@ -24,23 +23,21 @@ First, prepare the necessary directories and files for the algorithm.
   - xxxx/
   - yyyy/
   - ...
-  - `custom_node/` (\*1)
-    - \_\_init\_\_.py (\*2)
-    - `my_function.py` (\*3)
-    - ... (\*4)
+  - custom
+    - \_\_init\_\_.py
+    - `new_algo_func.py` (\*1)
+    - ... (\*2)
 
 - Explanation:
-  - (\*1) The name is arbitrary, but `{algorithm name}` is the standard.
-  - (\*2) Empty first.
-  - (\*3) Empty first.
-  - (\*4) Prepare other files to be added.
+  - (\*1) Empty first.
+  - (\*2) Prepare other files to be added.
 
 ### 2. Algorithm implementation
 
 #### Import Statement Description
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/`my_function`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`new_algo_func`.py
 
 ```python
 from studio.app.common.dataclass import *
@@ -57,7 +54,7 @@ from studio.app.common.dataclass import *
 #### Define the Input/Output of the Function and Implement the Logic.
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/`my_function`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`new_algo_func`.py
 
 The function code is described below.
 
@@ -91,16 +88,16 @@ def my_function(                 # (*1)
 #### Definition of Information to be Displayed in the GUI
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/\_\_init\_\_.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/\_\_init\_\_.py
 
 ```python
-from studio.app.optinist.wrappers.custom_node.my_function import my_function
+from studio.app.optinist.wrappers.custom.new_algo_func import new_algo_func
 
-custom_wrapper_dict = {                            # (*1)
-    "custom_node": {                               # (*2)
-        "my_function": {                           # (*3)
-            "function": my_function,               # (*4)
-            "conda_name": "custom_env",            # (*5)
+new_algo_wrapper_dict = {                       # (*1)
+    'new_algo': {                               # (*2)
+        'new_algo_func': {                      # (*3)
+            'function': new_algo_func,          # (*4)
+            'conda_name': 'new_algo',           # (*5)
         },
     }
 }
@@ -112,26 +109,6 @@ custom_wrapper_dict = {                            # (*1)
   - (\*3) Algorithm function name can be any text (display label to GUI)
   - (\*4) Algorithm function name specifies the actual function name
   - (\*4, 5) The conda setting is optional (to be defined when using conda with snakemake)
-
-### 3. Algorithm Registration
-
-Register the created algorithm to the application by adding the following settings.
-
-- Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/\_\_init\_\_.py
-
-```python
-from studio.app.optinist.wrappers.xxxx import xxxx_wrapper_dict
-from studio.app.optinist.wrappers.yyyy import yyyy_wrapper_dict
-...
-from studio.app.optinist.wrappers.custom_node import custom_wrapper_dict    # <-- Add
-
-wrapper_dict = {}
-wrapper_dict.update(**xxxx_wrapper_dict)
-wrapper_dict.update(**yyyy_wrapper_dict)
-...
-wrapper_dict.update(**custom_wrapper_dict)    # <-- Add
-```
 
 After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
@@ -168,7 +145,7 @@ def my_function(
     return
 ```
 
-Restart the Application and drag your new  **custom_node** on the GUI, hover over the inputs and outputs to see the types.
+Restart the Application and drag your new **custom_node** on the GUI, hover over the inputs and outputs to see the types.
 
 ![](../_static/add_algorithm/input_output.png)
 
@@ -248,17 +225,14 @@ To do this,
 
    ```python
    from studio.app.common.schemas.outputs import PlotMetaData
+   ```
 
-  def my_function(
-      # Required inputs
-      neural_data: ImageData,  # Fluorescence data from previous processing
-      output_dir: str,  # Directory to save output files
-      # Optional inputs
-      # iscell: IscellData = None,  # Cell classification data if needed
-      params: dict = None,  # Additional parameters to customize processing
-      **kwargs  # Catch-all for additional arguments
-      # Function returns a dictionary containing all outputs
-  ) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
+def my_function( # Required inputs
+neural_data: ImageData, # Fluorescence data from previous processing
+output_dir: str, # Directory to save output files # Optional inputs # iscell: IscellData = None, # Cell classification data if needed
+params: dict = None, # Additional parameters to customize processing
+\*\*kwargs # Catch-all for additional arguments # Function returns a dictionary containing all outputs
+) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
 
       """Example template for creating analysis functions.
 
@@ -331,12 +305,13 @@ To do this,
       }
 
       return info
-   ```
 
-   ```{eval-rst}
-   .. note::
-       Following dataclasses are not supported to visualize these metadata.
+````
 
-       - CsvData
-       - HTMLData
-   ```
+```{eval-rst}
+.. note::
+    Following dataclasses are not supported to visualize these metadata.
+
+    - CsvData
+    - HTMLData
+````
