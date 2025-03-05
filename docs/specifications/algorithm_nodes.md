@@ -569,12 +569,12 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Description:** Extracts ROI data from HDF5 file and prepares it for visualization
 - **Input:** ImageData, HDF5Data, IscellData
   - If using optinist nwb format:
-    cell_img:
-    - processing/optinist/suite2p_roi_UNIQUE-ID_all_roi_img/data
-    - processing/optinist/caiman_cnmf_UNIQUE-ID_all_roi_img/data
-      iscell:
-    - processing/ophys/ImageSegmentation/suite2p_roi_UNIQUE-ID/iscell
-    - processing/ophys/ImageSegmentation/caiman_cnmf_UNIQUE-ID/iscell
+    - cell_img:
+      - processing/optinist/suite2p_roi_UNIQUE-ID_all_roi_img/data
+      - processing/optinist/caiman_cnmf_UNIQUE-ID_all_roi_img/data
+    - iscell:
+      - processing/ophys/ImageSegmentation/suite2p_roi_UNIQUE-ID/iscell
+      - processing/ophys/ImageSegmentation/caiman_cnmf_UNIQUE-ID/iscell
 - **Output:** IscellData
 
 ###### ROI and Fluo from HDF5
@@ -582,12 +582,12 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Description:** Extracts ROI data and fluorescence data from HDF5 file and prepares it for visualization
 - **Input:** ImageData, FluoData, HDF5Data, IscellData
   - If using optinist nwb format:
-    cell_img:
-    - processing/optinist/suite2p_roi_UNIQUE-ID_all_roi_img/data
-    - processing/optinist/caiman_cnmf_UNIQUE-ID_all_roi_img/data
-      iscell:
-    - processing/ophys/ImageSegmentation/suite2p_roi_UNIQUE-ID/iscell
-    - processing/ophys/ImageSegmentation/caiman_cnmf_UNIQUE-ID/iscell
-      fluorescence
-    - processing/ophys/suite2p_roi_UNIQUE-ID/Fluorescence/data
-    - processing/ophys/caiman_cnmf_UNIQUE-ID/Fluorescence/data
+    - cell_img:
+      - processing/optinist/suite2p_roi_UNIQUE-ID_all_roi_img/data
+      - processing/optinist/caiman_cnmf_UNIQUE-ID_all_roi_img/data
+    - iscell:
+      - processing/ophys/ImageSegmentation/suite2p_roi_UNIQUE-ID/iscell
+      - processing/ophys/ImageSegmentation/caiman_cnmf_UNIQUE-ID/iscell
+    - fluorescence
+      - processing/ophys/suite2p_roi_UNIQUE-ID/Fluorescence/data
+      - processing/ophys/caiman_cnmf_UNIQUE-ID/Fluorescence/data
