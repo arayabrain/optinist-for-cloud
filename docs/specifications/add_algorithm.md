@@ -133,7 +133,7 @@ wrapper_dict.update(**yyyy_wrapper_dict)
 wrapper_dict.update(**custom_wrapper_dict)    # <-- Add
 ```
 
-After the registration, use the "Refresh Node" button next to the lefthand-side Node menu to update the web-app and check the node has been added correctly
+After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
 ## Detailed Specifications
 
