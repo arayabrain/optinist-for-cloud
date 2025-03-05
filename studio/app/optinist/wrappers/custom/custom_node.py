@@ -122,7 +122,9 @@ def custom_node(
     # This should contain all outputs and processed data
     info = {
         "fluo": FluoData(example_fluo_data, file_name="fluo"),
-        "image": ImageData(example_imaging_data, file_name="image"),
+        "image": ImageData(
+            example_imaging_data, output_dir=output_dir, file_name="image"
+        ),
         "heatmap": HeatMapData(example_analysis, file_name="heatmap"),
     }
 
