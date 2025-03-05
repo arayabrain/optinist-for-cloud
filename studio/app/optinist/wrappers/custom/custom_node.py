@@ -1,6 +1,7 @@
 # -- Import standard libraries --
 import numpy as np
 
+from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 
 # -- Import OptiNiSt visualization modules --
@@ -42,9 +43,9 @@ from studio.app.optinist.dataclass import FluoData
 logger = AppLogger.get_logger()
 
 
-def my_function(
+def custom_node(
     # Required inputs
-    neural_data: FluoData,  # Fluorescence data from previous processing
+    neural_data: ImageData,  # Fluorescence data from previous processing
     output_dir: str,  # Directory to save output files
     # Optional inputs
     # iscell: IscellData = None,  # Cell classification data if needed
@@ -69,8 +70,11 @@ def my_function(
         dict: Dictionary containing all output data and metadata
     """
 
+    function_id = ExptOutputPathIds(output_dir).function_id
+
     # 1. Set up logging if needed
-    logger.info("Starting my_analysis_function")
+    function_id = ExptOutputPathIds(output_dir).function_id
+    logger.info(f"start my_function: {function_id}")
 
     # 2. Get additional data from kwargs if needed
     # nwbfile = kwargs.get("nwbfile", {})
@@ -96,18 +100,18 @@ def my_function(
     nwb_output = {}
 
     # Add ROIs if your analysis creates them
-    nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
+    roi_list = [{"accepted": i} for i in range(1, 5)]  # List of accepted ROIs
+    roi_list.extend({"rejected": i} for i in range(6, 11))  # And rejected ROIs
+    nwb_output[NWBDATASET.ROI] = {function_id: roi_list}
 
     # Example of adding processing results
     nwb_output[NWBDATASET.POSTPROCESS] = {
-        "analysis_result": {  # Use a string as the key
-            "data": example_analysis[0]  # Your analysis outputs
-        }
+        function_id: {"data": example_analysis[0]}  # Your analysis outputs
     }
 
     # Example of data in column format (e.g. for classifications)
     nwb_output[NWBDATASET.COLUMN] = {
-        "my_classification": {
+        function_id: {
             "name": "my_classification",
             "description": "Description of the classification",
             "data": example_analysis[1],

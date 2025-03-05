@@ -233,6 +233,8 @@ Restart the Application, connect imageNode and run it, and you will see the outp
 img { width: 50%; }
 </style>
 
+# Add section on conda env and check yaml parameters adding correctly, function_id
+
 #### Customize Plot Metadata
 
 You can set plot title and axis labels to some output.
@@ -249,7 +251,7 @@ To do this,
 
   def my_function(
       # Required inputs
-      neural_data: FluoData,  # Fluorescence data from previous processing
+      neural_data: ImageData,  # Fluorescence data from previous processing
       output_dir: str,  # Directory to save output files
       # Optional inputs
       # iscell: IscellData = None,  # Cell classification data if needed
