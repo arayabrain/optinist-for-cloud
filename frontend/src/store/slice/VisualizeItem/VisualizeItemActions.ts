@@ -50,11 +50,12 @@ export const selectingImageArea = createAsyncThunk<
       x: number[]
       y: number[]
     }
+    callback?: (rois: string[]) => void
   },
   ThunkApiConfig
 >(
   `${VISUALIZE_ITEM_SLICE_NAME}/selectingImageArea`,
-  ({ itemId, range }, thunkAPI) => {
+  ({ itemId, range, callback }, thunkAPI) => {
     const { x, y } = range
     const [x1, x2] = x.map(Math.round)
     const [y1, y2] = y.map(Math.round)
@@ -77,20 +78,8 @@ export const selectingImageArea = createAsyncThunk<
           }
         }
         Object.values(items).forEach((item) => {
-          if (
-            isTimeSeriesItem(item) &&
-            item.filePath != null &&
-            item.refImageItemId === itemId
-          ) {
-            const path = item.filePath
-            selectedZList.forEach((selectedZ) => {
-              thunkAPI.dispatch(
-                getTimeSeriesDataById({
-                  path,
-                  index: String(selectedZ),
-                }),
-              )
-            })
+          if (isTimeSeriesItem(item) && item.filePath != null) {
+            callback?.(selectedZList)
           }
         })
       }

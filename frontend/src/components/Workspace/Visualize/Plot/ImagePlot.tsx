@@ -387,10 +387,30 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     setSelectMode(event.target.checked)
   }
+
+  const setRoiClickWhenSelect = (rois: string[]) => {
+    resetRoisClick(itemId)
+    rois.forEach((roi) => {
+      setRoisClick(itemId, Number(roi))
+      dispatch(
+        setImageItemClickedDataId({
+          itemId,
+          clickedDataId: roi,
+        }),
+      )
+    })
+  }
+
   // debounceでイベントを間引きする。onSelectedはそれっぽい名前だが動かなかった。
   const onSelecting = debounce((event: PlotSelectionEvent) => {
     if (event.range != null) {
-      dispatch(selectingImageArea({ itemId, range: event.range }))
+      dispatch(
+        selectingImageArea({
+          itemId,
+          range: event.range,
+          callback: setRoiClickWhenSelect,
+        }),
+      )
     }
   })
 
