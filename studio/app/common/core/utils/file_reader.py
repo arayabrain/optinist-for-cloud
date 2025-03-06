@@ -92,7 +92,7 @@ class LineReader(ContentUnitReader):
         return {"raw": content}
 
 
-class FileReader:
+class PaginatedFileReader:
     def __init__(self, file_path, **kwargs):
         if not os.path.exists(file_path):
             raise Exception(f"{file_path} does not exist.")
@@ -193,9 +193,7 @@ class FileReader:
                     else:
                         current_unit_buffer = b""
 
-        prev_offset = offset
-        if segment:
-            prev_offset = offset + len(segment)
+        prev_offset = offset + len(segment)
 
         data = [line.decode().strip() for line in units]
 

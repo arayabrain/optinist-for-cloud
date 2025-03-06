@@ -1,8 +1,20 @@
 import re
+from enum import Enum
 
-from studio.app.common.core.utils.file_reader import ContentUnitReader, FileReader
-from studio.app.common.schemas.files import LogLevel
+from studio.app.common.core.utils.file_reader import (
+    ContentUnitReader,
+    PaginatedFileReader,
+)
 from studio.app.dir_path import DIRPATH
+
+
+class LogLevel(str, Enum):
+    ALL = "ALL"
+    INFO = "INFO"
+    ERROR = "ERROR"
+    DEBUG = "DEBUG"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
 
 
 class LogRecordReader(ContentUnitReader):
@@ -65,7 +77,7 @@ class LogRecordReader(ContentUnitReader):
         return True
 
 
-class LogReader(FileReader):
+class LogReader(PaginatedFileReader):
     def __init__(
         self,
         file_path=DIRPATH.LOG_FILE_PATH,

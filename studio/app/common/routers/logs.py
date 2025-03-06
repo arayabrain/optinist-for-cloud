@@ -3,8 +3,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Query
 from typing_extensions import Optional
 
-from studio.app.common.core.utils.log_reader import LogReader
-from studio.app.common.schemas.files import LogLevel
+from studio.app.common.core.utils.log_reader import LogLevel, LogReader
 from studio.app.common.schemas.outputs import PaginatedLineResult
 
 router = APIRouter(prefix="/logs", tags=["logs"])
