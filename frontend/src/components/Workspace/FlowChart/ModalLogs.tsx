@@ -17,7 +17,10 @@ import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
 
 import axios from "utils/axios"
 
+const TIME_INTERVAL_API = 2000
+
 enum TLevelsLog {
+  ALL = "ALL",
   INFO = "INFO",
   ERROR = "ERROR",
   DEBUG = "DEBUG",
@@ -122,7 +125,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       pending.current.realtime = false
     }
     if (!params.current.search) {
-      timeoutApi.current = setTimeout(getRealtimeData, 2000)
+      timeoutApi.current = setTimeout(getRealtimeData, TIME_INTERVAL_API)
     }
   }, [getPreviousData, serviceLogs])
 
@@ -142,7 +145,13 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     params.current.levels = levels
     offset.current = { next: -1, pre: -1 }
     setLogs([])
-    getRealtimeData()
+    if (keyword.length) {
+      params.current.search = ""
+      getRealtimeData().then(() => {
+        params.current.search = keyword
+        getRealtimeData()
+      })
+    } else getRealtimeData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levels])
 
@@ -289,6 +298,13 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
             </BoxSearch>
           )}
           <BoxFilter>
+            <MenuFilter
+              active={!levels?.length}
+              onClick={() => setLevels(undefined)}
+            >
+              <InfoIcon />
+              <span>{TLevelsLog.ALL}</span>
+            </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.INFO)}
               onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
