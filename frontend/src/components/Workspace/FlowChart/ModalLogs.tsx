@@ -142,16 +142,26 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [openSearch])
 
   useEffect(() => {
+    if (indexSearch < 0 && keyword.length) getIndexKeyword(keyword, logs)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs])
+
+  const getInitWhenChangeLevelWithKeyword = useCallback(() => {
+    params.current.search = ""
+    getRealtimeData().then(() => {
+      params.current.search = keyword.trim()
+      getRealtimeData()
+    })
+  }, [getRealtimeData, keyword])
+
+  useEffect(() => {
     params.current.levels = levels
     offset.current = { next: -1, pre: -1 }
+    allowScrollToEnd.current = true
     setLogs([])
-    if (keyword.trim().length) {
-      params.current.search = ""
-      getRealtimeData().then(() => {
-        params.current.search = keyword.trim()
-        getRealtimeData()
-      })
-    } else getRealtimeData()
+    setIndexSearch(-1)
+    if (keyword.trim().length) getInitWhenChangeLevelWithKeyword()
+    else getRealtimeData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levels])
 
@@ -192,13 +202,14 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const onChangeKeyword = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const _keyword = e.target.value
-      allowScrollToEnd.current = !!_keyword.trim()
+      allowScrollToEnd.current = !_keyword.trim()
       setKeywork(_keyword)
       params.current.search = _keyword.trim()
       if (_keyword) clearTimeout(timeoutApi.current)
       getIndexKeyword(_keyword, logs)
+      if (allowScrollToEnd.current) getRealtimeData()
     },
-    [getIndexKeyword, logs],
+    [getIndexKeyword, getRealtimeData, logs],
   )
 
   const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
