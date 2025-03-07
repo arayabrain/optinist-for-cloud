@@ -62,7 +62,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const getIndexKeyword = useCallback((key: string, _logs: string[]) => {
     if (!key) return
     const _indexSearch = _logs.findIndex((el) =>
-      el.toLowerCase().includes(key.toLowerCase()),
+      el.toLowerCase().includes(key.trim().toLowerCase()),
     )
     setIndexSearch(_indexSearch)
     if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
@@ -145,10 +145,10 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     params.current.levels = levels
     offset.current = { next: -1, pre: -1 }
     setLogs([])
-    if (keyword.length) {
+    if (keyword.trim().length) {
       params.current.search = ""
       getRealtimeData().then(() => {
-        params.current.search = keyword
+        params.current.search = keyword.trim()
         getRealtimeData()
       })
     } else getRealtimeData()
@@ -166,7 +166,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const onPrevSearch = useCallback(() => {
     const _indexSearch = logs.findIndex(
       (el, index) =>
-        el.toLowerCase().includes(keyword.toLowerCase()) && index < indexSearch,
+        el.toLowerCase().includes(keyword.trim().toLowerCase()) &&
+        index < indexSearch,
     )
     if (_indexSearch < 0) getPreviousData()
     else {
@@ -178,7 +179,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const onNextSearch = useCallback(() => {
     const _indexSearch = logs.findIndex(
       (el, index) =>
-        el.toLowerCase().includes(keyword.toLowerCase()) && index > indexSearch,
+        el.toLowerCase().includes(keyword.trim().toLowerCase()) &&
+        index > indexSearch,
     )
     if (_indexSearch < 0) getNextFindData()
     else {
@@ -190,9 +192,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const onChangeKeyword = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const _keyword = e.target.value
-      allowScrollToEnd.current = !!_keyword
+      allowScrollToEnd.current = !!_keyword.trim()
       setKeywork(_keyword)
-      params.current.search = _keyword
+      params.current.search = _keyword.trim()
       if (_keyword) clearTimeout(timeoutApi.current)
       getIndexKeyword(_keyword, logs)
     },
@@ -207,17 +209,17 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [])
 
   const onStartReached = useCallback(async () => {
-    if (pending.current.startReached || keyword.length) return
+    if (pending.current.startReached || keyword.trim().length) return
     pending.current.startReached = true
     try {
       await getPreviousData()
     } finally {
       pending.current.startReached = false
     }
-  }, [getPreviousData, keyword.length])
+  }, [getPreviousData, keyword])
 
   const onEndReached = useCallback(async () => {
-    if (pending.current.endReached || keyword.length) return
+    if (pending.current.endReached || keyword.trim().length) return
     pending.current.endReached = true
     try {
       if (!allowScrollToEnd.current) {
@@ -227,7 +229,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     } finally {
       pending.current.endReached = false
     }
-  }, [getRealtimeData, keyword.length])
+  }, [getRealtimeData, keyword])
 
   const onLayout = useCallback(() => {
     if (allowScrollToEnd.current) scrollRef.current?.scrollToEnd()
@@ -236,12 +238,12 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   const renderItem = useCallback(
     ({ item, index }: { item: string; index: number }) => {
-      if (!keyword) return <BoxItem>{item}</BoxItem>
-      const indexx = item.toLowerCase().indexOf(keyword.toLowerCase())
+      if (!keyword.trim()) return <BoxItem>{item}</BoxItem>
+      const indexx = item.toLowerCase().indexOf(keyword.trim().toLowerCase())
       const keys = [
         item.substring(0, indexx),
-        `<span style="background: ${logs.length - 1 - indexSearch === index ? "#ff9632" : "#ffff00"}; color: #555f64">${item.substring(indexx, indexx + keyword.length)}</span>`,
-        item.substring(indexx + keyword.length, item.length),
+        `<span style="background: ${logs.length - 1 - indexSearch === index ? "#ff9632" : "#ffff00"}; color: #555f64">${item.substring(indexx, indexx + keyword.trim().length)}</span>`,
+        item.substring(indexx + keyword.trim().length, item.length),
       ]
       if (indexx > -1) {
         return (
