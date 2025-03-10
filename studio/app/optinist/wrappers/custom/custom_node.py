@@ -43,7 +43,7 @@ from studio.app.optinist.dataclass import FluoData
 logger = AppLogger.get_logger()
 
 
-def custom_node(
+def my_function(
     # Required inputs
     neural_data: ImageData,  # Fluorescence data from previous processing
     output_dir: str,  # Directory to save output files

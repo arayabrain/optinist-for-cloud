@@ -56,21 +56,26 @@ from studio.app.common.dataclass import *
 - Target file
   - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`custom_node`.py
 
-The function code is described below.
+- In the following example, the **my_function** function takes **ImageData** and returns [**FluoData**, **ImageData**, **HeatMapData**].
+- The output of the function is a dictionary. (Here we use the variable **info**.)
 
 ```python
-def custom_node(                 # (*1)
-        image_data: ImageData,   # (*2)
-        output_dir: str,         # (*3)
-        params: dict=None,       # (*4)
-        **kwargs,                # (*3)
-    ) -> dict(                   # (*5)
-      fluo=FluoData,
+  import numpy as np
+  from studio.app.common.dataclass import HeatMapData, ImageData  # Import general data classes
+  from studio.app.optinist.dataclass import FluoData              # Import ROI data classes
+
+def my_function(                                                                 # (*1)
+        image_data: ImageData,                                                   # (*2)
+        output_dir: str,                                                         # (*3)
+        params: dict=None,                                                       # (*4)
+        **kwargs,                                                                # (*3)
+    ) -> dict(                                                                   # (*5)
+      fluo=FluoData,                                                             # (*6)
       image=ImageData,
       heatmap=HeatMapData):
-    import numpy as np
-    info = {
-        "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),
+
+    info = { # Setting some random output data as example
+        "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),             # (*7)
         "image": ImageData(np.random.rand(10, 512, 512), file_name="image"),
         "heatmap": HeatMapData(example_analysis, file_name="heatmap")
     }
@@ -84,32 +89,22 @@ def custom_node(                 # (*1)
   - (\*4) This argument receives the function parameters.
     - see. [Function Parameter Definitions](#function-parameter-definitions)
   - (\*5) The return value is a dictionary type. (This is also reflected in the GUI.)
+  - (\*6) The flourescence (**fluo**), imaging frames (**image**) and heatmap data returned.
+  - (\*7) The output data by wrapped by the class (e.g. **FluoData**). The name of the output keys in the return variable must match the names used when declaring the function (here **fluo**, **image** & **heatmap**).
 
-#### Definition of conda environment for the function
 
-- Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/conda/`custom_env`.yaml
-
-```yaml
-dependencies:
-  - python=3.9 # (*1)
-```
-
-- Explanation:
-  - (\*1) Add the dependencies needed for you function.
-
-#### Definition of Information to be Displayed in the GUI
+### Definition of Information to be Displayed in the GUI
 
 - Target file
   - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/\_\_init\_\_.py
 
 ```python
-from studio.app.optinist.wrappers.custom.custom_node import custom_node
+from studio.app.optinist.wrappers.custom.custom_node import my_function
 
 custom_wrapper_dict = {                       # (*1)
     'custom_node': {                          # (*2)
         'template': {                         # (*3)
-            'function': custom_node,          # (*4)
+            'function': my_function,          # (*4)
             'conda_name': 'custom_env',       # (*5)
         },
     }
@@ -122,46 +117,55 @@ custom_wrapper_dict = {                       # (*1)
   - (\*3) Algorithm function name can be any text (display label to GUI)
   - (\*4) Algorithm function name specifies the actual function name
   - (\*4, 5) The conda setting is optional (to be defined when using conda with snakemake)
-  - (\*5) Your Node will be save and run with the environment set here
+  - (\*5) Your Node will be save and run with the environment set here (see example below)
 
 After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
-## Detailed Specifications
+### Definition of conda environment for the function
 
-### DataClass
+If your function requires specific packages, you can set them using a conda env for your custom node. If nothing is set, a default optinist conda env will be used. See /studio/app/optinist/wrappers/optinist/conda/optinist.yaml for specifics of the default conda env.
 
-Optinist defines several DataClasses to ensure consistency between Input and Output types. The main data types are as follows. These correspond to the color of each Node's handle.
+- Target file
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/conda/`custom_env`.yaml
 
-Optinist support datatype.
-
-- ImageData
-- TimeSeriesData
-- FluoData
-- BehaviorData
-- IscellData
-- Suite2pData
-- ScatterData
-- BarData
-
-### Input & Output Handles
-
-In the following example, the **my_function** function takes **ImageData** and returns [**FluoData**, **ImageData**, **HeatMapData**].
-
-```python
-from studio.app.common.dataclass import *
-
-def custom_node(
-        image_data: ImageData,
-        output_dir: str,
-        params: dict=None,
-        **kwargs,
-    ) dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
-    return
+```yaml
+dependencies:
+  - python=3.9 # Add the dependencies needed for you function
 ```
 
+### Check your custom node inputs and outputs
 Restart the Application and drag your new **custom_node** on the GUI, hover over the inputs and outputs to see the types.
 
 ![](../_static/add_algorithm/input_output.png)
+
+## Detailed Specifications
+
+### Data classes
+
+Optinist defines several [DataClasses](#data-nodes) to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
+
+- OptiNiSt supports these input data classes:
+  - ImageData
+  - FluoData
+  - BehaviorData
+  - TimeSeriesData
+  - Suite2pData
+  - CaimanCnmfData
+  - LccdData
+  - IscellData
+  - NWBFile
+  - RoiData
+  - SpikingActivityData,
+
+- OptiNiSt supports these data visualisation classes:
+  - BarData
+  - HeatMapData,
+  - HistogramData
+  - ScatterData
+  - LineData
+  - PieData
+  - PolarData
+  - ScatterData
 
 ### Function Parameter Definitions
 
@@ -180,60 +184,78 @@ Default function parameters can be defined in the following file. The user can t
 - Explanation:
   - {algorithm_function_name} must match the actual function name.
 
-### Drawing Output Results
 
-- Above we described the node input and output handle, here we describe the visualization of the result.
-- The output of the function is a dictionary. (Here we use the variable **info**.)
-- First, the **fluo** variable that is the return value of the **my_function function** is output by Wrap with **FluoData**. The name of the key in this case must match the **fluo** of the return value when declaring the function.
-- In addition, variables to be visualized are wrapped with their data types and output. In this example, **ImageData** and **HeatMap** are output.
+### NWB saving format
+
+Optinist uses NWB format for saving data, analysis and plots. Here are some examples of NWB saving formats.
+Check the [NWB](#nwb-settings) for more information of NWB saving format.
 
 ```python
-def custom_node(
-        image_data: ImageData,
-        output_dir: str,
-        params: dict=None,
-        **kwargs,
-    ) dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
-    import numpy as np
-    info = {
-        "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),
-        "image": ImageData(np.random.rand(10, 512, 512) output_dir=output_dir, file_name="image"),
-        "heatmap": HeatMapData(example_analysis, file_name="heatmap")
-    }
+def my_function(                     # Required inputs
+neural_data: ImageData,              # Fluorescence data from previous processing
+output_dir: str,                     # Directory to save output files
+# Optional inputs
+# iscell: IscellData = None,         # Cell classification data if needed
+params: dict = None,                 # Additional parameters to customize processing
+\*\*kwargs                           # Catch-all for additional arguments
+# Function returns a dictionary containing all outputs
+) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
 
-    # Prepare NWB file structure
-    nwb_output = {}
-    nwb_output[NWBDATASET.POSTPROCESS] = {
-        "analysis_result": {  # Use a string as the key
-            "data": example_analysis  # Your analysis outputs
-        }
-    }
-    return info
-```
+      # Saving using NWB file structure
+      # Create a new NWB file dictionary or update existing one
+      nwb_output = {}
 
-Restart the Application, connect imageNode and run it, and you will see the output as follows.
+      # Add ROIs if your analysis creates them
+      nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
 
-- Note:
-  - This is a quick process (only a few seconds), so if the process does not terminate, an error may have occurred. If the error persists, please submit a question to the issue.
+      # Example of adding processing results
+      nwb_output[NWBDATASET.POSTPROCESS] = {
+          "analysis_result": {  # Use a string as the key
+              "data": example_analysis[0]  # Your analysis outputs
+          }
+      }
 
-![](../_static/add_algorithm/run.png)
+      # Example of data in column format (e.g. for classifications)
+      nwb_output[NWBDATASET.COLUMN] = {
+          "my_classification": {
+              "name": "my_classification",
+              "description": "Description of the classification",
+              "data": example_analysis[1],
+          }
+      }
 
-![](../_static/add_algorithm/visualize_output.png)
+      info = {
+          "fluo": FluoData(example_fluo_data, file_name="fluo"),
+          "image": ImageData(example_imaging_data, file_name="image"),
+          "heatmap": HeatMapData(example_analysis, file_name="heatmap"),
+      }
 
-#### Customize Plot Metadata
+      return info
+  ```
 
-You can set plot title and axis labels to some output.
+### Customize Plot Metadata
+
+You can set plot title and axis labels to some outputs.
 
 ![](../_static/add_algorithm/heatmap_with_metadata.png)
 
-To do this,
+To do this:
 
 1. import PlotMetaData in the algorithm function file.
 2. Add PlotMetaData to the output dataclass's `meta` attribute with title or labels you want. If you need only one of them, you can omit the other attributes.
 
-   ```python
-   from studio.app.common.schemas.outputs import PlotMetaData
-   ```
+## Complete custom node example
+
+{eval-rst}
+.. note::
+  For development and debugging we have included a set of ipython notebooks
+  The function below is reproduced in `notebooks/custom_node.ipynb` and can be run for testing and debugging your node. Once you are happy with the output, please use the above method to add your node to OptiNiSt.
+
+```python
+import numpy as np
+from studio.app.common.schemas.outputs import PlotMetaData
+from studio.app.common.dataclass import HeatMapData, ImageData
+from studio.app.optinist.dataclass import FluoData
 
 def my_function( # Required inputs
 neural_data: ImageData, # Fluorescence data from previous processing
@@ -314,7 +336,7 @@ params: dict = None, # Additional parameters to customize processing
 
       return info
 
-````
+```
 
 ```{eval-rst}
 .. note::
@@ -322,4 +344,14 @@ params: dict = None, # Additional parameters to customize processing
 
     - CsvData
     - HTMLData
-````
+```
+
+### Using your custom node
+Restart the Application, connect imageNode and run it, and you will see the output as follows.
+
+- Note:
+  - This is a quick process (only a few seconds), so if the process does not terminate, an error may have occurred. If the error persists, please submit a question to the issue.
+
+![](../_static/add_algorithm/run.png)
+
+![](../_static/add_algorithm/visualize_output.png)

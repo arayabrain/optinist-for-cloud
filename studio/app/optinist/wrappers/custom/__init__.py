@@ -1,9 +1,9 @@
-from studio.app.optinist.wrappers.custom.custom_node import custom_node
+from studio.app.optinist.wrappers.custom.custom_node import my_function
 
 custom_wrapper_dict = {
     "custom_node": {
         "template": {
-            "function": custom_node,
+            "function": my_function,
             "conda_name": "custom_env",
         },
     }
