@@ -1,6 +1,7 @@
-import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react"
+import { KeyboardEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import qs from "qs"
+import { v4 as uuidv4 } from "uuid"
 
 import styled from "@emotion/styled"
 import AdbIcon from "@mui/icons-material/Adb"
@@ -13,8 +14,8 @@ import InfoIcon from "@mui/icons-material/Info"
 import SearchIcon from "@mui/icons-material/Search"
 import WarningIcon from "@mui/icons-material/Warning"
 import { Box, Modal } from "@mui/material"
-import { ScrollInverted } from "@react-scroll-inverted/react-scroll"
 
+import ScrollLogs from "components/Workspace/FlowChart/ScrollLogs"
 import axios from "utils/axios"
 
 const TIME_INTERVAL_API = 2000
@@ -34,6 +35,8 @@ type TParams = {
   search?: string
 }
 
+type TParamQueryLogs = TParams & { reverse?: boolean; offset: number }
+
 type Props = {
   isOpen?: boolean
   onClose?: () => void
@@ -41,247 +44,206 @@ type Props = {
 
 const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const [keyword, setKeywork] = useState("")
-  const [logs, setLogs] = useState<string[]>([])
+  const [logs, setLogs] = useState<{ text: string; id: string }[]>([])
   const [levels, setLevels] = useState<TLevelsLog[]>()
   const [openSearch, setOpenSearch] = useState(true)
-  const [indexSearch, setIndexSearch] = useState(-1)
+  const [searchId, setSearchId] = useState("")
 
-  const scrollRef = useRef<ScrollInverted | null>(null)
-  const params = useRef<TParams>({ limit: 200 })
+  const params = useRef<TParams>({ limit: 50 })
   const timeoutApi = useRef<NodeJS.Timeout>()
   const offset = useRef({ next: -1, pre: -1 })
-  const allowScrollToEnd = useRef(true)
-  const pending = useRef({
-    realtime: false,
-    pre: false,
-    next: false,
-    startReached: false,
-    endReached: false,
-  })
+  const pending = useRef({ next: false, pre: false, reached: false })
+  const refLogs = useRef(logs)
+  const refSearchId = useRef(searchId)
+  const isSearchKeyWhenPre = useRef(false)
 
-  const getIndexKeyword = useCallback((key: string, _logs: string[]) => {
-    if (!key) return
-    const _indexSearch = _logs.findIndex((el) =>
-      el.toLowerCase().includes(key.trim().toLowerCase()),
-    )
-    setIndexSearch(_indexSearch)
-    if (_indexSearch > -1) scrollRef.current?.scrollToIndex(_indexSearch)
+  useEffect(() => {
+    refSearchId.current = searchId
+  }, [searchId])
+
+  const getItemSearchPre = useCallback((search?: string) => {
+    if (!search) return
+    const index = refLogs.current
+      .toReversed()
+      .findIndex((e) => e.id === refSearchId.current)
+    return refLogs.current.toReversed().find((e, i) => {
+      return e.text.toLowerCase().includes(search.toLowerCase()) && i > index
+    })
   }, [])
 
-  const serviceLogs = useCallback(async (offset: number, reverse: boolean) => {
-    const res = await axios.get("/logs", {
-      params: { ...params.current, offset, reverse },
+  const serviceLogs = useCallback(async (params: TParamQueryLogs) => {
+    const { data, config } = await axios.get("/logs", {
+      params,
       paramsSerializer: (params) => {
         // eslint-disable-next-line import/no-named-as-default-member
         return qs.stringify(params, { arrayFormat: "repeat" })
       },
     })
-    return res
+    return {
+      data: data.data.map((e: string) => ({ text: e, id: uuidv4() })),
+      params: config.params,
+      offset: { next: data.next_offset, pre: data.prev_offset },
+    }
   }, [])
 
   const getPreviousData = useCallback(async () => {
-    if (pending.current.pre) return
-    pending.current.pre = true
-    try {
-      const { data } = await serviceLogs(offset.current.pre, true)
-      if (data.prev_offset < offset.current.pre) {
-        offset.current.pre = data.prev_offset
-        setLogs((pre) => [...data.data, ...pre])
-      }
-    } finally {
-      pending.current.pre = false
+    const { pre } = offset.current
+    if (pre <= 0) return
+    const _params = { ...params.current, offset: pre, reverse: true }
+    const { data, offset: _offset } = await serviceLogs(_params)
+    if (_offset.pre < pre) {
+      setLogs((pre) => {
+        refLogs.current = [...data, ...pre]
+        if (isSearchKeyWhenPre.current) {
+          const item = getItemSearchPre(params.current.search)
+          if (item) setSearchId(item.id)
+          isSearchKeyWhenPre.current = false
+        }
+        return refLogs.current
+      })
     }
-  }, [serviceLogs])
+    offset.current.pre = _offset.pre
+  }, [getItemSearchPre, serviceLogs])
 
-  const getNextFindData = useCallback(async () => {
-    if (pending.current.next) return
-    pending.current.next = true
-    try {
-      const { data } = await serviceLogs(offset.current.next, false)
-      if (data.next_offset > offset.current.next) {
-        offset.current.next = data.next_offset
-        setLogs((pre) => [...pre, ...data.data])
-      }
-    } finally {
-      pending.current.next = false
-    }
-  }, [serviceLogs])
-
-  const getRealtimeData = useCallback(async () => {
-    if (pending.current.realtime) return
-    pending.current.realtime = true
+  const getNextData = useCallback(async () => {
     clearTimeout(timeoutApi.current)
     try {
-      const { data } = await serviceLogs(offset.current.next, false)
-      if (data.next_offset > offset.current.next) {
-        offset.current.next = data.next_offset
-        setLogs((pre) => [...pre, ...data.data])
-      }
-      if (offset.current.pre === -1 && data.prev_offset !== -1) {
-        offset.current.pre = data.prev_offset
+      const { next } = offset.current
+      const _params = { ...params.current, offset: next, reverse: false }
+      const { data, offset: _offset } = await serviceLogs(_params)
+      if (_offset.next > next) setLogs((pre) => [...pre, ...data])
+      offset.current.next = _offset.next
+      if (_offset.pre !== -1 && offset.current.pre === -1) {
+        offset.current.pre = _offset.pre
         await getPreviousData()
       }
     } finally {
-      pending.current.realtime = false
-    }
-    if (!params.current.search) {
-      timeoutApi.current = setTimeout(getRealtimeData, TIME_INTERVAL_API)
+      timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
     }
   }, [getPreviousData, serviceLogs])
 
   useEffect(() => {
-    getRealtimeData()
+    getNextData()
     return () => {
       clearTimeout(timeoutApi.current)
     }
-  }, [getRealtimeData])
+  }, [getNextData])
 
   useEffect(() => {
     setKeywork("")
     params.current.search = undefined
   }, [openSearch])
 
-  useEffect(() => {
-    if (indexSearch < 0 && keyword.length) getIndexKeyword(keyword, logs)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logs])
-
-  const getInitWhenChangeLevelWithKeyword = useCallback(() => {
-    params.current.search = ""
-    getRealtimeData().then(() => {
-      params.current.search = keyword.trim()
-      getRealtimeData()
-    })
-  }, [getRealtimeData, keyword])
-
-  useEffect(() => {
-    params.current.levels = levels
-    offset.current = { next: -1, pre: -1 }
-    allowScrollToEnd.current = true
-    setLogs([])
-    setIndexSearch(-1)
-    if (keyword.trim().length) getInitWhenChangeLevelWithKeyword()
-    else getRealtimeData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levels])
-
   const onChangeTypeFilter = useCallback(
     (t: TLevelsLog) => {
-      if (levels?.includes(t)) setLevels(levels.filter((e) => e !== t))
-      else setLevels((pre) => [...(pre || []), t])
+      if (levels?.includes(t)) {
+        params.current.levels = levels.filter((e) => e !== t)
+      } else params.current.levels = [...(levels || []), t]
+      setLevels(params.current.levels)
     },
     [levels],
   )
 
   const onPrevSearch = useCallback(() => {
-    const _indexSearch = logs.findIndex(
-      (el, index) =>
-        el.toLowerCase().includes(keyword.trim().toLowerCase()) &&
-        index < indexSearch,
-    )
-    if (_indexSearch < 0) getPreviousData()
+    const item = getItemSearchPre(params.current.search)
+    if (item) setSearchId(item.id)
     else {
-      setIndexSearch(_indexSearch)
-      scrollRef.current?.scrollIntoView(_indexSearch)
+      isSearchKeyWhenPre.current = true
+      getPreviousData()
     }
-  }, [getPreviousData, indexSearch, keyword, logs])
+  }, [getItemSearchPre, getPreviousData])
 
   const onNextSearch = useCallback(() => {
-    const _indexSearch = logs.findIndex(
-      (el, index) =>
-        el.toLowerCase().includes(keyword.trim().toLowerCase()) &&
-        index > indexSearch,
-    )
-    if (_indexSearch < 0) getNextFindData()
-    else {
-      setIndexSearch(_indexSearch)
-      scrollRef.current?.scrollIntoView(_indexSearch)
-    }
-  }, [getNextFindData, indexSearch, keyword, logs])
-
-  const onChangeKeyword = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      const _keyword = e.target.value
-      allowScrollToEnd.current = !_keyword.trim()
-      setKeywork(_keyword)
-      params.current.search = _keyword.trim()
-      if (_keyword) clearTimeout(timeoutApi.current)
-      getIndexKeyword(_keyword, logs)
-      if (allowScrollToEnd.current) getRealtimeData()
-    },
-    [getIndexKeyword, getRealtimeData, logs],
-  )
-
-  const onScroll = useCallback((top: number, isUserScrolling: boolean) => {
-    if (top > 3 && isUserScrolling) {
-      allowScrollToEnd.current = false
-      clearTimeout(timeoutApi.current)
-    }
-  }, [])
+    const { search } = params.current
+    if (!search) return
+    const index = refLogs.current.findIndex((e) => e.id === searchId)
+    const item = refLogs.current.find((e, i) => {
+      return e.text.toLowerCase().includes(search.toLowerCase()) && i > index
+    })
+    if (item) setSearchId(item.id)
+  }, [searchId])
 
   const onStartReached = useCallback(async () => {
-    if (pending.current.startReached || keyword.trim().length) return
-    pending.current.startReached = true
+    if (pending.current.reached) return
+    pending.current.reached = true
     try {
       await getPreviousData()
     } finally {
-      pending.current.startReached = false
+      pending.current.reached = false
     }
-  }, [getPreviousData, keyword])
+  }, [getPreviousData])
 
-  const onEndReached = useCallback(async () => {
-    if (pending.current.endReached || keyword.trim().length) return
-    pending.current.endReached = true
-    try {
-      if (!allowScrollToEnd.current) {
-        allowScrollToEnd.current = true
-        await getRealtimeData()
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.code === "Escape") {
+        event.preventDefault()
+        event.stopPropagation()
+        setOpenSearch(false)
+      } else if (event.code === "Enter") {
+        onNextSearch()
       }
-    } finally {
-      pending.current.endReached = false
-    }
-  }, [getRealtimeData, keyword])
-
-  const onLayout = useCallback(() => {
-    if (allowScrollToEnd.current) scrollRef.current?.scrollToEnd()
-    else getIndexKeyword(keyword, logs)
-  }, [getIndexKeyword, keyword, logs])
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: string; index: number }) => {
-      if (!keyword.trim()) return <BoxItem>{item}</BoxItem>
-      const indexx = item.toLowerCase().indexOf(keyword.trim().toLowerCase())
-      const keys = [
-        item.substring(0, indexx),
-        `<span style="background: ${logs.length - 1 - indexSearch === index ? "#ff9632" : "#ffff00"}; color: #555f64">${item.substring(indexx, indexx + keyword.trim().length)}</span>`,
-        item.substring(indexx + keyword.trim().length, item.length),
-      ]
-      if (indexx > -1) {
-        return (
-          <BoxItem
-            dangerouslySetInnerHTML={{
-              __html: keys.join(""),
-            }}
-          />
-        )
-      }
-      return <BoxItem>{item}</BoxItem>
     },
-    [indexSearch, keyword, logs.length],
+    [onNextSearch],
   )
+
+  const getSearchId = useCallback(() => {
+    const { search } = params.current
+    if (!search) return
+    const item = refLogs.current.find((e) =>
+      e.text.toLowerCase().includes(search.toLowerCase()),
+    )
+    if (item) {
+      setSearchId(item?.id ?? "")
+    } else {
+      isSearchKeyWhenPre.current = true
+      getPreviousData()
+    }
+  }, [getPreviousData])
+
+  useEffect(() => {
+    params.current.search = keyword.trim()
+    if (keyword) getSearchId()
+    else setSearchId("")
+  }, [getSearchId, keyword])
+
+  useEffect(() => {
+    setLogs([])
+    refLogs.current = []
+    refSearchId.current = ""
+    setSearchId("")
+    offset.current = { next: -1, pre: -1 }
+    const search = params.current.search
+    clearTimeout(timeoutApi.current)
+    params.current.search = ""
+    getNextData().then(() => {
+      params.current.search = search
+    })
+    return () => {
+      clearTimeout(timeoutApi.current)
+    }
+  }, [getNextData, levels])
+
+  useEffect(() => {
+    refLogs.current = logs
+    const { search } = params.current
+    if (!refSearchId.current && search) {
+      const item = refLogs.current.find((e) =>
+        e.text.toLowerCase().includes(search.toLowerCase()),
+      )
+      if (item) setSearchId(item.id)
+      else onPrevSearch()
+    }
+  }, [logs, onPrevSearch])
 
   return (
     <Modal open={isOpen} onClose={onClose}>
       <Body>
         <Content>
-          <ScrollInverted
-            onScroll={onScroll}
-            ref={scrollRef}
-            data={logs}
-            renderItem={renderItem}
-            onLayout={onLayout}
+          <ScrollLogs
+            searchId={searchId}
+            logs={logs}
+            keyword={keyword}
             onStartReached={onStartReached}
-            onEndReached={onEndReached}
           />
           {openSearch ? (
             <BoxSearch>
@@ -289,7 +251,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
                 autoFocus
                 value={keyword}
                 placeholder="Search logs"
-                onChange={onChangeKeyword}
+                onChange={(e) => setKeywork(e.target.value)}
+                onKeyDown={onKeyDown}
               />
               <Box display="flex">
                 <BoxIconSearch onClick={onPrevSearch}>
@@ -453,12 +416,6 @@ const ButtonCloseModal = styled(ButtonClose)`
   position: absolute;
   top: 0;
   height: 40px;
-`
-
-const BoxItem = styled("div")`
-  color: white;
-  font-size: 16px;
-  padding: 3px 16px;
 `
 
 export default ModalLogs
