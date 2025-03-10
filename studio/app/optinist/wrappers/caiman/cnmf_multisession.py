@@ -37,7 +37,7 @@ def caiman_cnmf_multisession(
     util_download_model_files()
 
     params, smk_parms = split_dictionary(
-        params, ['use_conda', 'cores', 'forceall', 'forcetargets', 'lock', 'forcerun']
+        params, ["use_conda", "cores", "forceall", "forcetargets", "lock", "forcerun"]
     )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)

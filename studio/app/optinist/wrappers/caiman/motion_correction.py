@@ -1,6 +1,5 @@
 import os
 import shutil
-import threading
 
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
@@ -31,7 +30,7 @@ def caiman_mc(
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info(f"start caiman motion_correction: {function_id}")
     params, smk_parms = split_dictionary(
-        params, ['use_conda', 'cores', 'forceall', 'forcetargets', 'lock', 'forcerun']
+        params, ["use_conda", "cores", "forceall", "forcetargets", "lock", "forcerun"]
     )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)

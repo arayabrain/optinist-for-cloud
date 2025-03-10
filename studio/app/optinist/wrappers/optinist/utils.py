@@ -13,7 +13,7 @@ def split_dictionary(original_dict: dict, keys_to_remove: list):
     remaining_dict = {
         key: value for key, value in original_dict.items() if key not in keys_to_remove
     }
-    
+
     return remaining_dict, removed_dict
 
 
