@@ -54,6 +54,7 @@ from studio.app.common.dataclass import *
 #### Define the Input/Output of the Function and Implement the Logic.
 
 - Target file
+
   - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`custom_node`.py
 
 - In the following example, the **my_function** function takes **ImageData** and returns [**FluoData**, **ImageData**, **HeatMapData**].
@@ -89,9 +90,8 @@ def my_function(                                                                
   - (\*4) This argument receives the function parameters.
     - see. [Function Parameter Definitions](#function-parameter-definitions)
   - (\*5) The return value is a dictionary type. (This is also reflected in the GUI.)
-  - (\*6) The flourescence (**fluo**), imaging frames (**image**) and heatmap data returned.
+  - (\*6) The fluorescence (**fluo**), imaging frames (**image**) and heatmap data returned.
   - (\*7) The output data by wrapped by the class (e.g. **FluoData**). The name of the output keys in the return variable must match the names used when declaring the function (here **fluo**, **image** & **heatmap**).
-
 
 ### Definition of Information to be Displayed in the GUI
 
@@ -133,6 +133,7 @@ dependencies:
 ```
 
 ### Check your custom node inputs and outputs
+
 Restart the Application and drag your new **custom_node** on the GUI, hover over the inputs and outputs to see the types.
 
 ![](../_static/add_algorithm/input_output.png)
@@ -144,6 +145,7 @@ Restart the Application and drag your new **custom_node** on the GUI, hover over
 Optinist defines several [DataClasses](#data-nodes) to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
 
 - OptiNiSt supports these input data classes:
+
   - ImageData
   - FluoData
   - BehaviorData
@@ -182,7 +184,6 @@ Default function parameters can be defined in the following file. The user can t
 
 - Explanation:
   - {algorithm_function_name} must match the actual function name.
-
 
 ### NWB saving format
 
@@ -230,7 +231,7 @@ params: dict = None,                 # Additional parameters to customize proces
       }
 
       return info
-  ```
+```
 
 ### Customize Plot Metadata
 
@@ -247,8 +248,8 @@ To do this:
 
 {eval-rst}
 .. note::
-  For development and debugging we have included a set of ipython notebooks
-  The function below is reproduced in `notebooks/custom_node.ipynb` and can be run for testing and debugging your node. Once you are happy with the output, please use the above method to add your node to OptiNiSt.
+For development and debugging we have included a set of ipython notebooks
+The function below is reproduced in `notebooks/custom_node.ipynb` and can be run for testing and debugging your node. Once you are happy with the output, please use the above method to add your node to OptiNiSt.
 
 ```python
 import numpy as np
@@ -346,6 +347,7 @@ params: dict = None, # Additional parameters to customize processing
 ```
 
 ### Using your custom node
+
 Restart the Application, connect imageNode and run it, and you will see the output as follows.
 
 - Note:
