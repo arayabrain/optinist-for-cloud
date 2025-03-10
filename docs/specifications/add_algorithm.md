@@ -113,11 +113,10 @@ custom_wrapper_dict = {                       # (*1)
 
 - Explanation:
   - (\*1) The variable name is arbitrary, but `{algorithm_name}_wrapper_dict` is the standard.
-  - (\*2) Algorithm name can be any text (display label to GUI)
-  - (\*3) Algorithm function name can be any text (display label to GUI)
-  - (\*4) Algorithm function name specifies the actual function name
-  - (\*4, 5) The conda setting is optional (to be defined when using conda with snakemake)
-  - (\*5) Your Node will be save and run with the environment set here (see example below)
+  - (\*2) Algorithm folder name can be any text (display label to GUI)
+  - (\*3) Algorithm node name can be any text (display label to GUI)
+  - (\*4) Algorithm function name specifies the python function name
+  - (\*5) The conda setting is optional, to be defined when using conda with snakemake (see example below)
 
 After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
