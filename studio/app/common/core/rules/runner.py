@@ -54,6 +54,8 @@ class Runner:
 
             cls.__set_func_start_timestamp(os.path.dirname(__rule.output))
 
+            __rule.params.update(__rule.smk_params)
+
             # output_info
             output_info = cls.__execute_function(
                 __rule.path,

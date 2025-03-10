@@ -66,13 +66,12 @@ class WorkflowRunner:
         return new_unique_id
 
     def run_workflow(self, background_tasks):
-        self.set_smk_config()
-
         snakemake_params: SmkParam = get_typecheck_params(
             self.runItem.snakemakeParam, "snakemake"
         )
         snakemake_params = SmkParamReader.read(snakemake_params)
         snakemake_params.forcerun = self.runItem.forceRunList
+        self.set_smk_config(snakemake_params)
         if len(snakemake_params.forcerun) > 0:
             delete_dependencies(
                 workspace_id=self.workspace_id,
@@ -85,19 +84,17 @@ class WorkflowRunner:
             snakemake_execute, self.workspace_id, self.unique_id, snakemake_params
         )
 
-    def set_smk_config(self):
-        rules, last_output = self.rulefile()
-
+    def set_smk_config(self, snakemake_params: SmkParam):
+        rules, last_output = self.rulefile(snakemake_params)
         flow_config = FlowConfig(
             rules=rules,
             last_output=last_output,
         )
-
         SmkConfigWriter.write_raw(
             self.workspace_id, self.unique_id, asdict(flow_config)
         )
 
-    def rulefile(self):
+    def rulefile(self, snakemake_params: SmkParam) -> Dict[str, Rule]:
         endNodeList = self.get_endNodeList()
 
         nwbfile = get_typecheck_params(self.runItem.nwbParam, "nwb")
@@ -110,6 +107,7 @@ class WorkflowRunner:
                 data_common_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
+                    smk_params=snakemake_params,
                     node=node,
                     edgeDict=self.edgeDict,
                     nwbfile=nwbfile,
@@ -130,17 +128,16 @@ class WorkflowRunner:
                     data_rule = data_common_rule.mat()
                 elif node.type == NodeType.MICROSCOPE:
                     data_rule = data_common_rule.microscope()
-
                 rule_dict[node.id] = data_rule
 
             elif NodeTypeUtil.check_nodetype(node.type) == NodeType.ALGO:
                 algo_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
+                    smk_params=snakemake_params,
                     node=node,
                     edgeDict=self.edgeDict,
                 ).algo(nodeDict=self.nodeDict)
-
                 rule_dict[node.id] = algo_rule
 
                 if node.id in endNodeList:

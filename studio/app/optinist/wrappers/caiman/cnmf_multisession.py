@@ -13,7 +13,10 @@ from studio.app.optinist.wrappers.caiman.cnmf import (
     util_download_model_files,
     util_get_memmap,
 )
-from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
+from studio.app.optinist.wrappers.optinist.utils import (
+    recursive_flatten_params,
+    split_dictionary,
+)
 
 logger = AppLogger.get_logger()
 
@@ -33,6 +36,9 @@ def caiman_cnmf_multisession(
     # NOTE: evaluate_components requires cnn_model files in caiman_data directory.
     util_download_model_files()
 
+    params, smk_parms = split_dictionary(
+        params, ['use_conda', 'cores', 'forceall', 'forcetargets', 'lock', 'forcerun']
+    )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
@@ -74,9 +80,17 @@ def caiman_cnmf_multisession(
     if "dview" in locals():
         stop_server(dview=dview)  # noqa: F821
 
-    c, dview, n_processes = setup_cluster(
-        backend="local", n_processes=None, single_thread=True
-    )
+    n_processes = None
+    dview = None
+    if smk_parms["cores"] == 1:
+        c, dview, n_processes = setup_cluster(
+            backend="single", n_processes=smk_parms["cores"], single_thread=True
+        )
+    else:
+        c, dview, n_processes = setup_cluster(
+            backend="multiprocessing", n_processes=smk_parms["cores"]
+        )
+    logger.info(f"n_processes: {n_processes}")
 
     cnm_list = []
     templates = []

@@ -7,6 +7,7 @@ class RuleConfigReader:
         return Rule(
             input=rule["input"],
             return_arg=rule["return_arg"],
+            smk_params=rule["smk_params"],
             params=rule["params"],
             output=rule["output"],
             type=rule["type"],

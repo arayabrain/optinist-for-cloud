@@ -1,5 +1,6 @@
 import os
 import shutil
+import threading
 
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
@@ -10,7 +11,10 @@ from studio.app.common.core.utils.filepath_creater import (
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import RoiData
-from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
+from studio.app.optinist.wrappers.optinist.utils import (
+    recursive_flatten_params,
+    split_dictionary,
+)
 
 logger = AppLogger.get_logger()
 
@@ -26,7 +30,9 @@ def caiman_mc(
 
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info(f"start caiman motion_correction: {function_id}")
-
+    params, smk_parms = split_dictionary(
+        params, ['use_conda', 'cores', 'forceall', 'forcetargets', 'lock', 'forcerun']
+    )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
@@ -36,9 +42,17 @@ def caiman_mc(
     if params is not None:
         opts.change_params(params_dict=params)
 
-    c, dview, n_processes = setup_cluster(
-        backend="local", n_processes=None, single_thread=True
-    )
+    n_processes = None
+    dview = None
+    if smk_parms["cores"] == 1:
+        c, dview, n_processes = setup_cluster(
+            backend="single", n_processes=smk_parms["cores"], single_thread=True
+        )
+    else:
+        c, dview, n_processes = setup_cluster(
+            backend="multiprocessing", n_processes=smk_parms["cores"]
+        )
+    logger.info(f"n_processes: {n_processes}")
 
     mc = MotionCorrect(image.path, dview=dview, **opts.get_group("motion"))
 
@@ -49,7 +63,6 @@ def caiman_mc(
     fname_new = save_memmap(
         mc.mmap_file, base_name=function_id, order="C", border_to_0=border_to_0
     )
-
     stop_server(dview=dview)
 
     # now load the file
