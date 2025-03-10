@@ -25,7 +25,7 @@ First, prepare the necessary directories and files for the algorithm.
   - ...
   - custom
     - \_\_init\_\_.py
-    - `my_function.py` (\*1)
+    - `custom_node.py` (\*1)
     - ... (\*2)
 
 - Explanation:
@@ -54,12 +54,12 @@ from studio.app.common.dataclass import *
 #### Define the Input/Output of the Function and Implement the Logic.
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`my_function`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`custom_node`.py
 
 The function code is described below.
 
 ```python
-def my_function(                 # (*1)
+def custom_node(                 # (*1)
         image_data: ImageData,   # (*2)
         output_dir: str,         # (*3)
         params: dict=None,       # (*4)
@@ -85,19 +85,32 @@ def my_function(                 # (*1)
     - see. [Function Parameter Definitions](#function-parameter-definitions)
   - (\*5) The return value is a dictionary type. (This is also reflected in the GUI.)
 
+#### Definition of conda environment for the function
+
+- Target file
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/conda/`custom_env`.yaml
+
+```yaml
+dependencies:
+  - python=3.9 # (*1)
+```
+
+- Explanation:
+  - (\*1) Add the dependencies needed for you function.
+
 #### Definition of Information to be Displayed in the GUI
 
 - Target file
   - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/\_\_init\_\_.py
 
 ```python
-from studio.app.optinist.wrappers.custom.my_function import my_function
+from studio.app.optinist.wrappers.custom.custom_node import custom_node
 
 custom_wrapper_dict = {                       # (*1)
-    'custom_node': {                               # (*2)
-        'my_function': {                      # (*3)
-            'function': my_function,          # (*4)
-            'conda_name': 'my_function',           # (*5)
+    'custom_node': {                          # (*2)
+        'template': {                         # (*3)
+            'function': custom_node,          # (*4)
+            'conda_name': 'custom_env',       # (*5)
         },
     }
 }
@@ -137,7 +150,7 @@ In the following example, the **my_function** function takes **ImageData** and r
 ```python
 from studio.app.common.dataclass import *
 
-def my_function(
+def custom_node(
         image_data: ImageData,
         output_dir: str,
         params: dict=None,
@@ -154,7 +167,7 @@ Restart the Application and drag your new **custom_node** on the GUI, hover over
 
 Default function parameters can be defined in the following file. The user can then update these in the GUI.
 
-- {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom_node`/params/{algorithm_function_name}.yaml
+- {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/`custom`/params/{algorithm_function_name}.yaml
 
 - Sample:
 
@@ -175,7 +188,7 @@ Default function parameters can be defined in the following file. The user can t
 - In addition, variables to be visualized are wrapped with their data types and output. In this example, **ImageData** and **HeatMap** are output.
 
 ```python
-def my_function(
+def custom_node(
         image_data: ImageData,
         output_dir: str,
         params: dict=None,
@@ -206,8 +219,6 @@ Restart the Application, connect imageNode and run it, and you will see the outp
 ![](../_static/add_algorithm/run.png)
 
 ![](../_static/add_algorithm/visualize_output.png)
-
-# Add section on conda env and check yaml parameters adding correctly, function_id
 
 #### Customize Plot Metadata
 
