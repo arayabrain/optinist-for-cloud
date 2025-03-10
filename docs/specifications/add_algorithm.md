@@ -10,7 +10,7 @@ Below we describe an example procedure for adding a new algorithm.
 
 **Prerequisite**
 
-- Sample Algorithm Function Name ... `new_algo_func`
+- Sample Algorithm Function Name ... `my_function`
 - {OPTINIST_SRC_DIR} ... Replace with the actual source storage directory path.
 
 ### 1. Prepare Necessary Directories and Files for the Algorithm
@@ -25,7 +25,7 @@ First, prepare the necessary directories and files for the algorithm.
   - ...
   - custom
     - \_\_init\_\_.py
-    - `new_algo_func.py` (\*1)
+    - `my_function.py` (\*1)
     - ... (\*2)
 
 - Explanation:
@@ -37,7 +37,7 @@ First, prepare the necessary directories and files for the algorithm.
 #### Import Statement Description
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`new_algo_func`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`my_function`.py
 
 ```python
 from studio.app.common.dataclass import *
@@ -54,7 +54,7 @@ from studio.app.common.dataclass import *
 #### Define the Input/Output of the Function and Implement the Logic.
 
 - Target file
-  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`new_algo_func`.py
+  - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/`my_function`.py
 
 The function code is described below.
 
@@ -91,13 +91,13 @@ def my_function(                 # (*1)
   - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/custom/\_\_init\_\_.py
 
 ```python
-from studio.app.optinist.wrappers.custom.new_algo_func import new_algo_func
+from studio.app.optinist.wrappers.custom.my_function import my_function
 
-new_algo_wrapper_dict = {                       # (*1)
-    'new_algo': {                               # (*2)
-        'new_algo_func': {                      # (*3)
-            'function': new_algo_func,          # (*4)
-            'conda_name': 'new_algo',           # (*5)
+custom_wrapper_dict = {                       # (*1)
+    'custom_node': {                               # (*2)
+        'my_function': {                      # (*3)
+            'function': my_function,          # (*4)
+            'conda_name': 'my_function',           # (*5)
         },
     }
 }
@@ -109,6 +109,7 @@ new_algo_wrapper_dict = {                       # (*1)
   - (\*3) Algorithm function name can be any text (display label to GUI)
   - (\*4) Algorithm function name specifies the actual function name
   - (\*4, 5) The conda setting is optional (to be defined when using conda with snakemake)
+  - (\*5) Your Node will be save and run with the environment set here
 
 After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
 
@@ -183,7 +184,7 @@ def my_function(
     import numpy as np
     info = {
         "fluo": FluoData(np.random.rand(100, 20), file_name="fluo"),
-        "image": ImageData(np.random.rand(10, 512, 512), file_name="image"),
+        "image": ImageData(np.random.rand(10, 512, 512) output_dir=output_dir, file_name="image"),
         "heatmap": HeatMapData(example_analysis, file_name="heatmap")
     }
 
@@ -205,10 +206,6 @@ Restart the Application, connect imageNode and run it, and you will see the outp
 ![](../_static/add_algorithm/run.png)
 
 ![](../_static/add_algorithm/visualize_output.png)
-
-<style>
-img { width: 50%; }
-</style>
 
 # Add section on conda env and check yaml parameters adding correctly, function_id
 
