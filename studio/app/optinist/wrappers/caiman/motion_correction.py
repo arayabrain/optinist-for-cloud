@@ -44,13 +44,20 @@ def caiman_mc(
 
     n_processes = None
     dview = None
+    # This process launches another process to run the CNMF algorithm,
+    # so this node use at least 2 core.
+    # TODO: The minimum number of cores in the snakamake setting should be 2
     if smk_parms["cores"] == 1:
         c, dview, n_processes = setup_cluster(
             backend="single", n_processes=smk_parms["cores"], single_thread=True
         )
+    elif smk_parms["cores"] == 2:
+        c, dview, n_processes = setup_cluster(
+            backend="single", n_processes=smk_parms["cores"] - 1, single_thread=True
+        )
     else:
         c, dview, n_processes = setup_cluster(
-            backend="multiprocessing", n_processes=smk_parms["cores"]
+            backend="multiprocessing", n_processes=smk_parms["cores"] - 1
         )
     logger.info(f"n_processes: {n_processes}")
 
