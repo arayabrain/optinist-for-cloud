@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - run: python -m pip install isort
+      - run: python -m pip install isort==5.*
       - uses: liskin/gh-problem-matcher-wrap@a89a18291dcde8d4e6158adf736b5432987bbf95
         with:
           linters: isort
