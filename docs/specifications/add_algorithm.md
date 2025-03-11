@@ -142,7 +142,7 @@ Restart the Application and drag your new **custom_node** on the GUI, hover over
 
 ### Data classes
 
-Optinist defines several [DataClasses](./data_nodes.md) to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
+Optinist defines several DataClasses to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
 
 - OptiNiSt supports these input data classes:
 
@@ -188,7 +188,7 @@ Default function parameters can be defined in the following file. The user can t
 ### NWB saving format
 
 Optinist uses NWB format for saving data, analysis and plots. Here are some examples of NWB saving formats.
-Check the [NWB](https://nwb-schema.readthedocs.io/en/latest/format_description.html) for more information of NWB saving format.
+Check the [NWB](../for_developers/nwb_file.md) for more information of NWB saving format.
 
 ```python
 def my_function(                     # Required inputs
