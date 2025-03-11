@@ -70,8 +70,6 @@ def my_function(
         dict: Dictionary containing all output data and metadata
     """
 
-    function_id = ExptOutputPathIds(output_dir).function_id
-
     # 1. Set up logging if needed
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info(f"start my_function: {function_id}")

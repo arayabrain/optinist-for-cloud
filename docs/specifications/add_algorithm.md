@@ -142,7 +142,7 @@ Restart the Application and drag your new **custom_node** on the GUI, hover over
 
 ### Data classes
 
-Optinist defines several DataClasses to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
+Optinist defines several [DataClasses](../specifications/data_nodes.md) to ensure consistency between Input and Output types. These correspond to the color of each Node's handle. The main data input types are as follows.
 
 - OptiNiSt supports these input data classes:
 
@@ -190,6 +190,9 @@ Default function parameters can be defined in the following file. The user can t
 Optinist uses NWB format for saving data, analysis and plots. Here are some examples of NWB saving formats.
 Check the [NWB](../for_developers/nwb_file.md) for more information of NWB saving format.
 
+In order to repeatedly use nodes and save outputs into distinct files each time, it is necessary to give NWB files unique IDs.
+Use the OptiNiSt function ExptOutputPathIds to conveniently make these unique IDs.
+
 ```python
 def my_function(                     # Required inputs
 neural_data: ImageData,              # Fluorescence data from previous processing
@@ -201,33 +204,31 @@ params: dict = None,                 # Additional parameters to customize proces
 # Function returns a dictionary containing all outputs
 ) -> dict(fluo=FluoData, image=ImageData, heatmap=HeatMapData):
 
+      # Setup unique ID (function_id) for saving
+      function_id = ExptOutputPathIds(output_dir).function_id
+
       # Saving using NWB file structure
       # Create a new NWB file dictionary or update existing one
       nwb_output = {}
 
+      # Example of adding processing results
       # Add ROIs if your analysis creates them
-      nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
+      nwb_output[NWBDATASET.ROI] = {function_id, roi_list}  # List of ROI dictionaries
 
       # Example of adding processing results
       nwb_output[NWBDATASET.POSTPROCESS] = {
-          "analysis_result": {  # Use a string as the key
+          function_id: {
               "data": example_analysis[0]  # Your analysis outputs
           }
       }
 
       # Example of data in column format (e.g. for classifications)
       nwb_output[NWBDATASET.COLUMN] = {
-          "my_classification": {
+          function_id: {
               "name": "my_classification",
               "description": "Description of the classification",
               "data": example_analysis[1],
           }
-      }
-
-      info = {
-          "fluo": FluoData(example_fluo_data, file_name="fluo"),
-          "image": ImageData(example_imaging_data, file_name="image"),
-          "heatmap": HeatMapData(example_analysis, file_name="heatmap"),
       }
 
       return info
@@ -308,18 +309,18 @@ params: dict = None, # Additional parameters to customize processing
       nwb_output = {}
 
       # Add ROIs if your analysis creates them
-      nwb_output[NWBDATASET.ROI] = {}  # List of ROI dictionaries
+      nwb_output[NWBDATASET.ROI] = {function_id, roi_list}  # List of ROI dictionaries
 
       # Example of adding processing results
       nwb_output[NWBDATASET.POSTPROCESS] = {
-          "analysis_result": {  # Use a string as the key
+          function_id: {  # For testing you can also use a string as the key
               "data": example_analysis[0]  # Your analysis outputs
           }
       }
 
       # Example of data in column format (e.g. for classifications)
       nwb_output[NWBDATASET.COLUMN] = {
-          "my_classification": {
+          function_id: {
               "name": "my_classification",
               "description": "Description of the classification",
               "data": example_analysis[1],
