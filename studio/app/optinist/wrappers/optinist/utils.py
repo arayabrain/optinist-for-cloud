@@ -6,17 +6,6 @@ def standard_norm(X, mean, std):
     return tX
 
 
-def split_dictionary(original_dict: dict, keys_to_remove: list):
-    removed_dict = {
-        key: original_dict[key] for key in keys_to_remove if key in original_dict
-    }
-    remaining_dict = {
-        key: value for key, value in original_dict.items() if key not in keys_to_remove
-    }
-
-    return remaining_dict, removed_dict
-
-
 def recursive_flatten_params(params, result_params: dict, nest_counter=0):
     # avoid infinite loops
     assert nest_counter <= 2, f"Nest depth overflow. [{nest_counter}]"

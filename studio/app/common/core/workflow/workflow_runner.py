@@ -67,6 +67,7 @@ class WorkflowRunner:
 
     def run_workflow(self, background_tasks):
         self.set_smk_config()
+
         snakemake_params: SmkParam = get_typecheck_params(
             self.runItem.snakemakeParam, "snakemake"
         )
@@ -86,10 +87,12 @@ class WorkflowRunner:
 
     def set_smk_config(self):
         rules, last_output = self.rulefile()
+
         flow_config = FlowConfig(
             rules=rules,
             last_output=last_output,
         )
+
         SmkConfigWriter.write_raw(
             self.workspace_id, self.unique_id, asdict(flow_config)
         )
@@ -127,6 +130,7 @@ class WorkflowRunner:
                     data_rule = data_common_rule.mat()
                 elif node.type == NodeType.MICROSCOPE:
                     data_rule = data_common_rule.microscope()
+
                 rule_dict[node.id] = data_rule
 
             elif NodeTypeUtil.check_nodetype(node.type) == NodeType.ALGO:
@@ -136,6 +140,7 @@ class WorkflowRunner:
                     node=node,
                     edgeDict=self.edgeDict,
                 ).algo(nodeDict=self.nodeDict)
+
                 rule_dict[node.id] = algo_rule
 
                 if node.id in endNodeList:

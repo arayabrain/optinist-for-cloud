@@ -33,9 +33,6 @@ def caiman_cnmf_multisession(
     # NOTE: evaluate_components requires cnn_model files in caiman_data directory.
     util_download_model_files()
 
-    params, smk_parms = split_dictionary(
-        params, ["use_conda", "cores", "forceall", "forcetargets", "lock", "forcerun"]
-    )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
