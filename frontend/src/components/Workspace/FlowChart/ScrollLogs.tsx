@@ -16,10 +16,11 @@ type Props = {
   onLayout?: (layout: { height: number; scrollHeight: number }) => void
   onStartReached?: () => void
   searchId: string
+  isError: boolean
 }
 
 const ScrollLogs = forwardRef(function ScrollLogsRef(
-  { logs, keyword, onLayout, onStartReached, searchId }: Props,
+  { logs, keyword, onLayout, onStartReached, searchId, isError }: Props,
   ref: ForwardedRef<HTMLDivElement | null>,
 ) {
   const scrollRef = useRef<HTMLDivElement>()
@@ -109,11 +110,15 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
   return (
     <Box height="100%" ref={ref}>
       <BoxScroll ref={scrollRef} onScroll={onScroll}>
-        {logs.map((e) => (
-          <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
-            {renderItem({ item: e })}
-          </div>
-        ))}
+        {isError ? (
+          <BoxError>Failed to retrieve log</BoxError>
+        ) : (
+          logs.map((e) => (
+            <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
+              {renderItem({ item: e })}
+            </div>
+          ))
+        )}
       </BoxScroll>
     </Box>
   )
@@ -123,6 +128,13 @@ const BoxScroll = styled(Box)`
   height: 100%;
   overflow: auto;
   font-family: Monospaced, sans-serif;
+`
+
+const BoxError = styled("p")`
+  font-size: 20px;
+  color: #ff0000;
+  padding-left: 15px;
+  font-weight: 600;
 `
 
 const BoxItem = styled("div")`

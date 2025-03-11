@@ -57,6 +57,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const refSearchId = useRef(searchId)
   const isSearchKeyWhenPre = useRef(false)
 
+  const [isError, setIsError] = useState(false)
+
   const refScroll = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -119,6 +121,10 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         offset.current.pre = _offset.pre
         await getPreviousData()
       }
+      setIsError(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch {
+      setIsError(true)
     } finally {
       timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
     }
@@ -248,93 +254,92 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [logs, onPrevSearch])
 
   return (
-    <Modal open={isOpen} onClose={onClose}>
-      <Body>
-        <Content>
-          <ScrollLogs
-            ref={refScroll}
-            searchId={searchId}
-            logs={logs}
-            keyword={keyword}
-            onStartReached={onStartReached}
-          />
-          {openSearch ? (
-            <BoxSearch>
-              <InputSearch
-                autoFocus
-                value={keyword}
-                placeholder="Search logs"
-                onChange={(e) => setKeywork(e.target.value)}
-                onKeyDown={onKeyDown}
-              />
-              <Box display="flex">
-                <BoxIconSearch onClick={onPrevSearch}>
-                  <ArrowBackIosIcon />
-                </BoxIconSearch>
-                <BoxIconSearch onClick={onNextSearch}>
-                  <ArrowForwardIosIcon />
-                </BoxIconSearch>
-              </Box>
-              <ButtonClose onClick={() => setOpenSearch(false)}>
-                <CloseIcon />
-              </ButtonClose>
-            </BoxSearch>
-          ) : (
-            <BoxSearch width={"auto !important"}>
-              <ButtonClose onClick={() => setOpenSearch(true)}>
-                <SearchIcon />
-              </ButtonClose>
-            </BoxSearch>
-          )}
-          <BoxFilter>
-            <MenuFilter
-              active={!levels?.length}
-              onClick={() => setLevels(undefined)}
-            >
-              <InfoIcon />
-              <span>{TLevelsLog.ALL}</span>
-            </MenuFilter>
-            <MenuFilter
-              active={levels?.includes(TLevelsLog.INFO)}
-              onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
-            >
-              <InfoIcon />
-              <span>{TLevelsLog.INFO}</span>
-            </MenuFilter>
-            <MenuFilter
-              active={levels?.includes(TLevelsLog.WARNING)}
-              onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
-            >
-              <WarningIcon />
-              <span>{TLevelsLog.WARNING}</span>
-            </MenuFilter>
-            <MenuFilter
-              active={levels?.includes(TLevelsLog.DEBUG)}
-              onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
-            >
-              <AdbIcon />
-              <span>{TLevelsLog.DEBUG}</span>
-            </MenuFilter>
-            <MenuFilter
-              active={levels?.includes(TLevelsLog.ERROR)}
-              onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
-            >
-              <ErrorIcon />
-              <span>{TLevelsLog.ERROR}</span>
-            </MenuFilter>
-            <MenuFilter
-              active={levels?.includes(TLevelsLog.CRITICAL)}
-              onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
-            >
-              <GradeIcon />
-              <span>{TLevelsLog.CRITICAL}</span>
-            </MenuFilter>
-          </BoxFilter>
-          <ButtonCloseModal onClick={onClose}>
-            <CloseIcon />
-          </ButtonCloseModal>
-        </Content>
-      </Body>
+    <Modal style={{ display: "flex" }} open={isOpen} onClose={onClose}>
+      <Content>
+        <ScrollLogs
+          ref={refScroll}
+          searchId={searchId}
+          logs={logs}
+          keyword={keyword}
+          onStartReached={onStartReached}
+          isError={isError}
+        />
+        {openSearch ? (
+          <BoxSearch>
+            <InputSearch
+              autoFocus
+              value={keyword}
+              placeholder="Search logs"
+              onChange={(e) => setKeywork(e.target.value)}
+              onKeyDown={onKeyDown}
+            />
+            <Box display="flex">
+              <BoxIconSearch onClick={onPrevSearch}>
+                <ArrowBackIosIcon />
+              </BoxIconSearch>
+              <BoxIconSearch onClick={onNextSearch}>
+                <ArrowForwardIosIcon />
+              </BoxIconSearch>
+            </Box>
+            <ButtonClose onClick={() => setOpenSearch(false)}>
+              <CloseIcon />
+            </ButtonClose>
+          </BoxSearch>
+        ) : (
+          <BoxSearch width={"auto !important"}>
+            <ButtonClose onClick={() => setOpenSearch(true)}>
+              <SearchIcon />
+            </ButtonClose>
+          </BoxSearch>
+        )}
+        <BoxFilter>
+          <MenuFilter
+            active={!levels?.length}
+            onClick={() => setLevels(undefined)}
+          >
+            <InfoIcon />
+            <span>{TLevelsLog.ALL}</span>
+          </MenuFilter>
+          <MenuFilter
+            active={levels?.includes(TLevelsLog.INFO)}
+            onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
+          >
+            <InfoIcon />
+            <span>{TLevelsLog.INFO}</span>
+          </MenuFilter>
+          <MenuFilter
+            active={levels?.includes(TLevelsLog.WARNING)}
+            onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
+          >
+            <WarningIcon />
+            <span>{TLevelsLog.WARNING}</span>
+          </MenuFilter>
+          <MenuFilter
+            active={levels?.includes(TLevelsLog.DEBUG)}
+            onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
+          >
+            <AdbIcon />
+            <span>{TLevelsLog.DEBUG}</span>
+          </MenuFilter>
+          <MenuFilter
+            active={levels?.includes(TLevelsLog.ERROR)}
+            onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
+          >
+            <ErrorIcon />
+            <span>{TLevelsLog.ERROR}</span>
+          </MenuFilter>
+          <MenuFilter
+            active={levels?.includes(TLevelsLog.CRITICAL)}
+            onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
+          >
+            <GradeIcon />
+            <span>{TLevelsLog.CRITICAL}</span>
+          </MenuFilter>
+        </BoxFilter>
+        <ButtonCloseModal onClick={onClose}>
+          <CloseIcon />
+        </ButtonCloseModal>
+      </Content>
     </Modal>
   )
 }
@@ -397,13 +402,6 @@ const BoxIconSearch = styled(Box)`
   }
 `
 
-const Body = styled(Box)`
-  display: flex;
-  height: 100dvh;
-  align-items: center;
-  justify-content: center;
-`
-
 const Content = styled(Box)`
   width: 1600px;
   max-width: 85%;
@@ -412,6 +410,7 @@ const Content = styled(Box)`
   background-color: black;
   position: relative;
   white-space: pre-wrap;
+  margin: auto;
 `
 
 const ButtonClose = styled(Box)`
