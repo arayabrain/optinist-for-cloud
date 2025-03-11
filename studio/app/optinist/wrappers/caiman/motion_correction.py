@@ -10,10 +10,7 @@ from studio.app.common.core.utils.filepath_creater import (
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import RoiData
-from studio.app.optinist.wrappers.optinist.utils import (
-    recursive_flatten_params,
-    split_dictionary,
-)
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 
@@ -29,9 +26,6 @@ def caiman_mc(
 
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info(f"start caiman motion_correction: {function_id}")
-    params, smk_parms = split_dictionary(
-        params, ["use_conda", "cores", "forceall", "forcetargets", "lock", "forcerun"]
-    )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
@@ -41,22 +35,18 @@ def caiman_mc(
     if params is not None:
         opts.change_params(params_dict=params)
 
-    n_processes = None
+    # TODO: Add parameters for node
+    n_processes = 1
     dview = None
     # This process launches another process to run the CNMF algorithm,
     # so this node use at least 2 core.
-    # TODO: The minimum number of cores in the snakamake setting should be 2
-    if smk_parms["cores"] == 1:
+    if n_processes == 1:
         c, dview, n_processes = setup_cluster(
-            backend="single", n_processes=smk_parms["cores"], single_thread=True
-        )
-    elif smk_parms["cores"] == 2:
-        c, dview, n_processes = setup_cluster(
-            backend="single", n_processes=smk_parms["cores"] - 1, single_thread=True
+            backend="single", n_processes=n_processes, single_thread=True
         )
     else:
         c, dview, n_processes = setup_cluster(
-            backend="multiprocessing", n_processes=smk_parms["cores"] - 1
+            backend="multiprocessing", n_processes=n_processes
         )
     logger.info(f"n_processes: {n_processes}")
 

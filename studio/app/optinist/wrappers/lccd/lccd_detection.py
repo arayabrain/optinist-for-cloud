@@ -5,10 +5,7 @@ from studio.app.common.core.logger import AppLogger
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import EditRoiData, FluoData, IscellData, RoiData
-from studio.app.optinist.wrappers.optinist.utils import (
-    recursive_flatten_params,
-    split_dictionary,
-)
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 
@@ -21,9 +18,6 @@ def lccd_detect(
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info("start lccd_detect: %s", function_id)
 
-    params, smk_parms = split_dictionary(
-        params, ["use_conda", "cores", "forceall", "forcetargets", "lock", "forcerun"]
-    )
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params

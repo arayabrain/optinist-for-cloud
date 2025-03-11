@@ -66,12 +66,12 @@ class WorkflowRunner:
         return new_unique_id
 
     def run_workflow(self, background_tasks):
+        self.set_smk_config()
         snakemake_params: SmkParam = get_typecheck_params(
             self.runItem.snakemakeParam, "snakemake"
         )
         snakemake_params = SmkParamReader.read(snakemake_params)
         snakemake_params.forcerun = self.runItem.forceRunList
-        self.set_smk_config(snakemake_params)
         if len(snakemake_params.forcerun) > 0:
             delete_dependencies(
                 workspace_id=self.workspace_id,
@@ -84,8 +84,8 @@ class WorkflowRunner:
             snakemake_execute, self.workspace_id, self.unique_id, snakemake_params
         )
 
-    def set_smk_config(self, snakemake_params: SmkParam):
-        rules, last_output = self.rulefile(snakemake_params)
+    def set_smk_config(self):
+        rules, last_output = self.rulefile()
         flow_config = FlowConfig(
             rules=rules,
             last_output=last_output,
@@ -94,7 +94,7 @@ class WorkflowRunner:
             self.workspace_id, self.unique_id, asdict(flow_config)
         )
 
-    def rulefile(self, snakemake_params: SmkParam) -> Dict[str, Rule]:
+    def rulefile(self) -> Dict[str, Rule]:
         endNodeList = self.get_endNodeList()
 
         nwbfile = get_typecheck_params(self.runItem.nwbParam, "nwb")
@@ -107,7 +107,6 @@ class WorkflowRunner:
                 data_common_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
-                    smk_params=snakemake_params,
                     node=node,
                     edgeDict=self.edgeDict,
                     nwbfile=nwbfile,
@@ -134,7 +133,6 @@ class WorkflowRunner:
                 algo_rule = SmkRule(
                     workspace_id=self.workspace_id,
                     unique_id=self.unique_id,
-                    smk_params=snakemake_params,
                     node=node,
                     edgeDict=self.edgeDict,
                 ).algo(nodeDict=self.nodeDict)

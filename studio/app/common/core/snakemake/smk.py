@@ -9,7 +9,6 @@ class Rule:
     input: list
     return_arg: Union[str, Dict[str, str]]
     params: dict
-    smk_params: dict
     output: str
     type: str
     nwbfile: dict = None

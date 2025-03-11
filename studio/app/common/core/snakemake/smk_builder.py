@@ -5,7 +5,6 @@ class RuleBuilder:
     def __init__(self) -> None:
         self._input = None
         self._return_arg = None
-        self._smk_params = None
         self._params = None
         self._output = None
         self._type = None
@@ -26,10 +25,6 @@ class RuleBuilder:
 
     def set_return_arg(self, return_arg) -> "RuleBuilder":
         self._return_arg = return_arg
-        return self
-
-    def set_smk_params(self, smk_params) -> "RuleBuilder":
-        self._smk_params = smk_params
         return self
 
     def set_params(self, params) -> "RuleBuilder":
@@ -64,7 +59,6 @@ class RuleBuilder:
         return Rule(
             input=self._input,
             return_arg=self._return_arg,
-            smk_params=self._smk_params,
             params=self._params,
             output=self._output,
             type=self._type,

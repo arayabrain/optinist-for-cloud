@@ -13,14 +13,12 @@ class SmkRule:
         self,
         workspace_id: str,
         unique_id: str,
-        smk_params: Dict,
         node: Node,
         edgeDict: Dict[str, Edge],
         nwbfile=None,
     ) -> None:
         self._workspace_id = workspace_id
         self._unique_id = unique_id
-        self._smk_params = smk_params
         self._node = node
         self._edgeDict = edgeDict
         self._nwbfile = nwbfile
@@ -40,7 +38,6 @@ class SmkRule:
                 self._node.data.path, workspace_id=self._workspace_id
             )
             .set_return_arg(_return_name)
-            .set_smk_params(self._smk_params)
             .set_params(self._node.data.param)
             .set_output(_output_file)
             .set_nwbfile(self._nwbfile)
@@ -100,7 +97,6 @@ class SmkRule:
         return (
             self.builder.set_input(algo_input)
             .set_return_arg(return_arg_names)
-            .set_smk_params(self._smk_params)
             .set_params(params)
             .set_output(algo_output)
             .set_path(self._node.data.path)
