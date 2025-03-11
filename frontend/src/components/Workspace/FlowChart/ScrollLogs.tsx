@@ -1,4 +1,11 @@
-import { MouseEvent, useCallback, useEffect, useRef } from "react"
+import {
+  ForwardedRef,
+  forwardRef,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react"
 
 import styled from "@emotion/styled"
 import { Box } from "@mui/material"
@@ -11,13 +18,10 @@ type Props = {
   searchId: string
 }
 
-const ScrollLogs = ({
-  logs,
-  keyword,
-  onLayout,
-  onStartReached,
-  searchId,
-}: Props) => {
+const ScrollLogs = forwardRef(function ScrollLogsRef(
+  { logs, keyword, onLayout, onStartReached, searchId }: Props,
+  ref: ForwardedRef<HTMLDivElement | null>,
+) {
   const scrollRef = useRef<HTMLDivElement>()
   const refHeight = useRef(-1)
   const refScrollHeight = useRef(-1)
@@ -103,15 +107,17 @@ const ScrollLogs = ({
   )
 
   return (
-    <BoxScroll ref={scrollRef} onScroll={onScroll}>
-      {logs.map((e) => (
-        <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
-          {renderItem({ item: e })}
-        </div>
-      ))}
-    </BoxScroll>
+    <Box height="100%" ref={ref}>
+      <BoxScroll ref={scrollRef} onScroll={onScroll}>
+        {logs.map((e) => (
+          <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
+            {renderItem({ item: e })}
+          </div>
+        ))}
+      </BoxScroll>
+    </Box>
   )
-}
+})
 
 const BoxScroll = styled(Box)`
   height: 100%;

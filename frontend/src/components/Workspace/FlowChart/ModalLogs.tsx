@@ -57,6 +57,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const refSearchId = useRef(searchId)
   const isSearchKeyWhenPre = useRef(false)
 
+  const refScroll = useRef<HTMLDivElement | null>(null)
+
   useEffect(() => {
     refSearchId.current = searchId
   }, [searchId])
@@ -186,19 +188,29 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     [onNextSearch],
   )
 
+  const getTop = useCallback((elementId: string) => {
+    return (
+      refScroll.current
+        ?.querySelector(`#scroll_item_${elementId}`)
+        ?.getBoundingClientRect()?.top || -1
+    )
+  }, [])
+
   const getSearchId = useCallback(() => {
     const { search } = params.current
     if (!search) return
-    const item = refLogs.current.find((e) =>
-      e.text.toLowerCase().includes(search.toLowerCase()),
-    )
+    const list = refLogs.current
+      .filter((e) => e.text.toLowerCase().includes(search.toLowerCase()))
+      .map((e) => ({ ...e, top: getTop(e.id) }))
+    let item = list.filter((e) => e.top > 0)[0]
+    if (!item) item = list.toSorted((a, b) => (a.top > b.top ? -1 : 1))[0]
     if (item) {
       setSearchId(item?.id ?? "")
     } else {
       isSearchKeyWhenPre.current = true
       getPreviousData()
     }
-  }, [getPreviousData])
+  }, [getPreviousData, getTop])
 
   useEffect(() => {
     params.current.search = keyword.trim()
@@ -240,6 +252,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       <Body>
         <Content>
           <ScrollLogs
+            ref={refScroll}
             searchId={searchId}
             logs={logs}
             keyword={keyword}
