@@ -166,34 +166,28 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     offset.current.next = _offset.next
   }, [getInitOffset, serviceLogs])
 
-  const getNextData = useCallback(
-    async (isForce?: boolean) => {
-      clearTimeout(timeoutApi.current)
-      try {
-        const {
-          clientHeight = 0,
-          scrollHeight = 0,
-          scrollTop = 0,
-        } = refScroll.current || {}
-        if (
-          !isForce &&
-          (scrollHeight - scrollTop > clientHeight + SPACE_CHECK_SCROLL ||
-            params.current.search)
-        )
-          return
-        await getData()
-        setIsError(false)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch {
-        setIsError(true)
-      } finally {
-        if (!isUnmount.current) {
-          timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
-        }
+  const getNextData = useCallback(async () => {
+    clearTimeout(timeoutApi.current)
+    try {
+      const {
+        clientHeight = 0,
+        scrollHeight = 0,
+        scrollTop = 0,
+      } = refScroll.current || {}
+      const isScrollUp =
+        scrollHeight - scrollTop > clientHeight + SPACE_CHECK_SCROLL
+      if (isScrollUp || params.current.search) return
+      await getData()
+      setIsError(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch {
+      setIsError(true)
+    } finally {
+      if (!isUnmount.current) {
+        timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
       }
-    },
-    [getData],
-  )
+    }
+  }, [getData])
 
   useEffect(() => {
     setKeywork("")
@@ -227,8 +221,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
       return e.text.toLowerCase().includes(search.toLowerCase()) && i > index
     })
     if (item) setSearchId(item.id)
-    else getNextData(true)
-  }, [getNextData, searchId])
+    else getData()
+  }, [getData, searchId])
 
   const onStartReached = useCallback(async () => {
     if (pending.current.reached) return
