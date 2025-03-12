@@ -3,10 +3,13 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Query
 from typing_extensions import Optional
 
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.log_reader import LogLevel, LogReader
 from studio.app.common.schemas.outputs import PaginatedLineResult
 
 router = APIRouter(prefix="/logs", tags=["logs"])
+
+logger = AppLogger.get_logger()
 
 
 @router.get(
@@ -58,4 +61,5 @@ async def get_log_data(
             reverse=reverse,
         )
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
