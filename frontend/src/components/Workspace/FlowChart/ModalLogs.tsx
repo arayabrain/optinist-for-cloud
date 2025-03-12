@@ -287,6 +287,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     setSearchId("")
     refSearchId.current = ""
     offset.current = { next: -1, pre: -1 }
+    params.current.levels = levels
   }, [levels])
 
   useEffect(() => {
