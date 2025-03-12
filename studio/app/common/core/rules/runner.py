@@ -128,6 +128,12 @@ class Runner:
             os.fsync(f.fileno())
 
     @classmethod
+    def clear_pid_file(cls, workspace_id: str, unique_id: str) -> None:
+        pid_file_path = cls.__get_pid_file_path(workspace_id, unique_id)
+        if os.path.exists(pid_file_path):
+            os.remove(pid_file_path)
+
+    @classmethod
     def read_pid_file(cls, workspace_id: str, unique_id: str) -> WorkflowPIDFileData:
         pid_file_path = cls.__get_pid_file_path(workspace_id, unique_id)
         if not os.path.exists(pid_file_path):
