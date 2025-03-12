@@ -135,7 +135,10 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [getItemSearchPre, serviceLogs])
 
   const getInitOffset = useCallback(async () => {
-    const { offset: _offset, data } = await serviceLogs({ offset: -1 })
+    const { offset: _offset, data } = await serviceLogs({
+      offset: -1,
+      levels: params.current.levels,
+    })
     setLogs((pre) => [...pre, ...data])
     offset.current = _offset
     const key = params.current.search
