@@ -8,6 +8,7 @@ In the workflow field, you can:
 
 The analysis pipeline can be parallel or bifurcating.
 
+# ! Update the below picture to one with a filter box
 <br>
 <p align="center">
 <img width="600px" src="../_static/workflow/whole.png" alt="Workflow window" />
@@ -24,6 +25,7 @@ See [](algorithm_nodes) for a description of each data processing and analysis n
 ## Create a Workflow
 You can create a new workflow by clicking the + button.
 
+# ! Update the below picture to one with a filter box
 <br>
 <p align="center">
   <img width="600px" src="../_static/workflow/create_new_workflow.png" alt="Create workflow" />
@@ -50,7 +52,7 @@ Clicking the + button adds the analysis nodes to the Workflow field.
 The left side of the window displays all available analysis methods. ROI detection tools (currently Suite2P, CaImAn and LCCD) are in the "Algorithm" category, and all other pre-installed analyses are in the "optinist" category.
 
 (AddData)=
-### Input Data with Data Nodes 
+### Input Data with Data Nodes
 * Image (TIFF)
 
   By default, an Image node is displayed. This node defines the path to the data to use.
@@ -127,9 +129,11 @@ The left side of the window displays all available analysis methods. ROI detecti
   <img width="400px" src="../_static/workflow/hdf5_structure.png" alt="HDF5 node" />
   </p>
 
+# ! Update this section for new nodes roi_fluo_from_hdf5
   There are some additional utility nodes for processing HDF5 data.
   For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data.
 
+# ! Update the below picture to one with a filter box
   <p align="center">
   <img width="650px" src="../_static/workflow/hdf5_to_fluo.png" alt="HDF5 to fluo" />
   </p>
@@ -146,13 +150,15 @@ The left side of the window displays all available analysis methods. ROI detecti
     Be careful; this means that it does not check the format correspondence between input and output.
   ```
 
-* Microsope
+* Microscope
 
-  See [](data_nodes) for more information Microsope nodes. Currently, the Microsope node can accept following data formats.
+  See [](data_nodes) for more information Microscope nodes. Currently, the Microscope node can accept following data formats.
 
   * Inscopix(.isxd)
   * NIKON(.nd2)
   * Olympus(.oir)
+
+  # ! Update the below picture to one with a filter box
 
     <p align="center">
   <img width="650px" src="../_static/workflow/microscope.png" alt="Microscope" />
@@ -295,6 +301,10 @@ There are 2 types of execution. You can select the type by clicking the dropdown
 .. caution::
    With RUN, results will be overwritten. To avoid this, use RUN ALL.
 ```
+
+(FilteringData)=
+## Filtering Data
+
 
 (DirectorySettings)=
 ## Directory Settings
