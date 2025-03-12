@@ -1,6 +1,6 @@
 ### DataClass
 
-Optinist defines several DataClasses to ensure consistency between Input and Output types. The main data types are as follows. These correspond to the color of each Node's handle.
+Optinist defines several data classes to ensure consistency between Input and Output types.
 
 - OptiNiSt supports these input data classes:
   - ImageData
