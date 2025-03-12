@@ -1,7 +1,7 @@
 import {
-  ForwardedRef,
   forwardRef,
   MouseEvent,
+  MutableRefObject,
   useCallback,
   useEffect,
   useRef,
@@ -17,13 +17,22 @@ type Props = {
   onStartReached?: () => void
   searchId: string
   isError: boolean
+  onScroll?: (event: MouseEvent<HTMLDivElement>) => void
 }
 
 const ScrollLogs = forwardRef(function ScrollLogsRef(
-  { logs, keyword, onLayout, onStartReached, searchId, isError }: Props,
-  ref: ForwardedRef<HTMLDivElement | null>,
+  {
+    logs,
+    keyword,
+    onLayout,
+    onStartReached,
+    searchId,
+    isError,
+    onScroll: _onScroll,
+  }: Props,
+  ref,
 ) {
-  const scrollRef = useRef<HTMLDivElement>()
+  const scrollRef = ref as MutableRefObject<HTMLDivElement>
   const refHeight = useRef(-1)
   const refScrollHeight = useRef(-1)
   const isUserScroll = useRef(true)
@@ -55,7 +64,7 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
       }, 10)
     }
     return window.requestAnimationFrame(getLayout)
-  }, [keyword.length, onLayout])
+  }, [keyword.length, onLayout, scrollRef])
 
   useEffect(() => {
     const refFrame = getLayout()
@@ -71,15 +80,16 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
     const { height } = scrollRef.current.getBoundingClientRect()
     const { top } = element.getBoundingClientRect()
     if (top < 50 || top > height + 40) element.scrollIntoView()
-  }, [searchId])
+  }, [scrollRef, searchId])
 
   const onScroll = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
+      _onScroll?.(event)
       if (!isUserScroll.current) return
       const top = (event.target as HTMLDivElement).scrollTop
       if (top <= 0) onStartReached?.()
     },
-    [onStartReached],
+    [_onScroll, onStartReached],
   )
 
   const renderItem = useCallback(
@@ -108,19 +118,17 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
   )
 
   return (
-    <Box height="100%" ref={ref}>
-      <BoxScroll ref={scrollRef} onScroll={onScroll}>
-        {isError ? (
-          <BoxError>Failed to retrieve log</BoxError>
-        ) : (
-          logs.map((e) => (
-            <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
-              {renderItem({ item: e })}
-            </div>
-          ))
-        )}
-      </BoxScroll>
-    </Box>
+    <BoxScroll ref={ref} onScroll={onScroll}>
+      {isError ? (
+        <BoxError>Failed to retrieve log</BoxError>
+      ) : (
+        logs.map((e) => (
+          <div id={`scroll_item_${e.id}`} key={`${e}_${e.id}`}>
+            {renderItem({ item: e })}
+          </div>
+        ))
+      )}
+    </BoxScroll>
   )
 })
 
@@ -128,6 +136,21 @@ const BoxScroll = styled(Box)`
   height: 100%;
   overflow: auto;
   font-family: Monospaced, sans-serif;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+    position: absolute;
+    z-index: 9999;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: white;
+    border-radius: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: #555;
+  }
 `
 
 const BoxError = styled("p")`
