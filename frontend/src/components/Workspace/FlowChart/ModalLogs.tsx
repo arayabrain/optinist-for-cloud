@@ -72,8 +72,15 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   const isSearchKeyWhenPre = useRef(false)
 
   const [isError, setIsError] = useState(false)
+  const isUnmount = useRef(false)
 
   const refScroll = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    return () => {
+      isUnmount.current = true
+    }
+  }, [])
 
   useEffect(() => {
     refSearchId.current = searchId
@@ -171,7 +178,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     } catch {
       setIsError(true)
     } finally {
-      timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
+      if (!isUnmount.current) {
+        timeoutApi.current = setTimeout(getNextData, TIME_INTERVAL_API)
+      }
     }
   }, [getData])
 
