@@ -77,9 +77,9 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
     if (!scrollRef.current) return
     const element = scrollRef.current.querySelector(`#scroll_item_${searchId}`)
     if (!element) return
-    const { height } = scrollRef.current.getBoundingClientRect()
-    const { top } = element.getBoundingClientRect()
-    if (top < 50 || top > height + 40) element.scrollIntoView()
+    // const { height } = scrollRef.current.getBoundingClientRect()
+    // const { top } = element.getBoundingClientRect()
+    element.scrollIntoView({ block: "center" })
   }, [scrollRef, searchId])
 
   const onScroll = useCallback(
