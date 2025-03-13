@@ -6,7 +6,6 @@ import { useDispatch, useSelector } from "react-redux"
 import { useSnackbar, VariantType } from "notistack"
 
 import CachedIcon from "@mui/icons-material/Cached"
-import FileCopyIcon from "@mui/icons-material/FileCopy"
 import {
   Box,
   CircularProgress,
@@ -176,6 +175,7 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
           onOpenInputUrlDialog: setDialogViaUrl,
           onMessageError: setMessageError,
           onOpenFilterDialog: setFilterDialogNodeId,
+          onOpenLogs: setOpenLogs,
           dialogFilterNodeId,
           isOutput: true,
         }}
@@ -307,19 +307,9 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
         <RightDrawer />
       </DialogContext.Provider>
       {openLogs ? <ModalLogs isOpen onClose={onCloseModalLogs} /> : null}
-      <ButtonLogs onClick={() => setOpenLogs(true)}>
-        <FileCopyIcon />
-      </ButtonLogs>
     </Box>
   )
 })
-
-const ButtonLogs = styled(Box)`
-  cursor: pointer;
-  position: absolute;
-  bottom: 0;
-  left: 0;
-`
 
 const MainContents = styled("main")<{ open: boolean }>(
   ({ theme }) => ({

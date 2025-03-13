@@ -204,6 +204,13 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     if (!openSearchLevels) setLevels([])
   }, [openSearchLevels])
 
+  const onLayout = useCallback(
+    (layout: { height: number; scrollHeight: number }) => {
+      if (layout.scrollHeight <= layout.height) onPrevSearch()
+    },
+    [onPrevSearch],
+  )
+
   return (
     <Modal
       disableEscapeKeyDown={openSearch || openSearchLevels}
@@ -220,6 +227,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           onStartReached={onStartReached}
           isError={isError}
           onScroll={onScroll}
+          onLayout={onLayout}
         />
         <ButtonCloseModal onClick={onClose}>
           <CloseIcon />

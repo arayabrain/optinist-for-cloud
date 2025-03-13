@@ -68,6 +68,7 @@ export const useLogs = (
   const onPrevSearchApi = useCallback(
     async (k?: string) => {
       const { pre } = paginate.current
+      if (pre <= 0) return
       const search = keywordRef.current
       const data = await getPrevLogsApi({ offset: pre, search: k ?? search })
       setLogs((pre) => [...data, ...pre])
@@ -110,6 +111,8 @@ export const useLogs = (
     setLogs([])
     paginate.current = { next: -1, pre: -1 }
     if (keywordRef.current.length) onNextSearchApi()
+    realtimeApi()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onNextSearchApi])
 
   return { onPrevSearchApi, onNextSearchApi, logs, isError, reset }
