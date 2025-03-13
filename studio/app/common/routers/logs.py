@@ -40,8 +40,9 @@ async def get_log_data(
         log_reader = LogReader(levels=levels)
 
         if search:
-            text_pos, offset = log_reader.get_text_position(search, offset, reverse)
-            stop_offset = log_reader.get_unit_position(search, text_pos, reverse)
+            stop_offset, offset = log_reader.get_unit_position_from_search_text(
+                search, offset, reverse, search_match_case=False
+            )
             if stop_offset is None:
                 return PaginatedLineResult(
                     next_offset=offset,

@@ -28,9 +28,9 @@ class JsonTimeSeriesData(OutputData):
 
 @dataclass
 class TextPosition:
-    pos: Optional[int]
-    start_of_line: Optional[int]
-    end_of_line: Optional[int]
+    pos: Optional[int] = None
+    start_of_line: Optional[int] = None
+    end_of_line: Optional[int] = None
 
 
 @dataclass

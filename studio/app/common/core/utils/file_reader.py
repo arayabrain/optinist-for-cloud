@@ -106,6 +106,7 @@ class PaginatedFileReader:
         stop_offset: Optional[int],
         limit: int = 50,
         include_pattern: Optional[bytes] = None,
+        search_match_case=True,
     ) -> PaginatedLineResult:
         file.seek(offset)
 
@@ -120,7 +121,13 @@ class PaginatedFileReader:
                 if current_unit_buffer:
                     if self.unit_reader.validate(current_unit_buffer):
                         if include_pattern:
-                            if include_pattern in current_unit_buffer:
+                            if (
+                                not search_match_case
+                                and include_pattern.lower()
+                                in current_unit_buffer.lower()
+                            ):
+                                units.append(current_unit_buffer)
+                            elif include_pattern in current_unit_buffer:
                                 units.append(current_unit_buffer)
                         else:
                             units.append(current_unit_buffer)
@@ -147,6 +154,7 @@ class PaginatedFileReader:
         limit: int = 50,
         read_chunk_size=1024,
         include_pattern: Optional[bytes] = None,
+        search_match_case=True,
     ) -> PaginatedLineResult:
         file.seek(0, 2)
         file_size = file.tell()
@@ -182,7 +190,13 @@ class PaginatedFileReader:
                 if self.unit_reader.is_unit_start(line):
                     if self.unit_reader.validate(current_unit_buffer):
                         if include_pattern:
-                            if include_pattern in current_unit_buffer:
+                            if (
+                                not search_match_case
+                                and include_pattern.lower()
+                                in current_unit_buffer.lower()
+                            ):
+                                units.insert(0, current_unit_buffer)
+                            elif include_pattern in current_unit_buffer:
                                 units.insert(0, current_unit_buffer)
                         else:
                             units.insert(0, current_unit_buffer)
@@ -225,43 +239,101 @@ class PaginatedFileReader:
             else:
                 return self._read_forward(file, offset, stop_offset, limit)
 
-    def get_text_position(
+    def _find_case_sensitive(self, mm: mmap.mmap, search_bytes: bytes, offset, reverse):
+        return (
+            mm.rfind(search_bytes, 0, offset)
+            if reverse
+            else mm.find(search_bytes, offset)
+        )
+
+    def _find_case_insensitive(
+        self, mm: mmap.mmap, search_bytes: bytes, offset, reverse, chunk_size=4096
+    ):
+        """Find text case-insensitively by processing in chunks."""
+        search_len = len(search_bytes)
+        file_size = len(mm)
+        pos = offset if not reverse else max(0, offset - chunk_size)
+
+        while (pos >= 0 and reverse) or (pos < file_size and not reverse):
+            # Ensure overlap to catch matches spanning across chunks
+            end_pos = (
+                min(pos + chunk_size + search_len - 1, file_size)
+                if not reverse
+                else min(pos + chunk_size, file_size)
+            )
+            chunk = mm[pos:end_pos].lower()
+            found_pos = (
+                chunk.rfind(search_bytes) if reverse else chunk.find(search_bytes)
+            )
+
+            if found_pos != -1:
+                return pos + found_pos
+
+            pos = (
+                pos - (chunk_size - search_len + 1)
+                if reverse
+                else pos + (chunk_size - search_len + 1)
+            )
+
+        return -1
+
+    def _find_line_boundaries(self, mm: mmap.mmap, pos, offset, reverse):
+        """Find start and end of line for the matched text."""
+        start_of_line, end_of_line = None, None
+
+        if reverse:
+            eol = mm.find(b"\n", pos, offset)
+            end_of_line = offset if eol == -1 else eol
+        else:
+            sol = mm.rfind(b"\n", 0, pos)
+            start_of_line = 0 if sol == -1 else sol
+
+        return start_of_line, end_of_line
+
+    def _get_text_position(
         self,
         search_text: str,
         offset: int,
         reverse: bool = False,
+        search_match_case=True,
     ):
-        position = TextPosition(
-            pos=None,
-            start_of_line=None,
-            end_of_line=None,
-        )
+        position = TextPosition()
         with open(self.file_path, "r+b") as file:
             if offset == -1:
                 file.seek(0, 2)
                 offset = file.tell()
 
             with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                if reverse:
-                    pos = mm.rfind(search_text.encode("utf-8"), 0, offset)
-                    if pos == -1:
-                        return position, offset
-                    position.pos = pos
-                    eol = mm.find(b"\n", pos, offset)
-                    position.end_of_line = offset if eol == -1 else eol
-                else:
-                    pos = mm.find(search_text.encode("utf-8"), offset, -1)
-                    if pos == -1:
-                        return position, offset
-                    position.pos = pos
+                search_bytes = (
+                    search_text.encode()
+                    if search_match_case
+                    else search_text.lower().encode()
+                )
 
-                    sol = mm.rfind(b"\n", 0, pos)
-                    position.start_of_line = 0 if sol == -1 else sol
+                pos = (
+                    self._find_case_sensitive(mm, search_bytes, offset, reverse)
+                    if search_match_case
+                    else self._find_case_insensitive(mm, search_bytes, offset, reverse)
+                )
+                if pos == -1:
+                    return position, offset
+                position.pos = pos
+                (
+                    position.start_of_line,
+                    position.end_of_line,
+                ) = self._find_line_boundaries(mm, pos, offset, reverse)
+
         return (position, offset)
 
-    def get_unit_position(self, search: str, text_position: TextPosition, reverse):
+    def get_unit_position_from_search_text(
+        self, search: str, offset: int, reverse, search_match_case=True
+    ):
+        text_position, offset = self._get_text_position(
+            search, offset, reverse, search_match_case=False
+        )
+
         if text_position.pos is None:
-            return None
+            return None, offset
 
         with open(self.file_path, "rb") as file:
             if reverse:
@@ -270,10 +342,11 @@ class PaginatedFileReader:
                     offset=text_position.end_of_line,
                     limit=1,
                     include_pattern=search.encode(),
+                    search_match_case=search_match_case,
                 )
                 if not logs.data:
-                    return None
-                return logs.prev_offset
+                    return None, offset
+                return logs.prev_offset, offset
             else:
                 logs = self._read_forward(
                     file,
@@ -281,7 +354,8 @@ class PaginatedFileReader:
                     stop_offset=None,
                     limit=1,
                     include_pattern=search.encode(),
+                    search_match_case=search_match_case,
                 )
                 if not logs.data:
-                    return None
-                return logs.next_offset
+                    return None, offset
+                return logs.next_offset, offset
