@@ -252,28 +252,31 @@ class PaginatedFileReader:
         """Find text case-insensitively by processing in chunks."""
         search_len = len(search_bytes)
         file_size = len(mm)
-        pos = offset if not reverse else max(0, offset - chunk_size)
+        search_bytes = search_bytes.lower()
+
+        if reverse:
+            pos = min(offset, file_size)
+        else:
+            pos = max(0, offset)
 
         while (pos >= 0 and reverse) or (pos < file_size and not reverse):
-            # Ensure overlap to catch matches spanning across chunks
-            end_pos = (
-                min(pos + chunk_size + search_len - 1, file_size)
-                if not reverse
-                else min(pos + chunk_size, file_size)
-            )
-            chunk = mm[pos:end_pos].lower()
+            start_pos = max(0, pos - chunk_size) if reverse else pos
+            end_pos = min(pos + chunk_size + search_len, file_size)
+
+            chunk = mm[start_pos:end_pos].lower()
             found_pos = (
                 chunk.rfind(search_bytes) if reverse else chunk.find(search_bytes)
             )
 
             if found_pos != -1:
-                return pos + found_pos
+                return start_pos + found_pos
 
-            pos = (
-                pos - (chunk_size - search_len + 1)
-                if reverse
-                else pos + (chunk_size - search_len + 1)
-            )
+            if reverse:
+                pos -= chunk_size - search_len + 1
+                if pos < 0:
+                    break
+            else:
+                pos += chunk_size - search_len + 1
 
         return -1
 
@@ -304,11 +307,7 @@ class PaginatedFileReader:
                 offset = file.tell()
 
             with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                search_bytes = (
-                    search_text.encode()
-                    if search_match_case
-                    else search_text.lower().encode()
-                )
+                search_bytes = search_text.encode()
 
                 pos = (
                     self._find_case_sensitive(mm, search_bytes, offset, reverse)
