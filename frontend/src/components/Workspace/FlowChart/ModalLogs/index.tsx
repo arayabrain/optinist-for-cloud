@@ -201,8 +201,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
   }, [openSearch])
 
   useEffect(() => {
-    if (!openSearchLevels) setLevels([])
-  }, [openSearchLevels])
+    if (!openSearchLevels && levels.length) setLevels([])
+  }, [levels.length, openSearchLevels])
 
   const onLayout = useCallback(
     (layout: { height: number; scrollHeight: number }) => {
