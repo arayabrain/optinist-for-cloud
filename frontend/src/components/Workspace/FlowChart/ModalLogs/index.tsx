@@ -202,7 +202,8 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
   useEffect(() => {
     if (!openSearchLevels && levels.length) setLevels([])
-  }, [levels.length, openSearchLevels])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSearchLevels])
 
   const onLayout = useCallback(
     (layout: { height: number; scrollHeight: number }) => {
