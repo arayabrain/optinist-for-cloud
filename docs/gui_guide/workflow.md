@@ -9,8 +9,6 @@ In the workflow field, you can:
 
 The analysis pipeline can be parallel or bifurcating.
 
-# ! Update the below picture to one with a filter box
-
 <br>
 <p align="center">
 <img width="600px" src="../_static/workflow/whole.png" alt="Workflow window" />
@@ -30,8 +28,6 @@ See [](algorithm_nodes) for a description of each data processing and analysis n
 ## Create a Workflow
 
 You can create a new workflow by clicking the + button.
-
-# ! Update the below picture to one with a filter box
 
 <br>
 <p align="center">
@@ -140,12 +136,8 @@ The left side of the window displays all available analysis methods. ROI detecti
   <img width="400px" src="../_static/workflow/hdf5_structure.png" alt="HDF5 node" />
   </p>
 
-# ! Update this section for new nodes roi_fluo_from_hdf5
-
 There are some additional utility nodes for processing HDF5 data.
 For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data.
-
-# ! Update the below picture to one with a filter box
 
   <p align="center">
   <img width="650px" src="../_static/workflow/hdf5_to_fluo.png" alt="HDF5 to fluo" />
