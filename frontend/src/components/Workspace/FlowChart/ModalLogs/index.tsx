@@ -359,6 +359,9 @@ const MenuFilter = styled(Box, {
   }
   border-bottom: 2px solid;
   border-color: ${({ active }) => (active ? "rgb(0, 0, 0)" : "transparent")};
+  &:hover {
+    color: rgba(0, 0, 0, 0.8);
+  }
 `
 
 const BoxFilter = styled(Box)`
