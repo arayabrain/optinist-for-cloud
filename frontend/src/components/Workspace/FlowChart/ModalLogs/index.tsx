@@ -20,7 +20,7 @@ import KeyboardDoubleArrowDownIcon from "@mui/icons-material/KeyboardDoubleArrow
 import MenuIcon from "@mui/icons-material/Menu"
 import SearchIcon from "@mui/icons-material/Search"
 import WarningIcon from "@mui/icons-material/Warning"
-import { Box, Modal } from "@mui/material"
+import { Box, Modal, Tooltip } from "@mui/material"
 
 import { TLevelsLog } from "components/Workspace/FlowChart/ModalLogs/helpers/service"
 import {
@@ -248,7 +248,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         ) : (
           <BoxSearch width={"auto !important"}>
             <ButtonClose onClick={() => setOpenSearch(true)}>
-              <SearchIcon />
+              <Tooltip title="Search logs">
+                <SearchIcon />
+              </Tooltip>
             </ButtonClose>
           </BoxSearch>
         )}
@@ -305,7 +307,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           </BoxFilter>
         ) : (
           <BoxMenu onClick={() => setOpenSearchLevels(true)}>
-            <MenuIcon />
+            <Tooltip title="Filter log levels">
+              <MenuIcon />
+            </Tooltip>
           </BoxMenu>
         )}
         {visibleScrollEnd ? (

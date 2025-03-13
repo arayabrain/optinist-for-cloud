@@ -159,9 +159,10 @@ const BoxError = styled("p")`
 `
 
 const BoxItem = styled("div")`
+  -webkit-font-smoothing: auto;
   color: white;
-  font-size: 16px;
-  padding: 3px 16px;
+  font-size: 12px;
+  padding: 0px 16px;
 `
 
 export default ScrollLogs
