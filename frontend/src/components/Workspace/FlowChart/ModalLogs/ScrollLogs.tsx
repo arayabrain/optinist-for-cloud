@@ -15,8 +15,8 @@ type Props = {
   keyword: string
   onLayout?: (layout: { height: number; scrollHeight: number }) => void
   onStartReached?: () => void
-  searchId: string
-  isError: boolean
+  searchId?: string
+  isError?: boolean
   onScroll?: (event: MouseEvent<HTMLDivElement>) => void
 }
 
