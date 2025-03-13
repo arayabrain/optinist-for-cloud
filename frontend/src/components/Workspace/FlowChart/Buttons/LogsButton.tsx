@@ -8,7 +8,7 @@ import { DialogContext } from "components/Workspace/FlowChart/Dialog/DialogConte
 export const LogsButton = memo(function LogsButton() {
   const { onOpenLogs } = useContext(DialogContext)
   return (
-    <Tooltip title="Snakemake settings">
+    <Tooltip title="Logs">
       <IconButton onClick={() => onOpenLogs(true)} color={"primary"}>
         <TerminalIcon style={{ fontSize: 26 }} />
       </IconButton>
