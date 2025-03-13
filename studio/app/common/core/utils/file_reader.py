@@ -230,8 +230,7 @@ class PaginatedFileReader:
         search_text: str,
         offset: int,
         reverse: bool = False,
-        additional_line: int = 3,
-    ) -> TextPosition:
+    ):
         position = TextPosition(
             pos=None,
             start_of_line=None,
@@ -246,22 +245,22 @@ class PaginatedFileReader:
                 if reverse:
                     pos = mm.rfind(search_text.encode("utf-8"), 0, offset)
                     if pos == -1:
-                        return position
+                        return position, offset
                     position.pos = pos
                     eol = mm.find(b"\n", pos, offset)
                     position.end_of_line = offset if eol == -1 else eol
                 else:
                     pos = mm.find(search_text.encode("utf-8"), offset, -1)
                     if pos == -1:
-                        return position
+                        return position, offset
                     position.pos = pos
 
                     sol = mm.rfind(b"\n", 0, pos)
                     position.start_of_line = 0 if sol == -1 else sol
-        return position
+        return (position, offset)
 
     def get_unit_position(self, search: str, text_position: TextPosition, reverse):
-        if not text_position.pos:
+        if text_position.pos is None:
             return None
 
         with open(self.file_path, "rb") as file:
