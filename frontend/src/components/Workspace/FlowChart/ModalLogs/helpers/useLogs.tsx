@@ -76,18 +76,21 @@ export const useLogs = (
     [getPrevLogsApi],
   )
 
-  const onNextSearchApi = useCallback(async () => {
-    const search = keywordRef.current
-    const { next } = paginate.current
-    const data = await getNextDataApi({ offset: next, search })
-    if (isErrorRef.current) setIsError(false)
-    setLogs((pre) => [...pre, ...data])
-  }, [getNextDataApi])
+  const onNextSearchApi = useCallback(
+    async (k?: string) => {
+      const search = keywordRef.current
+      const { next } = paginate.current
+      const data = await getNextDataApi({ offset: next, search: k ?? search })
+      if (isErrorRef.current) setIsError(false)
+      setLogs((pre) => [...pre, ...data])
+    },
+    [getNextDataApi],
+  )
 
   const realtimeApi = useCallback(async () => {
     clearTimeout(timeout.current)
     if (isRealtime && !keywordRef.current) {
-      await onNextSearchApi().catch(() => setIsError(true))
+      await onNextSearchApi("").catch(() => setIsError(true))
     }
     if (!isBlurScreen.current) {
       timeout.current = setTimeout(realtimeApi, TIME_INTERVAL_API)
@@ -110,8 +113,8 @@ export const useLogs = (
   const reset = useCallback(() => {
     setLogs([])
     paginate.current = { next: -1, pre: -1 }
-    if (keywordRef.current.length) onNextSearchApi()
-    realtimeApi()
+    if (keywordRef.current.length) onNextSearchApi("")
+    else realtimeApi()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onNextSearchApi])
 
