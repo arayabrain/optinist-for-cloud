@@ -137,7 +137,10 @@ The left side of the window displays all available analysis methods. ROI detecti
   </p>
 
 There are some additional utility nodes for processing HDF5 data.
-For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data.
+For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data or 
+roi_fluo_from_hdf5 that extracts roi and fluorescence data from HDF5 data.
+
+For more details, refer to the [Algorithm Nodes Documentation](../specifications/algorithm_nodes.md#fluo-from-hdf5).
 
   <p align="center">
   <img width="650px" src="../_static/workflow/hdf5_to_fluo.png" alt="HDF5 to fluo" />
@@ -317,11 +320,51 @@ There are 2 types of execution. You can select the type by clicking the dropdown
    With RUN, results will be overwritten. To avoid this, use RUN ALL.
 ```
 
-(FilteringData)=
+### Filtering Data
 
-## Filtering Data
+#### Overview
+Filtering data is only available after executing the pipeline. This feature is particularly useful when you need to examine a specific range of the Region of Interest (ROI) or fluorescence time series.
 
-(DirectorySettings)=
+#### Step-by-Step Instructions
+
+##### 1. Ensure Pipeline Execution
+Before applying filters, make sure that you have executed the workflow. For example, if you followed **Tutorial 1**, your workflow might look like this:
+
+<br>
+<p align="left">
+<img src="../_static/workflow/filter_before.png" alt="Workflow before filtering" />
+</p>
+<br/>
+
+##### 2. Selecting the Filter Option
+If you want to filter ROI data within a specific range (e.g., 0 to 100), follow these steps:
+
+1. Locate the `suite2p_roi` node in your workflow.
+2. Click on the **Filter** button in the `suite2p_roi` node.
+
+<br>
+<p align="center">
+<img width="300px" src="../_static/workflow/filter_button.png" alt="Filter button" />
+</p>
+<br/>
+
+##### 3. Applying the Filter
+1. In the filter settings, set the **ROI Data Range** from **0 to 100**.
+2. Click the **Apply** button to confirm the filter settings.
+
+<br>
+<p align="center">
+<img width="400px" src="../_static/workflow/filter_box.png" alt="Filter settings" />
+</p>
+<br/>
+
+##### 4. Running the Workflow
+Once you apply the filter:
+- The `suite2p_roi` node will start **loading**.
+- When loading completes, the `eta` node will be highlighted in **yellow**.
+- Click the **RUN** button to execute the workflow and apply the filter changes.
+
+
 
 ## Directory Settings
 
@@ -456,7 +499,12 @@ When running a workflow, logs are continuously generated to provide insights int
 
 To access the logs, simply click on the **Log Button** in the interface.
 
-![Log Button Screenshot](#) <!-- Replace # with actual image link -->
+<br>
+<p align="center">
+<img width="300px" src="../_static/workflow/log_button.png" alt="Algo node buttons" />
+</p>
+<br/>
+
 
 ### Key Features of OptiNiSt Log Viewer
 
