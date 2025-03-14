@@ -38,13 +38,13 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
   const isUserScroll = useRef(true)
 
   const getLayout = useCallback(() => {
-    if (!scrollRef.current) return -1
+    if (!scrollRef.current) return
     const { clientHeight, scrollHeight, scrollTop } = scrollRef.current
+    onLayout?.({ height: clientHeight, scrollHeight })
     if (
       refHeight.current !== clientHeight ||
       refScrollHeight.current !== scrollHeight
     ) {
-      onLayout?.({ height: clientHeight, scrollHeight })
       const change = scrollHeight - refScrollHeight.current
       isUserScroll.current = false
       if (!keyword.length) {
@@ -59,19 +59,17 @@ const ScrollLogs = forwardRef(function ScrollLogsRef(
       }
       refHeight.current = clientHeight
       refScrollHeight.current = scrollHeight
-      setTimeout(() => {
-        isUserScroll.current = true
-      }, 10)
+      setTimeout(() => (isUserScroll.current = true), 10)
     }
-    return window.requestAnimationFrame(getLayout)
   }, [keyword.length, onLayout, scrollRef])
 
   useEffect(() => {
-    const refFrame = getLayout()
+    const ob = new MutationObserver(getLayout)
+    ob.observe(scrollRef.current, { childList: true })
     return () => {
-      window.cancelAnimationFrame(refFrame)
+      ob.disconnect()
     }
-  }, [getLayout])
+  }, [getLayout, scrollRef])
 
   useEffect(() => {
     if (!scrollRef.current) return
