@@ -318,29 +318,26 @@ const ImagePlotChart = memo(function ImagePlotChart({
           const rgba = getRoiColor(i)
           const hex = rgba2hex(rgba, 1)
 
-          const isClickPoint =
-            !roiClicked.length || roiClicked.some((point) => point === i)
+          const isClickPoint = roiClicked.some((point) => point === i)
           const isDeleted = statusRoi?.temp_delete_roi?.includes(i) || false
           const isMerged = statusRoi?.temp_merge_roi?.includes(i) || false
           const isAdded = statusRoi?.temp_add_roi?.includes(i) || false
-
-          if (
-            allowEditRoi &&
-            (isClickPoint || isDeleted || isMerged || isAdded)
-          ) {
+          if (allowEditRoi && isClickPoint) {
             switch (action) {
               case DELETE_ROI:
-                if (isClickPoint || isDeleted) return [offset, "#FFA500"] // orange
-                break
+                return [offset, "#FFA500"] // orange
               case MERGE_ROI:
-                if (isClickPoint || isMerged) return [offset, "#e134eb"] // purple
-                break
+                return [offset, "#e134eb"] // purple
               case ADD_ROI:
-                if (isAdded) return [offset, "3483eb"] // red
-                break
+                return [offset, "3483eb"] // red
               default:
-                if (isClickPoint) return [offset, hex]
+                return [offset, hex]
             }
+          }
+          if (isDeleted || isMerged || isAdded) {
+            if (isDeleted) return [offset, "#FFA500"]
+            if (isMerged) return [offset, "#e134eb"]
+            if (isAdded) return [offset, "3483eb"]
           }
           if (!allowEditRoi && isClickPoint) return [offset, hex]
           return [offset, rgba2hex(rgba, 0.3)]
