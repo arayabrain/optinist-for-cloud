@@ -57,6 +57,10 @@ def caiman_mc(
 
     images = np.array(Yr.T.reshape((T,) + dims, order="F"))
 
+    # Release variables associated with memmap files when they are no longer needed.
+    # *Avoid lock errors when cleaning memmap files.
+    del Yr, dims, T
+
     meanImg, rois = __process_images(images)
 
     xy_trans_data = (
@@ -84,6 +88,7 @@ def caiman_mc(
 
     # Clean up temporary files
     __handle_mmap_cleanup(mc, fname_new, output_dir)
+
     return info
 
 
@@ -113,6 +118,12 @@ def __process_images(images):
 def __handle_mmap_cleanup(mc, fname_new, output_dir):
     mmap_output_dir = join_filepath([output_dir, "mmap"])
     create_directory(mmap_output_dir)
+
+    # Explicitly gc before deleting memmap file
+    # *Avoid lock errors when cleaning memmap files.
+    import gc
+
+    gc.collect()
 
     for mmap_file in mc.mmap_file:
         dest_file = os.path.join(mmap_output_dir, os.path.basename(mmap_file))
