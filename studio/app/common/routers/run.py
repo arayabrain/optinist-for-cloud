@@ -1,14 +1,22 @@
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.workflow.workflow import Message, NodeItem, RunItem
+from studio.app.common.core.workflow.workflow import (
+    DataFilterParam,
+    Message,
+    NodeItem,
+    RunItem,
+)
 from studio.app.common.core.workflow.workflow_result import (
     WorkflowMonitor,
     WorkflowResult,
 )
-from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
+from studio.app.common.core.workflow.workflow_runner import (
+    WorkflowNodeDataFilter,
+    WorkflowRunner,
+)
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -32,6 +40,15 @@ async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundT
         logger.info("run snakemake")
 
         return unique_id
+
+    except KeyError as e:
+        logger.error(e, exc_info=True)
+        # Pass through the specific error message for KeyErrors
+        raise HTTPException(
+            # Changed to 400 since it's a client configuration issue
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e).strip('"'),  # Remove quotes from the KeyError message
+        )
 
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -97,4 +114,21 @@ async def cancel_run(workspace_id: str, uid: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cencel workflow.",
+        )
+
+
+@router.post("/filter/{workspace_id}/{uid}/{node_id}", response_model=bool)
+async def apply_filter(
+    workspace_id: str, uid: str, node_id: str, params: Optional[DataFilterParam] = None
+):
+    try:
+        WorkflowNodeDataFilter(
+            workspace_id=workspace_id, unique_id=uid, node_id=node_id
+        ).filter_node_data(params)
+        return True
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to filter data.",
         )

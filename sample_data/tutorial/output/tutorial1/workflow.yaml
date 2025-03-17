@@ -1,0 +1,409 @@
+nodeDict:
+  input_ab1mmvt2ky:
+    id: input_ab1mmvt2ky
+    type: ImageFileNode
+    data:
+      label: sample_mouse2p_image.tiff
+      param: {}
+      path:
+      - sample_mouse2p_image.tiff
+      type: input
+      fileType: image
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 50
+      y: 150
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: null
+      width: 250
+      borderRadius: null
+  input_zdax4o54o0:
+    id: input_zdax4o54o0
+    type: BehaviorFileNode
+    data:
+      label: sample_mouse2p_behavior.csv
+      param:
+        setHeader: null
+        setIndex: false
+        transpose: false
+      path: sample_mouse2p_behavior.csv
+      type: input
+      fileType: csv
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 51
+      y: 327
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: null
+      width: 250
+      borderRadius: null
+  suite2p_file_convert_tlri58d268:
+    id: suite2p_file_convert_tlri58d268
+    type: AlgorithmNode
+    data:
+      label: suite2p_file_convert
+      param:
+        force_sktiff:
+          type: child
+          value: false
+          path: force_sktiff
+        batch_size:
+          type: child
+          value: 500
+          path: batch_size
+      path: suite2p/suite2p_file_convert
+      type: algorithm
+      fileType: null
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 321.42857142857144
+      y: 151.56223405595958
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: 0
+      width: 250
+      borderRadius: 0
+  suite2p_registration_xq4pexs8o7:
+    id: suite2p_registration_xq4pexs8o7
+    type: AlgorithmNode
+    data:
+      label: suite2p_registration
+      param:
+        I/O:
+          type: parent
+          children:
+            nplanes:
+              type: child
+              value: 1
+              path: I/O/nplanes
+            nchannels:
+              type: child
+              value: 1
+              path: I/O/nchannels
+            functional_chan:
+              type: child
+              value: 1
+              path: I/O/functional_chan
+            frames_include:
+              type: child
+              value: -1
+              path: I/O/frames_include
+        Registration:
+          type: parent
+          children:
+            smooth_sigma:
+              type: child
+              value: 1.15
+              path: Registration/smooth_sigma
+            smooth_sigma_time:
+              type: child
+              value: 0
+              path: Registration/smooth_sigma_time
+            maxregshift:
+              type: child
+              value: 0.1
+              path: Registration/maxregshift
+            align_by_chan:
+              type: child
+              value: 1
+              path: Registration/align_by_chan
+            reg_tif:
+              type: child
+              value: false
+              path: Registration/reg_tif
+            th_badframes:
+              type: child
+              value: 1
+              path: Registration/th_badframes
+        1P setting:
+          type: parent
+          children:
+            1Preg:
+              type: child
+              value: false
+              path: 1P setting/1Preg
+            spatial_hp_reg:
+              type: child
+              value: 42
+              path: 1P setting/spatial_hp_reg
+            pre_smooth:
+              type: child
+              value: 0
+              path: 1P setting/pre_smooth
+            spatial_taper:
+              type: child
+              value: 40
+              path: 1P setting/spatial_taper
+        Non-Rigid:
+          type: parent
+          children:
+            nonrigid:
+              type: child
+              value: true
+              path: Non-Rigid/nonrigid
+            block_size:
+              type: child
+              value:
+              - 128
+              - 128
+              path: Non-Rigid/block_size
+            snr_thresh:
+              type: child
+              value: 1.2
+              path: Non-Rigid/snr_thresh
+            maxregshiftNR:
+              type: child
+              value: 5
+              path: Non-Rigid/maxregshiftNR
+      path: suite2p/suite2p_registration
+      type: algorithm
+      fileType: null
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 592.8571428571427
+      y: 152.82171554058164
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: 0
+      width: 250
+      borderRadius: 0
+  suite2p_roi_yvqcdmsg0r:
+    id: suite2p_roi_yvqcdmsg0r
+    type: AlgorithmNode
+    data:
+      label: suite2p_roi
+      param:
+        tau:
+          type: child
+          value: 1
+          path: tau
+        classification:
+          type: parent
+          children:
+            soma_crop:
+              type: child
+              value: true
+              path: classification/soma_crop
+        cell_detection:
+          type: parent
+          children:
+            high_pass:
+              type: child
+              value: 100
+              path: cell_detection/high_pass
+            sparse_mode:
+              type: child
+              value: true
+              path: cell_detection/sparse_mode
+            max_overlap:
+              type: child
+              value: 0.75
+              path: cell_detection/max_overlap
+            nbinned:
+              type: child
+              value: 5000
+              path: cell_detection/nbinned
+            spatial_scale:
+              type: child
+              value: 0
+              path: cell_detection/spatial_scale
+            threshold_scaling:
+              type: child
+              value: 1
+              path: cell_detection/threshold_scaling
+            max_iterations:
+              type: child
+              value: 20
+              path: cell_detection/max_iterations
+        1P:
+          type: parent
+          children:
+            spatial_hp_detect:
+              type: child
+              value: 25
+              path: 1P/spatial_hp_detect
+        Output:
+          type: parent
+          children:
+            preclassify:
+              type: child
+              value: 0
+              path: Output/preclassify
+        ROI_extraction:
+          type: parent
+          children:
+            allow_overlap:
+              type: child
+              value: false
+              path: ROI_extraction/allow_overlap
+            inner_neuropil_radius:
+              type: child
+              value: 2
+              path: ROI_extraction/inner_neuropil_radius
+            min_neuropil_pixels:
+              type: child
+              value: 350
+              path: ROI_extraction/min_neuropil_pixels
+      path: suite2p/suite2p_roi
+      type: algorithm
+      fileType: null
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 862.8571428571427
+      y: 157.19156313991306
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: 0
+      width: 250
+      borderRadius: 0
+  eta_elysjdrr7j:
+    id: eta_elysjdrr7j
+    type: AlgorithmNode
+    data:
+      label: eta
+      param:
+        I/O:
+          type: parent
+          children:
+            transpose_x:
+              type: child
+              value: true
+              path: I/O/transpose_x
+            transpose_y:
+              type: child
+              value: false
+              path: I/O/transpose_y
+            event_col_index:
+              type: child
+              value: 1
+              path: I/O/event_col_index
+        ETA:
+          type: parent
+          children:
+            trigger_type:
+              type: child
+              value: up
+              path: ETA/trigger_type
+            trigger_threshold:
+              type: child
+              value: 0.5
+              path: ETA/trigger_threshold
+            pre_event:
+              type: child
+              value: -10
+              path: ETA/pre_event
+            post_event:
+              type: child
+              value: 10
+              path: ETA/post_event
+      path: optinist/basic_neural_analysis/eta
+      type: algorithm
+      fileType: null
+      hdf5Path: null
+      matPath: null
+    position:
+      x: 1171.4285714285713
+      y: 304.33442028277017
+    style:
+      border: '1px solid #777'
+      height: 140
+      padding: 0
+      width: 250
+      borderRadius: 0
+edgeDict:
+  ? reactflow__edge-suite2p_registration_xq4pexs8o7suite2p_registration_xq4pexs8o7--ops--Suite2pData-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--ops--Suite2pData
+  : id: reactflow__edge-suite2p_registration_xq4pexs8o7suite2p_registration_xq4pexs8o7--ops--Suite2pData-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--ops--Suite2pData
+    type: buttonedge
+    animated: false
+    source: suite2p_registration_xq4pexs8o7
+    sourceHandle: suite2p_registration_xq4pexs8o7--ops--Suite2pData
+    target: suite2p_roi_yvqcdmsg0r
+    targetHandle: suite2p_roi_yvqcdmsg0r--ops--Suite2pData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null
+  ? reactflow__edge-suite2p_file_convert_tlri58d268suite2p_file_convert_tlri58d268--ops--Suite2pData-suite2p_registration_xq4pexs8o7suite2p_registration_xq4pexs8o7--ops--Suite2pData
+  : id: reactflow__edge-suite2p_file_convert_tlri58d268suite2p_file_convert_tlri58d268--ops--Suite2pData-suite2p_registration_xq4pexs8o7suite2p_registration_xq4pexs8o7--ops--Suite2pData
+    type: buttonedge
+    animated: false
+    source: suite2p_file_convert_tlri58d268
+    sourceHandle: suite2p_file_convert_tlri58d268--ops--Suite2pData
+    target: suite2p_registration_xq4pexs8o7
+    targetHandle: suite2p_registration_xq4pexs8o7--ops--Suite2pData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null
+  ? reactflow__edge-input_ab1mmvt2kyinput_ab1mmvt2ky--image--ImageData-suite2p_file_convert_tlri58d268suite2p_file_convert_tlri58d268--image--ImageData
+  : id: reactflow__edge-input_ab1mmvt2kyinput_ab1mmvt2ky--image--ImageData-suite2p_file_convert_tlri58d268suite2p_file_convert_tlri58d268--image--ImageData
+    type: buttonedge
+    animated: false
+    source: input_ab1mmvt2ky
+    sourceHandle: input_ab1mmvt2ky--image--ImageData
+    target: suite2p_file_convert_tlri58d268
+    targetHandle: suite2p_file_convert_tlri58d268--image--ImageData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null
+  ? reactflow__edge-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--fluorescence--FluoData-eta_elysjdrr7jeta_elysjdrr7j--neural_data--FluoData
+  : id: reactflow__edge-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--fluorescence--FluoData-eta_elysjdrr7jeta_elysjdrr7j--neural_data--FluoData
+    type: buttonedge
+    animated: false
+    source: suite2p_roi_yvqcdmsg0r
+    sourceHandle: suite2p_roi_yvqcdmsg0r--fluorescence--FluoData
+    target: eta_elysjdrr7j
+    targetHandle: eta_elysjdrr7j--neural_data--FluoData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null
+  ? reactflow__edge-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--iscell--IscellData-eta_elysjdrr7jeta_elysjdrr7j--iscell--IscellData
+  : id: reactflow__edge-suite2p_roi_yvqcdmsg0rsuite2p_roi_yvqcdmsg0r--iscell--IscellData-eta_elysjdrr7jeta_elysjdrr7j--iscell--IscellData
+    type: buttonedge
+    animated: false
+    source: suite2p_roi_yvqcdmsg0r
+    sourceHandle: suite2p_roi_yvqcdmsg0r--iscell--IscellData
+    target: eta_elysjdrr7j
+    targetHandle: eta_elysjdrr7j--iscell--IscellData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null
+  ? reactflow__edge-input_zdax4o54o0input_zdax4o54o0--behavior--BehaviorData-eta_elysjdrr7jeta_elysjdrr7j--behaviors_data--BehaviorData
+  : id: reactflow__edge-input_zdax4o54o0input_zdax4o54o0--behavior--BehaviorData-eta_elysjdrr7jeta_elysjdrr7j--behaviors_data--BehaviorData
+    type: buttonedge
+    animated: false
+    source: input_zdax4o54o0
+    sourceHandle: input_zdax4o54o0--behavior--BehaviorData
+    target: eta_elysjdrr7j
+    targetHandle: eta_elysjdrr7j--behaviors_data--BehaviorData
+    style:
+      border: null
+      height: null
+      padding: null
+      width: 5
+      borderRadius: null

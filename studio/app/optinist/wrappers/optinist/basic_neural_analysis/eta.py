@@ -6,6 +6,7 @@ from studio.app.common.core.logger import AppLogger
 from studio.app.common.dataclass import HeatMapData, TimeSeriesData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import BehaviorData, FluoData, IscellData
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 
@@ -43,7 +44,11 @@ def calc_trigger(behavior_data, trigger_type, trigger_threshold):
         else:
             i += 1
     if trigger_lengths:
-        trigger_len = mode(trigger_lengths).mode[0]  # find most common length
+        mode_result = mode(trigger_lengths)  # find most common length
+        trigger_len = mode_result.mode  # If scalar, use this value
+        if hasattr(trigger_len, "__len__"):  # If array use first value
+            trigger_len = trigger_len[0]
+
         trigger_idx = [
             idx
             for idx, length in zip(trigger_idx, trigger_lengths)
@@ -79,6 +84,10 @@ def ETA(
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info("start ETA: %s", function_id)
 
+    flattened_params = {}
+    recursive_flatten_params(params, flattened_params)
+    params = flattened_params
+
     neural_data = neural_data.data
     behaviors_data = behaviors_data.data
 
@@ -113,7 +122,11 @@ def ETA(
 
     # calculate Triggered average
     event_trigger_data = calc_trigger_average(
-        X, trigger_idxs, trigger_len, params["pre_event"], params["post_event"]
+        X,
+        trigger_idxs,
+        trigger_len,
+        params["pre_event"],
+        params["post_event"],
     )
 
     # (cell_number, event_time_lambda)

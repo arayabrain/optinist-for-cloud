@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useState,
+  createElement,
+  MouseEvent,
+} from "react"
 import { useDispatch, useSelector } from "react-redux"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 
-import { useSnackbar, VariantType } from "notistack"
+import { OptionsObject, SnackbarKey, useSnackbar, VariantType } from "notistack"
 
 import { isRejected } from "@reduxjs/toolkit"
 
 import { STANDALONE_WORKSPACE_ID } from "const/Mode"
+import { getAlgoList } from "store/slice/AlgorithmList/AlgorithmListActions"
 import { selectAlgorithmNodeNotExist } from "store/slice/AlgorithmNode/AlgorithmNodeSelectors"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { clearExperiments } from "store/slice/Experiments/ExperimentsSlice"
@@ -82,8 +89,7 @@ export function useRunPipeline() {
   const uid = useSelector(selectPipelineLatestUid)
   const isCanceled = useSelector(selectPipelineIsCanceled)
   const isStartedSuccess = useSelector(selectPipelineIsStartedSuccess)
-  const isOwner = useSelector(selectIsWorkspaceOwner)
-  const runDisabled = isOwner ? isStartedSuccess : true
+  const runDisabled = useIsRunDisabled()
 
   const filePathIsUndefined = useSelector(selectFilePathIsUndefined)
   const algorithmNodeNotExist = useSelector(selectAlgorithmNodeNotExist)
@@ -92,24 +98,93 @@ export function useRunPipeline() {
 
   const handleRunPipeline = useCallback(
     (name: string) => {
-      dispatch(run({ runPostData: { name, ...runPostData, forceRunList: [] } }))
+      const newNodeDict = runPostData.nodeDict
+      Object.keys(newNodeDict).forEach((key) => {
+        delete newNodeDict[key].data.dataFilterParam
+        delete newNodeDict[key].data.draftDataFilterParam
+      })
+      dispatch(
+        run({
+          runPostData: {
+            name,
+            ...runPostData,
+            nodeDict: newNodeDict,
+            forceRunList: [],
+          },
+        }),
+      )
         .unwrap()
-        .catch(() => {
-          enqueueSnackbar("Failed to Run workflow", { variant: "error" })
+        .catch((error) => {
+          // Catch workflow yaml parameter errors
+          if (error?.response?.status === 422) {
+            const snackbarOptions: OptionsObject = {
+              variant: "warning",
+              autoHideDuration: 30000,
+              action: function (_key: SnackbarKey) {
+                return createElement(
+                  "span",
+                  {
+                    role: "button",
+                    onMouseDown: (e: MouseEvent<HTMLSpanElement>) => {
+                      e.stopPropagation()
+                      window.open(
+                        "https://github.com/oist/optinist/wiki/FAQ",
+                        "_blank",
+                      )
+                    },
+                    className: "text-inherit underline cursor-pointer",
+                  },
+                  "Click here",
+                )
+              },
+            }
+            enqueueSnackbar("Workflow yaml error, see FAQ\n", snackbarOptions)
+          } else {
+            enqueueSnackbar("Failed to Run workflow", { variant: "error" })
+          }
         })
     },
     [dispatch, enqueueSnackbar, runPostData],
   )
-  const handleClickVariant = (variant: VariantType, mess: string) => {
-    enqueueSnackbar(mess, { variant })
-  }
+
   const handleRunPipelineByUid = useCallback(() => {
     dispatch(runByCurrentUid({ runPostData }))
       .unwrap()
-      .catch(() => {
-        enqueueSnackbar("Failed to Run workflow", { variant: "error" })
+      .catch((error) => {
+        // Catch workflow yaml parameter errors
+        if (error?.response?.status === 422) {
+          const snackbarOptions: OptionsObject = {
+            variant: "warning",
+            autoHideDuration: 30000,
+            action: function (_key: SnackbarKey) {
+              return createElement(
+                "span",
+                {
+                  role: "button",
+                  onMouseDown: (e: MouseEvent<HTMLSpanElement>) => {
+                    e.stopPropagation()
+                    window.open(
+                      "https://github.com/oist/optinist/wiki/FAQ",
+                      "_blank",
+                    )
+                  },
+                  className: "text-inherit underline cursor-pointer",
+                },
+                "Click here",
+              )
+            },
+          }
+          enqueueSnackbar("Workflow yaml error, see FAQ\n", snackbarOptions)
+        } else {
+          enqueueSnackbar("Failed to Run workflow", { variant: "error" })
+        }
       })
   }, [dispatch, enqueueSnackbar, runPostData])
+
+  const handleClickVariant = (variant: VariantType, mess: string) => {
+    enqueueSnackbar(mess, { variant })
+  }
+
   const handleCancelPipeline = useCallback(async () => {
     if (uid != null) {
       const data = await dispatch(cancelResult({ uid }))
@@ -122,6 +197,7 @@ export function useRunPipeline() {
     }
     //eslint-disable-next-line
   }, [dispatch, uid])
+
   useEffect(() => {
     const intervalId = setInterval(() => {
       if (isStartedSuccess && !isCanceled && uid != null) {
@@ -132,26 +208,40 @@ export function useRunPipeline() {
       clearInterval(intervalId)
     }
   }, [dispatch, uid, isCanceled, isStartedSuccess])
+
   const status = useSelector(selectPipelineStatus)
   // タブ移動による再レンダリングするたびにスナックバーが実行されてしまう挙動を回避するために前回の値を保持
   const [prevStatus, setPrevStatus] = useState(status)
+
   useEffect(() => {
     if (prevStatus !== status) {
-      if (status === RUN_STATUS.FINISHED) {
-        enqueueSnackbar("Finished", { variant: "success" })
+      let isRunFinished = false
+
+      if (status === RUN_STATUS.START_SUCCESS) {
         dispatch(getExperiments())
-      } else if (status === RUN_STATUS.START_SUCCESS) {
+      } else if (status === RUN_STATUS.FINISHED) {
+        enqueueSnackbar("Workflow finished", { variant: "success" })
+        isRunFinished = true
         dispatch(getExperiments())
       } else if (status === RUN_STATUS.ABORTED) {
-        enqueueSnackbar("Aborted", { variant: "error" })
+        enqueueSnackbar("Workflow aborted", { variant: "error" })
+        isRunFinished = true
         dispatch(getExperiments())
       } else if (status === RUN_STATUS.CANCELED) {
-        enqueueSnackbar("Workflow canceled.", { variant: "success" })
+        enqueueSnackbar("Workflow canceled", { variant: "success" })
+        isRunFinished = true
         dispatch(getExperiments())
       }
+
+      if (isRunFinished) {
+        // Update TreeView
+        dispatch(getAlgoList())
+      }
+
       setPrevStatus(status)
     }
   }, [dispatch, status, prevStatus, enqueueSnackbar])
+
   return {
     filePathIsUndefined,
     algorithmNodeNotExist,
@@ -162,4 +252,12 @@ export function useRunPipeline() {
     handleRunPipelineByUid,
     handleCancelPipeline,
   }
+}
+
+export function useIsRunDisabled() {
+  const isStartedSuccess = useSelector(selectPipelineIsStartedSuccess)
+  const isOwner = useSelector(selectIsWorkspaceOwner)
+  const runDisabled = isOwner ? isStartedSuccess : true
+
+  return runDisabled
 }

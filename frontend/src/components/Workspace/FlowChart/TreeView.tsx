@@ -5,12 +5,13 @@ import { useSelector, useDispatch } from "react-redux"
 import AddIcon from "@mui/icons-material/Add"
 import ChevronRightIcon from "@mui/icons-material/ChevronRight"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
-import { styled, Typography } from "@mui/material"
+import { styled, Typography, Tooltip } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
+import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
 import {
   DND_ITEM_TYPE_SET,
   TreeItemCollectedProps,
@@ -227,7 +228,7 @@ const InputNodeComponent = memo(function InputNodeComponent({
   )
 })
 
-interface AlgoNodeComponentBaseProps {
+export interface AlgoNodeComponentBaseProps {
   name: string
   onAddAlgoNode: (
     nodeName: string,
@@ -260,8 +261,8 @@ const AlgoNodeComponentRecursive = memo(function AlgoNodeComponentRecursive({
           <AlgoNodeComponentRecursive
             name={name}
             node={node}
-            key={i.toFixed()}
             onAddAlgoNode={onAddAlgoNode}
+            key={i.toFixed()}
           />
         ))}
       </TreeItem>
@@ -295,10 +296,34 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
       onFocusCapture={(e) => e.stopPropagation()}
       nodeId={name}
       label={
-        <AddButton
-          name={name}
-          onClick={() => onAddAlgoNode(name, node.functionPath)}
-        />
+        <>
+          <div
+            style={{
+              display: "flex", // Place Items on single line.
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {node.condaEnvExists ? (
+              <AddButton
+                name={name}
+                onClick={() => onAddAlgoNode(name, node.functionPath)}
+              />
+            ) : (
+              <CondaNoticeButton
+                name={name}
+                node={node}
+                onSkipClick={(_event, reason) => {
+                  // Cancel operation from other than Skip (Cancel) button does nothing.
+                  // *In the cancel button click, the reason is undefined..
+                  if (reason !== undefined) {
+                    return
+                  }
+                  onAddAlgoNode(name, node.functionPath)
+                }}
+              />
+            )}
+          </div>
+        </>
       }
     />
   )
@@ -320,17 +345,16 @@ const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
       >
         <AddIcon />
       </IconButton>
-      <Typography
-        variant="inherit"
-        style={{
-          textOverflow: "ellipsis",
-          overflow: "visible",
-          width: "8rem",
-          display: "inline-block",
-        }}
-      >
-        {name}
-      </Typography>
+      <Tooltip title={name} placement="right">
+        <Typography
+          variant="inherit"
+          style={{
+            display: "inline-block",
+          }}
+        >
+          {name}
+        </Typography>
+      </Tooltip>
     </>
   )
 })
