@@ -20,6 +20,7 @@ import {
   PlotData,
   PlotMouseEvent,
   PlotSelectionEvent,
+  Annotations,
 } from "plotly.js"
 
 import { Button, LinearProgress, TextField, Typography } from "@mui/material"
@@ -30,16 +31,17 @@ import { styled } from "@mui/material/styles"
 import Switch from "@mui/material/Switch"
 
 import { DisplayDataContext } from "components/Workspace/Visualize/DataContext"
+import { useVisualize } from "components/Workspace/Visualize/VisualizeContext"
 import {
   addRoi,
   cancelRoi,
   commitRoi,
   deleteRoi,
+  mergeRoi,
   getImageData,
   getRoiData,
   getStatus,
   getTimeSeriesInitData,
-  mergeRoi,
 } from "store/slice/DisplayData/DisplayDataActions"
 import {
   selectImageDataError,
@@ -54,7 +56,7 @@ import {
 } from "store/slice/DisplayData/DisplayDataSelectors"
 import {
   selectingImageArea,
-  setImageItemClikedDataId,
+  setImageItemClickedDataId,
 } from "store/slice/VisualizeItem/VisualizeItemActions"
 import {
   selectImageItemShowticklabels,
@@ -68,15 +70,14 @@ import {
   selectImageItemEndIndex,
   selectRoiItemFilePath,
   selectRoiItemIndex,
-  selectImageItemRoiAlpha,
   selectImageItemDuration,
   selectVisualizeItemWidth,
   selectVisualizeItemHeight,
   selectVisualizeSaveFilename,
   selectVisualizeSaveFormat,
   selectImageItemAlpha,
-  selectRoiItemOutputKeys,
   selectVisualizeItems,
+  selectImageItemShowRoiLabels,
 } from "store/slice/VisualizeItem/VisualizeItemSelectors"
 import {
   incrementImageActiveIndex,
@@ -89,12 +90,6 @@ import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelecto
 import { setDataCancel } from "store/slice/Workspace/WorkspaceSlice"
 import { AppDispatch, RootState } from "store/store"
 import { twoDimarrayEqualityFn } from "utils/EqualityUtils"
-
-interface PointClick {
-  x: number
-  y: number
-  z: number
-}
 
 export type StatusROI = {
   temp_add_roi: number[]
@@ -208,8 +203,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
   )
 
   const [roiDataState, setRoiDataState] = useState(roiData)
-  const [pointClick, setPointClick] = useState<PointClick[]>([])
-
   const itemsVisual = useSelector(selectVisualizeItems)
   const showticklabels = useSelector(selectImageItemShowticklabels(itemId))
   const showline = useSelector(selectImageItemShowLine(itemId))
@@ -219,26 +212,44 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const colorscale = useSelector(selectImageItemColors(itemId))
   const alpha = useSelector(selectImageItemAlpha(itemId))
   const timeDataMaxIndex = useSelector(selectRoiItemIndex(itemId, roiFilePath))
-  const roiAlpha = useSelector(selectImageItemRoiAlpha(itemId))
   const width = useSelector(selectVisualizeItemWidth(itemId))
   const height = useSelector(selectVisualizeItemHeight(itemId))
-  const statusRoi = useSelector(selectStatusRoi)
   const [sizeDrag, setSizeDrag] = useState(initSizeDrag)
   const [startDragAddRoi, setStartDragAddRoi] = useState(false)
   const [action, setAction] = useState("")
   const [positionDrag, setChangeSize] = useState<PositionDrag | undefined>()
+  const showRoiLabels = useSelector(selectImageItemShowRoiLabels(itemId))
 
-  const outputKey: string | null = useSelector(selectRoiItemOutputKeys(itemId))
+  const allowEditRoi = useMemo(
+    () => roiFilePath?.includes(CELL_ROI),
+    [roiFilePath],
+  )
+  const { setRoisClick, roisClick, resetRoisClick } = useVisualize()
+  const roiClicked = useMemo(() => roisClick[itemId] || [], [itemId, roisClick])
+
+  const selectedStatus = useSelector(selectStatusRoi)
+
+  const statusRoi = useMemo(() => {
+    return (
+      selectedStatus || {
+        temp_add_roi: [],
+        temp_delete_roi: [],
+        temp_merge_roi: [],
+      }
+    )
+  }, [selectedStatus])
 
   const refPageXSize = useRef(0)
   const refPageYSize = useRef(0)
 
-  const colorscaleRoi = createColormap({
-    colormap: "jet",
-    nshades: 100, //timeDataMaxIndex >= 6 ? timeDataMaxIndex : 6,
-    format: "rgba",
-    alpha: 1.0,
-  })
+  function getRoiColor(roiIndex: number): number[] {
+    const colors = createColormap({
+      colormap: "jet",
+      nshades: 200,
+      format: "rgba",
+    })
+    return colors[(Math.abs(roiIndex) * 9) % 200]
+  }
 
   useEffect(() => {
     setRoiDataState(roiData)
@@ -300,45 +311,34 @@ const ImagePlotChart = memo(function ImagePlotChart({
         z: roiDataState,
         type: "heatmap",
         name: "roi",
-        hovertemplate: action === ADD_ROI ? "none" : "cell id: %{z}",
+        hovertemplate: action === ADD_ROI ? "none" : "ROI: %{z}",
         // hoverinfo: isAddRoi || pointClick.length ? "none" : undefined,
         colorscale: [...Array(timeDataMaxIndex + 1)].map((_, i) => {
-          const new_i = Math.floor(((i % 10) * 10 + i / 10) % 100)
           const offset: number = i / timeDataMaxIndex
-          const rgba = colorscaleRoi[new_i]
-          const hex = rgba2hex(rgba, roiAlpha)
-          if (!action) {
-            if (statusRoi.temp_delete_roi.includes(i))
-              return [offset, "#ffffff"]
-            if (statusRoi.temp_merge_roi.includes(i)) return [offset, "#e134eb"]
-            if (statusRoi.temp_add_roi.includes(i)) return [offset, "#3483eb"]
+          const rgba = getRoiColor(i)
+          const hex = rgba2hex(rgba, 1)
+
+          const isClickPoint = roiClicked.some((point) => point === i)
+          const isDeleted = statusRoi?.temp_delete_roi?.includes(i) || false
+          const isMerged = statusRoi?.temp_merge_roi?.includes(i) || false
+          const isAdded = statusRoi?.temp_add_roi?.includes(i) || false
+          if (allowEditRoi && isClickPoint && action) {
+            switch (action) {
+              case DELETE_ROI:
+                return [offset, "#FFA500"] // orange
+              case MERGE_ROI:
+                return [offset, "#e134eb"] // purple
+              case ADD_ROI:
+                return [offset, "3483eb"] // red
+            }
           }
-          if (action === ADD_ROI) {
-            if (statusRoi.temp_delete_roi.includes(i))
-              return [offset, "#ffffff"]
-            if (statusRoi.temp_add_roi.includes(i)) return [offset, "#3483eb"]
-            if (statusRoi.temp_merge_roi.includes(i)) return [offset, "#e134eb"]
+          if (isDeleted || isMerged || isAdded) {
+            if (isDeleted) return [offset, "#FFA500"]
+            if (isMerged) return [offset, "#e134eb"]
+            if (isAdded) return [offset, "3483eb"]
           }
-          if (action === DELETE_ROI) {
-            if (
-              pointClick.find((e) => e.z === i) ||
-              statusRoi.temp_delete_roi.includes(i)
-            )
-              return [offset, "#ffffff"]
-            if (statusRoi.temp_add_roi.includes(i)) return [offset, "#3483eb"]
-            if (statusRoi.temp_merge_roi.includes(i)) return [offset, "#e134eb"]
-          }
-          if (action === MERGE_ROI) {
-            if (statusRoi.temp_delete_roi.includes(i))
-              return [offset, "#ffffff"]
-            if (
-              pointClick.find((e) => e.z === i) ||
-              statusRoi.temp_merge_roi.includes(i)
-            )
-              return [offset, "#e134eb"]
-            if (statusRoi.temp_add_roi.includes(i)) return [offset, "#3483eb"]
-          }
-          return [offset, hex]
+          if (isClickPoint || !roiClicked.length) return [offset, hex]
+          return [offset, rgba2hex(rgba, 0.3)]
         }),
         zmin: 0,
         zmax: timeDataMaxIndex,
@@ -349,17 +349,16 @@ const ImagePlotChart = memo(function ImagePlotChart({
     ],
     [
       imageData,
-      roiDataState,
-      zsmooth,
-      showscale,
       colorscale,
-      colorscaleRoi,
+      showscale,
+      zsmooth,
+      roiDataState,
       timeDataMaxIndex,
-      roiAlpha,
       alpha,
-      pointClick,
       action,
+      roiClicked,
       statusRoi,
+      allowEditRoi,
     ],
   )
 
@@ -383,12 +382,83 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     setSelectMode(event.target.checked)
   }
+
+  const setRoiClickWhenSelect = (rois: string[]) => {
+    resetRoisClick(itemId)
+    rois.forEach((roi) => {
+      setRoisClick(itemId, Number(roi))
+      dispatch(
+        setImageItemClickedDataId({
+          itemId,
+          clickedDataId: roi,
+        }),
+      )
+    })
+  }
+
   // debounceでイベントを間引きする。onSelectedはそれっぽい名前だが動かなかった。
   const onSelecting = debounce((event: PlotSelectionEvent) => {
     if (event.range != null) {
-      dispatch(selectingImageArea({ itemId, range: event.range }))
+      dispatch(
+        selectingImageArea({
+          itemId,
+          range: event.range,
+          callback: setRoiClickWhenSelect,
+        }),
+      )
     }
   })
+
+  const roiLabels = useMemo(() => {
+    if (!showRoiLabels) return []
+    const labels: Annotations[] = []
+    const seen = new Set()
+
+    roiDataState.forEach((row, _y) => {
+      row.forEach((value, _x) => {
+        if (value !== null && !seen.has(value)) {
+          seen.add(value)
+          const points = {
+            x: [] as number[],
+            y: [] as number[],
+            count: 0,
+          }
+          roiDataState.forEach((r, yi) => {
+            r.forEach((v, xi) => {
+              if (v === value) {
+                points.x.push(xi)
+                points.y.push(yi)
+                points.count++
+              }
+            })
+          })
+
+          const centerX = points.x.reduce((a, b) => a + b, 0) / points.count
+          const centerY = points.y.reduce((a, b) => a + b, 0) / points.count
+
+          const annotation: Partial<Annotations> = {
+            x: centerX,
+            y: centerY,
+            text: `${value}`,
+            xref: "x",
+            yref: "y",
+            showarrow: false,
+            font: {
+              color: "black", // Black text
+              size: 10,
+              weight: 700, // Bold text
+            },
+            bgcolor: "rgba(255, 255, 255, 0.6)", // Soft white semi-transparent background (60% opacity)
+            borderpad: 0.5, // Padding around the text
+          }
+
+          labels.push(annotation as Annotations)
+        }
+      })
+    })
+    return labels
+  }, [roiDataState, showRoiLabels])
+
   const layout = useMemo(
     () => ({
       title: {
@@ -412,6 +482,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
         autotick: true,
         ticks: "",
         showticklabels: showticklabels,
+        annotations: roiLabels,
       },
       yaxis: {
         title: meta?.ylabel,
@@ -420,10 +491,11 @@ const ImagePlotChart = memo(function ImagePlotChart({
         showgrid: showgrid,
         showline: showline,
         zeroline: false,
-        autotick: true, // todo
+        autotick: true,
         ticks: "",
-        showticklabels: showticklabels, // todo
+        showticklabels: showticklabels,
       },
+      annotations: roiLabels,
     }),
     //eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -435,6 +507,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
       height,
       selectMode,
       action,
+      roiLabels,
     ],
   )
 
@@ -457,38 +530,12 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const onChartClick = (event: PlotMouseEvent) => {
     // use as unknown because original PlotDatum does not have z property
     const point: PlotDatum = event.points[0] as unknown as PlotDatum
-    if (point.curveNumber >= 1 && outputKey === "cell_roi") {
-      setSelectRoi({
-        x: Number(point.x),
-        y: Number(point.y),
-        z: Number(point.z),
-      })
-    }
     if (point.curveNumber >= 1 && point.z >= 0) {
       dispatch(
-        setImageItemClikedDataId({
-          itemId,
-          clickedDataId: point.z.toString(),
-        }),
+        setImageItemClickedDataId({ itemId, clickedDataId: String(point.z) }),
       )
+      setRoisClick(itemId, point.z)
     }
-  }
-
-  const setSelectRoi = (point: PointClick) => {
-    if (![MERGE_ROI, DELETE_ROI].includes(action)) return
-    if (isNaN(Number(point.z))) return
-
-    let newPoints
-    if (statusRoi.temp_delete_roi.includes(point.z)) {
-      return
-    }
-    const check = pointClick.findIndex((item) => item.z === point.z)
-    if (check < 0) {
-      newPoints = [...pointClick, point]
-    } else {
-      newPoints = pointClick.filter((item) => item.z !== point.z)
-    }
-    setPointClick(newPoints)
   }
 
   const onCancel = async () => {
@@ -500,7 +547,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
     ) {
       return
     }
-    setPointClick([])
     try {
       await dispatch(cancelRoi({ path: refRoiFilePath.current, workspaceId }))
     } finally {
@@ -535,7 +581,6 @@ const ImagePlotChart = memo(function ImagePlotChart({
     setEdit(true)
     setSizeDrag(initSizeDrag)
     setChangeSize(undefined)
-    setPointClick([])
   }
 
   const onMouseDownDragAddRoi = () => {
@@ -591,7 +636,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
   }
 
   const addOrSelectRoi = async () => {
-    if (!roiFilePath || !workspaceId) return
+    if (!roiFilePath || !workspaceId || !statusRoi) return
     if (action === ADD_ROI) {
       const sizeX = roiDataState[0].length - 1
       const sizeY = roiDataState.length - 1
@@ -613,36 +658,33 @@ const ImagePlotChart = memo(function ImagePlotChart({
       onCancelAdd()
     }
     if (action === MERGE_ROI) {
-      if (pointClick.length < 2) return
+      if (roiClicked.length < 2) return
       dispatch(resetAllOrderList())
       dispatch(
         mergeRoi({
           path: roiFilePath,
           workspaceId,
-          data: {
-            ids: pointClick.map((point) => point.z),
-          },
+          data: { ids: roiClicked },
         }),
       )
-      setPointClick([])
+      resetRoisClick(itemId)
       workspaceId && dispatch(getRoiData({ path: roiFilePath, workspaceId }))
     } else if (action === DELETE_ROI) {
-      if (!pointClick.length) return
+      if (!roiClicked.length) return
       dispatch(resetAllOrderList())
       await dispatch(
         deleteRoi({
           path: roiFilePath,
           workspaceId,
-          data: {
-            ids: pointClick.map((point) => point.z),
-          },
+          data: { ids: roiClicked },
         }),
       )
-      setPointClick([])
+      resetRoisClick(itemId)
       workspaceId && dispatch(getRoiData({ path: roiFilePath, workspaceId }))
     }
     setAction("")
     setEdit(true)
+    resetRoisClick(itemId)
     dispatch(getStatus({ path: roiFilePath, workspaceId }))
   }
 
@@ -669,6 +711,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
         variant: "success",
       })
       resetTimeSeries()
+      resetRoisClick(itemId)
     } catch (error) {
       enqueueSnackbar("Failed to commit Edit ROI.", { variant: "error" })
     } finally {
@@ -693,14 +736,12 @@ const ImagePlotChart = memo(function ImagePlotChart({
   }
 
   const renderActionRoi = () => {
-    if (!roiFilePath || !roiFilePath.includes(CELL_ROI)) return null
+    if (!allowEditRoi) return null
     if (action) {
       return (
         <>
           {action !== ADD_ROI ? (
-            <BoxDiv>
-              ROI Selecteds: [{pointClick.map((item) => item.z).join(",")}]
-            </BoxDiv>
+            <BoxDiv>ROI Selecteds: [{roiClicked?.join(",") || ""}]</BoxDiv>
           ) : null}
           <BoxDiv sx={{ display: "flex", gap: 1 }}>
             <LinkDiv
@@ -709,8 +750,8 @@ const ImagePlotChart = memo(function ImagePlotChart({
                   action === DELETE_ROI
                     ? "#F84E1B"
                     : action === MERGE_ROI
-                    ? "#6619A9"
-                    : "default",
+                      ? "#6619A9"
+                      : "default",
                 display: "flex",
                 gap: 1,
                 textDecoration: "none",
@@ -723,13 +764,13 @@ const ImagePlotChart = memo(function ImagePlotChart({
             <LinkDiv
               style={{
                 opacity:
-                  (pointClick.length < 2 && action === MERGE_ROI) ||
-                  (pointClick.length < 1 && action === DELETE_ROI)
+                  (roiClicked.length < 2 && action === MERGE_ROI) ||
+                  (roiClicked.length < 1 && action === DELETE_ROI)
                     ? 0.5
                     : 1,
                 cursor:
-                  (pointClick.length < 2 && action === MERGE_ROI) ||
-                  (pointClick.length < 1 && action === DELETE_ROI)
+                  (roiClicked.length < 2 && action === MERGE_ROI) ||
+                  (roiClicked.length < 1 && action === DELETE_ROI)
                     ? "default"
                     : "pointer",
               }}
@@ -989,7 +1030,7 @@ interface PlotDatum {
   z: number
 }
 
-function rgba2hex(rgba: number[], alpha: number) {
+export function rgba2hex(rgba: number[], alpha: number) {
   const r = rgba[0]
   const g = rgba[1]
   const b = rgba[2]
