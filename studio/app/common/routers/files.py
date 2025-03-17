@@ -10,6 +10,8 @@ import requests
 import tifffile
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from requests.models import Response
+from sqlalchemy.orm import Session
+from sqlmodel import update
 from tqdm import tqdm
 
 from studio.app.common.core.utils.file_reader import JsonReader
@@ -21,6 +23,8 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
+from studio.app.common.db.database import get_db
+from studio.app.common.models.workspace import Workspace
 from studio.app.common.schemas.files import (
     DownloadFileRequest,
     DownloadStatus,
@@ -175,12 +179,23 @@ async def set_shape(workspace_id: str, filepath: str):
     return True
 
 
+def update_workspace_data_usage(db: Session, file_size, workspace_id):
+    db.execute(
+        update(Workspace).where(Workspace.id == workspace_id).values(input_data_usage=0)
+    )
+
+
 @router.post(
     "/{workspace_id}/upload/{filename}",
     response_model=FilePath,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def create_file(workspace_id: str, filename: str, file: UploadFile = File(...)):
+async def create_file(
+    workspace_id: str,
+    filename: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     create_directory(join_filepath([DIRPATH.INPUT_DIR, workspace_id]))
 
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filename])
@@ -189,6 +204,7 @@ async def create_file(workspace_id: str, filename: str, file: UploadFile = File(
         shutil.copyfileobj(file.file, f)
 
     update_image_shape(workspace_id, filename)
+    update_workspace_data_usage(db, file.size, workspace_id)
 
     return {"file_path": filename}
 
