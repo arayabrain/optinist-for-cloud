@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
   MouseEvent,
+  Fragment,
 } from "react"
 import { useDispatch, useSelector } from "react-redux"
 import { useNavigate, useSearchParams } from "react-router-dom"
@@ -13,6 +14,7 @@ import { useSnackbar, VariantType } from "notistack"
 
 import DeleteIcon from "@mui/icons-material/Delete"
 import EditIcon from "@mui/icons-material/Edit"
+import LoginIcon from "@mui/icons-material/Login"
 import {
   Box,
   Button,
@@ -22,6 +24,7 @@ import {
   DialogTitle,
   Input,
   styled,
+  Tooltip,
   Typography,
 } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
@@ -51,6 +54,8 @@ import {
   createUser,
   getListUser,
   updateUser,
+  proxyLogin,
+  getMe,
 } from "store/slice/User/UserActions"
 import {
   isAdmin,
@@ -277,6 +282,7 @@ const AccountManager = () => {
 
   const listUser = useSelector(selectListUser)
   const loading = useSelector(selectLoading)
+  const [loadingProxyLogin, setLoadingProxyLogin] = useState(false)
   const user = useSelector(selectCurrentUser)
   const admin = useSelector(isAdmin)
 
@@ -585,6 +591,19 @@ const AccountManager = () => {
     setNewParams(param)
   }
 
+  const onProxyLogin = useCallback(
+    async (uid: string) => {
+      setLoadingProxyLogin(true)
+      try {
+        await dispatch(proxyLogin(uid))
+        await dispatch(getMe())
+      } finally {
+        setLoadingProxyLogin(false)
+      }
+    },
+    [dispatch],
+  )
+
   const columns: GridColDef[] = [
     {
       headerName: "ID",
@@ -676,7 +695,7 @@ const AccountManager = () => {
       minWidth: 100,
       flex: 1,
       renderCell: (params: { row: UserDTO }) => {
-        const { id, role_id, name, email } = params.row
+        const { id, role_id, name, email, uid } = params.row
         if (!id || !role_id || !name || !email) return null
         let role: string
         switch (role_id) {
@@ -697,16 +716,29 @@ const AccountManager = () => {
             >
               <EditIcon />
             </IconButton>
+
             {!(params.row?.id === user?.id) ? (
-              <IconButton
-                sx={{ ml: 1.25 }}
-                color="error"
-                onClick={() =>
-                  handleOpenPopupDel(params.row?.id, params.row?.name)
-                }
-              >
-                <DeleteIcon />
-              </IconButton>
+              <Fragment>
+                {user?.role_id === ROLE.ADMIN ? (
+                  <Tooltip title="Proxy Sign In">
+                    <IconButton
+                      style={{ color: "#4285f4" }}
+                      onClick={() => onProxyLogin(String(uid))}
+                    >
+                      <LoginIcon />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+                <IconButton
+                  sx={{ ml: 1.25 }}
+                  color="error"
+                  onClick={() =>
+                    handleOpenPopupDel(params.row?.id, params.row?.name)
+                  }
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Fragment>
             ) : null}
           </>
         )
@@ -783,7 +815,7 @@ const AccountManager = () => {
           dataEdit={dataEdit}
         />
       ) : null}
-      <Loading loading={loading} />
+      <Loading loading={loading || loadingProxyLogin} />
     </AccountManagerWrapper>
   )
 }
