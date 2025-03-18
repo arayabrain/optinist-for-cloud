@@ -3,20 +3,35 @@ Debugging
 =================
 This section describes the various debugging methods included in OptiNiSt.
 
-## 1. Conda environment debugging
+### Setup Conda Environment
 
-<p align="center">
-<img width="300px" src="../_static/other/maintenance_folder.png" alt="Maintenance folder" />
+#### 1. Preparing the Node for Conda Setup
+
+Before setting up the Conda environment, ensure that the node is ready.
+
+<p align="left">
+  <img src="../_static/other/snakemake_node_ready_first.png" alt="Node Ready for Conda Setup" />
 </p>
 
+#### 2. Checking for an Existing Conda Environment
+
+- If a Conda environment is not installed on the node, a message will indicate that Conda is not available.
+
 <p align="center">
-<img width="300px" src="../_static/other/maintenance_popup.png" alt="Conda env creation popup" />
+  <img width="400px" src="../_static/other/snakemake_node_ready_second.png" alt="No Conda Environment Installed" />
 </p>
 
+#### 3. Automatically Reproducing the Setup Environment
 
-## 2. Console log
+- Clicking the **"i"** button will open a modal asking if you want to automatically set up the environment for the selected node.
+- To proceed with the setup, click **"CREATE ENV"** to reproduce and configure the Conda environment automatically.
+- If you do not wish to set up the environment, click **"SKIP"** to bypass this step.
 
-## 3. IPython notebooks
+<p align="left">
+  <img src="../_static/other/snakemake_node_ready_third.png" alt="Reproduce Conda Setup" />
+</p>
+
+<!-- ## 3. IPython notebooks
 
 OptiNiSt provides several ipynb notebooks in the notebooks folder: caiman.ipynb, suite2p.ipynb, lccd.ipynb. These may be used for assessing where in the code
 
@@ -32,8 +47,8 @@ To reproduce a version 1 Workflow, a conversion script is provided, in the form 
 input_file = ".yaml"
 output_file = ".yaml" # any name you want
 convert_workflow_file(input_file, output_file)
-```
+``` -->
 
-## 4. OptiNiSt wiki FAQ
+## OptiNiSt wiki FAQ
 
 For responses to common error messages, check the [OptiNiSt Wiki FAQ](https://github.com/oist/optinist/wiki/FAQ) page, and existing issues on [OptiNiSt git](https://github.com/oist/optinist/issues). Please create an new issue describing anything not covered on these pages.

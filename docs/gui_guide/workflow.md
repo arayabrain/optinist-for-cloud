@@ -313,38 +313,13 @@ There are 2 types of execution. You can select the type by clicking the dropdown
     - Input data
     - NWB settings
 
+> **Note:**  
+> If you want to set up the Conda environment first check [this page](../other/debugging.md).
+
 ```{eval-rst}
 .. caution::
    With RUN, results will be overwritten. To avoid this, use RUN ALL.
 ```
-
-### Setup Conda Environment
-
-#### 1. Preparing the Node for Conda Setup
-
-Before setting up the Conda environment, ensure that the node is ready.
-
-<p align="left">
-  <img src="../_static/workflow/snakemake_node_ready_first.png" alt="Node Ready for Conda Setup" />
-</p>
-
-#### 2. Checking for an Existing Conda Environment
-
-- If a Conda environment is not installed on the node, a message will indicate that Conda is not available.
-
-<p align="center">
-  <img width="400px" src="../_static/workflow/snakemake_node_ready_second.png" alt="No Conda Environment Installed" />
-</p>
-
-#### 3. Automatically Reproducing the Setup Environment
-
-- Clicking the **"i"** button will open a modal asking if you want to automatically set up the environment for the selected node.
-- To proceed with the setup, click **"CREATE ENV"** to reproduce and configure the Conda environment automatically.
-- If you do not wish to set up the environment, click **"SKIP"** to bypass this step.
-
-<p align="left">
-  <img src="../_static/workflow/snakemake_node_ready_third.png" alt="Reproduce Conda Setup" />
-</p>
 
 ### Filtering Data
 
