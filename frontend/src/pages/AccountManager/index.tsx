@@ -699,7 +699,7 @@ const AccountManager = () => {
       minWidth: 100,
       flex: 1,
       renderCell: (params: { row: UserDTO }) => {
-        const { id, role_id, name, email, uid } = params.row
+        const { id, role_id, name, email } = params.row
         if (!id || !role_id || !name || !email) return null
         let role: string
         switch (role_id) {
