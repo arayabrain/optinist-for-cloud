@@ -602,11 +602,11 @@ const AccountManager = () => {
     try {
       await dispatch(proxyLogin(userWaitingProxy.uid))
       await dispatch(getMe())
-      setUserWatingProxy(undefined)
+      navigate("/console")
     } finally {
       setLoadingProxyLogin(false)
     }
-  }, [dispatch, userWaitingProxy?.uid])
+  }, [dispatch, navigate, userWaitingProxy?.uid])
 
   const columns: GridColDef[] = [
     {
