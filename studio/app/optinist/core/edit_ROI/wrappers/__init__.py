@@ -14,5 +14,5 @@ edit_roi_wrapper_dict = {
     "vacant_roi": {
         "conda_name": None,
         "function": {},
-    },  
+    },
 }

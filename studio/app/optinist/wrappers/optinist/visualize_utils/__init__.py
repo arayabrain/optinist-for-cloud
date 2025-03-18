@@ -34,5 +34,5 @@ utils_wrapper_dict = {
      "vacant_roi": {
         "function": vacant_roi,
         "conda_name": "optinist",
-    },       
+    },
 }

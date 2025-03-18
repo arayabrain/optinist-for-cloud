@@ -1,8 +1,13 @@
 import numpy as np
 
 from studio.app.common.dataclass.image import ImageData
-from studio.app.optinist.core.edit_ROI.wrappers.vacant_roi_edit_roi.utils import set_nwbfile
-from studio.app.optinist.dataclass import EditRoiData, FluoData, IscellData, RoiData
+from studio.app.optinist.core.edit_ROI.wrappers.vacant_roi_edit_roi.utils import (set_nwbfile)
+from studio.app.optinist.dataclass import (
+    EditRoiData, 
+    FluoData, 
+    IscellData, 
+    RoiData
+)
 
 
 def commit_edit(
