@@ -166,8 +166,6 @@ For more details, refer to the [Algorithm Nodes Documentation](../specifications
   - NIKON(.nd2)
   - Olympus(.oir)
 
-  # ! Update the below picture to one with a filter box
-
     <p align="center">
   <img width="650px" src="../_static/workflow/microscope.png" alt="Microscope" />
   </p>
