@@ -202,8 +202,9 @@ class NodeResult:
             self.algo_name = os.path.splitext(os.path.basename(pickle_filepath))[0]
             try:
                 self.info = PickleReader.read(pickle_filepath)
-            except EOFError:
+            except Exception as e:
                 self.info = None  # indicates error
+                logger.error(e, exc_info=True)
         else:
             self.algo_name = None
             self.info = None
@@ -315,6 +316,7 @@ class WorkflowMonitor:
             # Set dummy value to proceed to the next step.
             pid_data = WorkflowPIDFileData(
                 last_pid=999999,
+                func_name="__dummy_wrapper",
                 last_script_file="__dummy_wrapper_function.py",
                 create_time=expt_started_time.timestamp(),
             )
