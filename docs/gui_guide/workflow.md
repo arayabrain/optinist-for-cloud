@@ -137,7 +137,7 @@ The left side of the window displays all available analysis methods. ROI detecti
   </p>
 
 There are some additional utility nodes for processing HDF5 data.
-For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data or 
+For example, fluo_from_hdf5 extracts fluorescence data from HDF5 data or
 roi_fluo_from_hdf5 that extracts roi and fluorescence data from HDF5 data.
 
 For more details, refer to the [Algorithm Nodes Documentation](../specifications/algorithm_nodes.md#fluo-from-hdf5).
@@ -320,14 +320,44 @@ There are 2 types of execution. You can select the type by clicking the dropdown
    With RUN, results will be overwritten. To avoid this, use RUN ALL.
 ```
 
+### Setup Conda Environment
+
+#### 1. Preparing the Node for Conda Setup
+
+Before setting up the Conda environment, ensure that the node is ready.
+
+<p align="left">
+  <img src="../_static/workflow/snakemake_node_ready_first.png" alt="Node Ready for Conda Setup" />
+</p>
+
+#### 2. Checking for an Existing Conda Environment
+
+- If a Conda environment is not installed on the node, a message will indicate that Conda is not available.
+
+<p align="center">
+  <img width="400px" src="../_static/workflow/snakemake_node_ready_second.png" alt="No Conda Environment Installed" />
+</p>
+
+#### 3. Automatically Reproducing the Setup Environment
+
+- Clicking the **"i"** button will open a modal asking if you want to automatically set up the environment for the selected node.
+- To proceed with the setup, click **"CREATE ENV"** to reproduce and configure the Conda environment automatically.
+- If you do not wish to set up the environment, click **"SKIP"** to bypass this step.
+
+<p align="left">
+  <img src="../_static/workflow/snakemake_node_ready_third.png" alt="Reproduce Conda Setup" />
+</p>
+
 ### Filtering Data
 
 #### Overview
+
 Filtering data is only available after executing the pipeline. This feature is particularly useful when you need to examine a specific range of the Region of Interest (ROI) or fluorescence time series.
 
 #### Step-by-Step Instructions
 
 ##### 1. Ensure Pipeline Execution
+
 Before applying filters, make sure that you have executed the workflow. For example, if you followed **Tutorial 1**, your workflow might look like this:
 
 <br>
@@ -337,6 +367,7 @@ Before applying filters, make sure that you have executed the workflow. For exam
 <br/>
 
 ##### 2. Selecting the Filter Option
+
 If you want to filter ROI data within a specific range (e.g., 0 to 100), follow these steps:
 
 1. Locate the `suite2p_roi` node in your workflow.
@@ -349,6 +380,7 @@ If you want to filter ROI data within a specific range (e.g., 0 to 100), follow 
 <br/>
 
 ##### 3. Applying the Filter
+
 1. In the filter settings, set the **ROI Data Range** from **0 to 100**.
 2. Click the **Apply** button to confirm the filter settings.
 
@@ -359,12 +391,12 @@ If you want to filter ROI data within a specific range (e.g., 0 to 100), follow 
 <br/>
 
 ##### 4. Running the Workflow
+
 Once you apply the filter:
+
 - The `suite2p_roi` node will start **loading**.
 - When loading completes, the `eta` node will be highlighted in **yellow**.
 - Click the **RUN** button to execute the workflow and apply the filter changes.
-
-
 
 ## Directory Settings
 
@@ -504,7 +536,6 @@ To access the logs, simply click on the **Log Button** in the interface.
 <img width="300px" src="../_static/workflow/log_button.png" alt="Algo node buttons" />
 </p>
 <br/>
-
 
 ### Key Features of OptiNiSt Log Viewer
 
