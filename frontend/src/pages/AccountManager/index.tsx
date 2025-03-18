@@ -288,6 +288,7 @@ const AccountManager = () => {
 
   const [openModal, setOpenModal] = useState(false)
   const [dataEdit, setDataEdit] = useState({})
+  const [userWaitingProxy, setUserWatingProxy] = useState<UserDTO>()
   const [newParams, setNewParams] = useState(
     window.location.search.replace("?", ""),
   )
@@ -591,18 +592,21 @@ const AccountManager = () => {
     setNewParams(param)
   }
 
-  const onProxyLogin = useCallback(
-    async (uid: string) => {
-      setLoadingProxyLogin(true)
-      try {
-        await dispatch(proxyLogin(uid))
-        await dispatch(getMe())
-      } finally {
-        setLoadingProxyLogin(false)
-      }
-    },
-    [dispatch],
-  )
+  const onProxyLogin = useCallback(async (userProxy: UserDTO) => {
+    setUserWatingProxy(userProxy)
+  }, [])
+
+  const handleOkeLoginProxy = useCallback(async () => {
+    if (!userWaitingProxy?.uid) return
+    setLoadingProxyLogin(true)
+    try {
+      await dispatch(proxyLogin(userWaitingProxy.uid))
+      await dispatch(getMe())
+      setUserWatingProxy(undefined)
+    } finally {
+      setLoadingProxyLogin(false)
+    }
+  }, [dispatch, userWaitingProxy?.uid])
 
   const columns: GridColDef[] = [
     {
@@ -723,7 +727,7 @@ const AccountManager = () => {
                   <Tooltip title="Proxy Sign In">
                     <IconButton
                       style={{ color: "#4285f4" }}
-                      onClick={() => onProxyLogin(String(uid))}
+                      onClick={() => onProxyLogin(params.row)}
                     >
                       <LoginIcon />
                     </IconButton>
@@ -801,6 +805,20 @@ const AccountManager = () => {
         }
         confirmLabel="delete"
         iconType="warning"
+      />
+      <ConfirmDialog
+        open={!!userWaitingProxy}
+        onCancel={() => setUserWatingProxy(undefined)}
+        onConfirm={handleOkeLoginProxy}
+        title="Proxy Sign In"
+        content={
+          <>
+            <Typography>
+              {`Sign In as "${userWaitingProxy?.id}. ${userWaitingProxy?.name}"?`}
+            </Typography>
+          </>
+        }
+        confirmLabel="Ok"
       />
       {openModal ? (
         <ModalComponent
