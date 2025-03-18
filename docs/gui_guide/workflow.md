@@ -313,12 +313,14 @@ There are 2 types of execution. You can select the type by clicking the dropdown
     - Input data
     - NWB settings
 
-> **Note:**  
-> If you want to set up the Conda environment first check [this page](../other/debugging.md).
-
 ```{eval-rst}
 .. caution::
    With RUN, results will be overwritten. To avoid this, use RUN ALL.
+```
+
+```{eval-rst}
+.. note::
+   If you want to set up the Conda Environment for each node first, check :ref:`Setup Conda Environment <setup_conda_environment>`
 ```
 
 ### Filtering Data
@@ -498,9 +500,9 @@ For general information about NWB, refer to [NWB official page](https://www.nwb.
       If not, only the path to the image data will be saved.
 ```
 
-## Viewing Logs with OptiNiSt Log Viewer
+## Viewing Logs with Log Viewer
 
-When running a workflow, logs are continuously generated to provide insights into the execution process. These logs can be monitored and analyzed using the **OptiNiSt Log Viewer**.
+When running a workflow, logs are continuously generated to provide insights into the execution process. These logs can be monitored and analyzed using the **Log Viewer**.
 
 To access the logs, simply click on the **Log Button** in the interface.
 
@@ -510,7 +512,7 @@ To access the logs, simply click on the **Log Button** in the interface.
 </p>
 <br/>
 
-### Key Features of OptiNiSt Log Viewer
+### Key Features of Log Viewer
 
 The Log Viewer provides powerful capabilities for log analysis, including:
 

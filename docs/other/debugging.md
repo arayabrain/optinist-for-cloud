@@ -3,33 +3,42 @@ Debugging
 =================
 This section describes the various debugging methods included in OptiNiSt.
 
+(setup_conda_environment)=
+
 ### Setup Conda Environment
 
-#### 1. Preparing the Node for Conda Setup
+If the Conda environment used by each Node has not yet been created, there is a function to automatically generate it in advance.
+By using this function, you can separate the normal Node processing from the Conda environment creation processing, making troubleshooting easier.
 
-Before setting up the Conda environment, ensure that the node is ready.
-
-<p align="left">
-  <img src="../_static/other/snakemake_node_ready_first.png" alt="Node Ready for Conda Setup" />
-</p>
-
-#### 2. Checking for an Existing Conda Environment
+#### 1. Checking for an Existing Conda Environment
 
 - If a Conda environment is not installed on the node, a message will indicate that Conda is not available.
 
 <p align="center">
-  <img width="400px" src="../_static/other/snakemake_node_ready_second.png" alt="No Conda Environment Installed" />
+  <img width="400px" src="../_static/other/snakemake_node_ready_first.png" alt="No Conda Environment Installed" />
 </p>
 
-#### 3. Automatically Reproducing the Setup Environment
+#### 2. Automatically Reproducing the Setup Conda Environment
 
 - Clicking the **"i"** button will open a modal asking if you want to automatically set up the environment for the selected node.
 - To proceed with the setup, click **"CREATE ENV"** to reproduce and configure the Conda environment automatically.
 - If you do not wish to set up the environment, click **"SKIP"** to bypass this step.
 
 <p align="left">
-  <img src="../_static/other/snakemake_node_ready_third.png" alt="Reproduce Conda Setup" />
+  <img src="../_static/other/snakemake_node_ready_second.png" alt="Reproduce Conda Setup" />
 </p>
+
+#### 3. Completion of Setup Conda Environment
+
+- Once you select **"CREATE ENV"** and the automatic processing of the workflow for environment creation is completed, the **"i"** button will disappear.
+- As long as you are using the same version of optinist, once the Conda environment for each node is created, it will not need to be rebuilt.
+
+<p align="left">
+  <img src="../_static/other/snakemake_node_ready_third.png" alt="Node Ready for Conda Setup" />
+</p>
+
+#
+
 
 <!-- ## 3. IPython notebooks
 
