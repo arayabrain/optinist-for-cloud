@@ -27,7 +27,8 @@ class AppLogger:
 
             - logger initialization location
               - Web App ... studio.__main_unit__
-              - Batch App ... studio.app.optinist.core.expdb.batch_runner (optinist-for-server)
+              - Batch App ... studio.app.optinist.core.expdb.batch_runner
+                (optinist-for-server)
 
         Note #2.
             However, only in the case of the snakemake process,
