@@ -215,12 +215,22 @@ DOWNLOAD_STATUS: Dict[str, DownloadStatus] = {}
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def delete_file(workspace_id: str, filename: str):
+async def delete_file(
+    workspace_id: str,
+    filename: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filename])
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="File not found.")
     try:
         os.remove(filepath)
+        if not MODE.IS_STANDALONE:
+            background_tasks.add_task(
+                WorkspaceService.update_workspace_data_usage, db, workspace_id
+            )
+
         return True
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

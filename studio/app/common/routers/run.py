@@ -21,6 +21,7 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 
 router = APIRouter(prefix="/run", tags=["run"])
 
@@ -119,12 +120,19 @@ async def cancel_run(workspace_id: str, uid: str):
 
 @router.post("/filter/{workspace_id}/{uid}/{node_id}", response_model=bool)
 async def apply_filter(
-    workspace_id: str, uid: str, node_id: str, params: Optional[DataFilterParam] = None
+    workspace_id: str,
+    uid: str,
+    node_id: str,
+    background_tasks: BackgroundTasks,
+    params: Optional[DataFilterParam] = None,
 ):
     try:
         WorkflowNodeDataFilter(
             workspace_id=workspace_id, unique_id=uid, node_id=node_id
         ).filter_node_data(params)
+        background_tasks.add_task(
+            WorkspaceService.update_experiment_data_usage, workspace_id, uid
+        )
         return True
     except Exception as e:
         logger.error(e, exc_info=True)

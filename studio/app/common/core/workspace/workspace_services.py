@@ -1,6 +1,6 @@
 import yaml
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import Session, update
+from sqlmodel import Session, delete, update
 
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.utils.file_reader import get_folder_size
@@ -62,5 +62,15 @@ class WorkspaceService:
             update(Workspace)
             .where(Workspace.id == workspace_id)
             .values(input_data_usage=input_data_usage)
+        )
+        db.commit()
+
+    @classmethod
+    def delete_workspace_experiment(cls, db: Session, workspace_id, unique_id):
+        db.execute(
+            delete(ExperimentRecord).where(
+                ExperimentRecord.workspace_id == workspace_id,
+                ExperimentRecord.uid == unique_id,
+            )
         )
         db.commit()
