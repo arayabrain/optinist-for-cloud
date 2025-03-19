@@ -13,7 +13,6 @@ logger = AppLogger.get_logger()
 def vacant_roi(
     mc_images: ImageData, output_dir: str, params: dict = None, **kwargs
 ) -> dict(fluorescence=FluoData, iscell=IscellData):
-
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info("start lccd_detect: %s", function_id)
 
