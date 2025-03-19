@@ -55,7 +55,6 @@ import {
   getListUser,
   updateUser,
   proxyLogin,
-  getMe,
 } from "store/slice/User/UserActions"
 import {
   isAdmin,
