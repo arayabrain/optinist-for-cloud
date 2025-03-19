@@ -53,6 +53,7 @@ export const userSlice = createSlice({
       })
       .addCase(getListUserSearch.fulfilled, (state, action) => {
         state.listUserSearch = action.payload
+        state.loading = false
       })
       .addMatcher(
         isAnyOf(login.fulfilled, proxyLogin.fulfilled),
