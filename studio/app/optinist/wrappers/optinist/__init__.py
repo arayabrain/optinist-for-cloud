@@ -10,9 +10,7 @@ from studio.app.optinist.wrappers.optinist.neural_decoding import (
 from studio.app.optinist.wrappers.optinist.neural_population_analysis import (
     neural_population_analysis_wrapper_dict,
 )
-from studio.app.optinist.wrappers.optinist.visualize_utils import (
-    utils_wrapper_dict
-)
+from studio.app.optinist.wrappers.optinist.visualize_utils import utils_wrapper_dict
 
 optinist_wrapper_dict = {
     "optinist": {
