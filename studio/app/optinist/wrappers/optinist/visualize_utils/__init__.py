@@ -10,9 +10,7 @@ from studio.app.optinist.wrappers.optinist.visualize_utils.roi_fluo_from_hdf5 im
 from studio.app.optinist.wrappers.optinist.visualize_utils.roi_from_hdf5 import (
     roi_from_hdf5,
 )
-from studio.app.optinist.wrappers.optinist.visualize_utils.vacant_roi import (
-    vacant_roi,
-)
+from studio.app.optinist.wrappers.optinist.visualize_utils.vacant_roi import vacant_roi
 
 utils_wrapper_dict = {
     "microscope_to_img": {
@@ -31,7 +29,7 @@ utils_wrapper_dict = {
         "function": roi_fluo_from_hdf5,
         "conda_name": "optinist",
     },
-     "vacant_roi": {
+    "vacant_roi": {
         "function": vacant_roi,
         "conda_name": "optinist",
     },
