@@ -42,7 +42,7 @@ By using this function, you can separate the normal Node processing from the Con
 
 <!-- ## 3. IPython notebooks
 
-OptiNiSt provides several ipynb notebooks in the notebooks folder: caiman.ipynb, suite2p.ipynb, lccd.ipynb. These may be used for assessing where in the code
+OptiNiSt provides several ipynb notebooks in the **notebooks** folder: caiman.ipynb, suite2p.ipynb, lccd.ipynb. These may be used for assessing where in the code an error is occuring. This can be useful when the Conda environment loads, however, somewhere in the ROI detection or plotting an error occurs. 
 
 ### Parameter conversion notebook
 In the upgrade to OptiNiSt version 2, the parameter input structure was reorganised. Workflows created in  OptiNiSt version 1 and reproduced in version 2, as well as [workflow.yaml](ImportWorkflowYaml) produced and saved in version 1 and imported in version 2, will not work.
