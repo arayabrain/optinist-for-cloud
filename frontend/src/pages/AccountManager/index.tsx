@@ -599,13 +599,9 @@ const AccountManager = () => {
   const handleOkeLoginProxy = useCallback(async () => {
     if (!userWaitingProxy?.uid) return
     setLoadingProxyLogin(true)
-    try {
-      await dispatch(proxyLogin(userWaitingProxy.uid))
-      await dispatch(getMe())
-      navigate("/console")
-    } finally {
-      setLoadingProxyLogin(false)
-    }
+    await dispatch(proxyLogin(userWaitingProxy.uid))
+    navigate("/console")
+    setLoadingProxyLogin(false)
   }, [dispatch, navigate, userWaitingProxy?.uid])
 
   const columns: GridColDef[] = [
@@ -812,11 +808,15 @@ const AccountManager = () => {
         onConfirm={handleOkeLoginProxy}
         title="Proxy Sign In"
         content={
-          <>
-            <Typography>
-              {`Sign In as "${userWaitingProxy?.id}. ${userWaitingProxy?.name}"?`}
-            </Typography>
-          </>
+          userWaitingProxy ? (
+            <>
+              <Typography>
+                {`Sign In as "${userWaitingProxy?.id}. ${userWaitingProxy?.name}"?`}
+              </Typography>
+            </>
+          ) : (
+            ""
+          )
         }
         confirmLabel="Ok"
       />

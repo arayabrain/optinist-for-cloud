@@ -40,6 +40,7 @@ export const proxyLogin = createAsyncThunk(
   async (uid: string, thunkAPI) => {
     try {
       const responseData = await proxyLoginApi(uid)
+      await thunkAPI.dispatch(getMe())
       return responseData
     } catch (e) {
       return thunkAPI.rejectWithValue(e)
