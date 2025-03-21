@@ -89,7 +89,7 @@ export const ExperimentTable: FC = () => {
   const dispatch = useDispatch<AppDispatch>()
   useEffect(() => {
     if (isUninitialized) {
-      dispatch(getExperiments())
+      setTimeout(() => dispatch(getExperiments()), 100)
     }
   }, [dispatch, isUninitialized])
 
