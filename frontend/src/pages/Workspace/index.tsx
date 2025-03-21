@@ -53,6 +53,7 @@ import {
 import { ItemsWorkspace } from "store/slice/Workspace/WorkspaceType"
 import { isMine } from "store/slice/Workspace/WorkspaceUtils"
 import { AppDispatch } from "store/store"
+import { convertBytes } from "utils"
 
 type PopupType = {
   open: boolean
@@ -164,6 +165,13 @@ const columns = (
         {moment(params.value).format("YYYY/MM/DD hh:mm")}
       </span>
     ),
+  },
+  {
+    headerName: "Data usage",
+    field: "data_usage",
+    renderCell: (params: GridRenderCellParams<GridValidRowModel>) => {
+      return convertBytes(params.value)
+    },
   },
   {
     field: "workflow",
