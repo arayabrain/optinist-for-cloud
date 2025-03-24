@@ -1,6 +1,9 @@
 from studio.app.optinist.wrappers.maintenance.setup_conda.setup_conda_caiman import (
     setup_conda_caiman,
 )
+from studio.app.optinist.wrappers.maintenance.setup_conda.setup_conda_custom import (
+    setup_conda_custom,
+)
 from studio.app.optinist.wrappers.maintenance.setup_conda.setup_conda_lccd import (
     setup_conda_lccd,
 )
@@ -26,6 +29,10 @@ setup_conda_wrapper_dict = {
     },
     "setup_conda_optinist": {
         "function": setup_conda_optinist,
+        "conda_name": "optinist",
+    },
+    "setup_conda_custom_node": {
+        "function": setup_conda_custom,
         "conda_name": "optinist",
     },
 }
