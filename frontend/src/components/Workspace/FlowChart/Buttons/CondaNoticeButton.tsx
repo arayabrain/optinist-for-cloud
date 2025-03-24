@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux"
 import { enqueueSnackbar } from "notistack"
 
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined"
+import Launch from "@mui/icons-material/Launch"
 import { Typography } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 import Tooltip from "@mui/material/Tooltip"
@@ -24,6 +25,8 @@ import { AppDispatch, store } from "store/store"
 
 interface CondaNoticeButtonProps {
   name: string
+  parameterUrl: string
+  showParameterUrl: boolean
   node: AlgorithmChild
   onSkipClick: (
     event: SyntheticEvent | Event,
@@ -33,6 +36,8 @@ interface CondaNoticeButtonProps {
 
 export const CondaNoticeButton = memo(function CondaNoticeButton({
   name,
+  parameterUrl,
+  showParameterUrl = false,
   node,
   onSkipClick,
 }: CondaNoticeButtonProps) {
@@ -118,6 +123,23 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
           {name}
         </Typography>
       </Tooltip>
+      {showParameterUrl && (
+        <a
+          href={parameterUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+          }}
+        >
+          <Tooltip title="Check Documentation">
+            <Launch style={{ fontSize: "12px", color: "#ccc" }} />
+          </Tooltip>
+        </a>
+      )}
 
       <ConfirmDialog
         open={open}
