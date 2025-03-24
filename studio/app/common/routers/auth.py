@@ -46,7 +46,7 @@ async def login_with_uid(
     uid: str, admin_user=Depends(get_admin_user), db: Session = Depends(get_db)
 ):
     try:
-        token = await auth.login_with_uid(db, uid)
+        token = await auth.login_with_uid(db, uid, admin_user)
     except HTTPException as e:
         logger.error(e, exc_info=True)
         raise e

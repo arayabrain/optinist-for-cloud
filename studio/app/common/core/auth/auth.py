@@ -9,6 +9,7 @@ from requests.exceptions import HTTPError
 from sqlmodel import Session
 
 from studio.app.common.core.auth import pyrebase_app
+from studio.app.common.core.auth.auth_dependencies import get_admin_user
 from studio.app.common.core.auth.security import (
     create_access_token,
     create_refresh_token,
@@ -82,7 +83,8 @@ async def send_reset_password_mail(db: Session, email: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-async def login_with_uid(db: Session, uid: str) -> Token:
+async def login_with_uid(db: Session, uid: str, current_user) -> Token:
+    _ = get_admin_user(current_user)
     try:
         user_db = (
             db.query(UserModel)
