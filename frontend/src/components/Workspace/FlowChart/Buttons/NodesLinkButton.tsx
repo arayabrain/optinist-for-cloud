@@ -35,8 +35,8 @@ const NodesLinkButton: FC<NodesLinkButtonProps> = ({ algoName }) => {
 
   return (
     <Tooltip title="Check Documentation" placement="right" arrow>
-      <Link
-        to={parameterUrl}
+      <a
+        href={parameterUrl}
         target="_blank"
         rel="noopener noreferrer"
         style={{
@@ -49,7 +49,7 @@ const NodesLinkButton: FC<NodesLinkButtonProps> = ({ algoName }) => {
         }}
       >
         <Launch style={{ fontSize: "12px", color: "#808080" }} />
-      </Link>
+      </a>
     </Tooltip>
   )
 }
