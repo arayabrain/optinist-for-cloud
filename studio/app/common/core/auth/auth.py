@@ -17,6 +17,7 @@ from studio.app.common.core.auth.security import (
 )
 from studio.app.common.models.user import User as UserModel
 from studio.app.common.schemas.auth import AccessToken, Token, UserAuth
+from studio.app.common.schemas.users import User
 
 
 async def authenticate_user(db: Session, data: UserAuth) -> Tuple[Token, UserModel]:
@@ -83,7 +84,7 @@ async def send_reset_password_mail(db: Session, email: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-async def login_with_uid(db: Session, uid: str, current_user) -> Token:
+async def login_with_uid(db: Session, uid: str, current_user: User) -> Token:
     _ = get_admin_user(current_user)
     try:
         user_db = (
