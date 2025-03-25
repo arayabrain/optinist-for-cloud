@@ -136,7 +136,7 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
           }}
         >
           <Tooltip title="Check Documentation">
-            <Launch style={{ fontSize: "12px", color: "#ccc" }} />
+            <Launch style={{ fontSize: "12px", color: "#808080" }} />
           </Tooltip>
         </a>
       )}
