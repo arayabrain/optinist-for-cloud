@@ -43,7 +43,7 @@ Join Our User Community on Slack
 We've launched a Slack workspace to provide a more casual space for discussions and interaction among users.
 The community is currently running on a free plan and is open to everyone.
 
-`Join the Optinist User Community on Slack <https://join.slack.com/t/optinist-community/shared_invite/zt-321hefl2o-kHnc4uLifvCJPYAsNsbSyg>`_
+`Join the Optinist User Community on Slack <https://join.slack.com/t/optinist-community/shared_invite/zt-32gtn36gx-stu8ywHn6L807k95zWVUkg>`_
 
 Feel free to use it as a space for casual conversations, product questions, requests, and feedback.
 
