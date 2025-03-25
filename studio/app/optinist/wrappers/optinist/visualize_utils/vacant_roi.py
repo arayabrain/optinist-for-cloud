@@ -35,7 +35,6 @@ def vacant_roi(
         im = np.zeros((0, *D.shape[:2]))  # Empty stack of ROIs
         iscell = np.array([], dtype=int)
         timeseries = np.zeros((0, num_frames))
-        timeseries_dff = np.zeros((0, num_frames))
 
     # Create ROI list for NWB
     roi_list = [{"image_mask": roi[:, i].reshape(D.shape[:2])} for i in range(num_cell)]
@@ -65,7 +64,6 @@ def vacant_roi(
     }
 
     info = {
-        "dff": FluoData(timeseries_dff, file_name="dff"),
         "fluorescence": FluoData(timeseries, file_name="fluorescence"),
         "iscell": IscellData(iscell),
         "all_roi": RoiData(
