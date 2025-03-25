@@ -1,14 +1,21 @@
-import { FC } from "react"
-import { Link } from "react-router-dom"
+import { CSSProperties, FC } from "react"
 
 import { Launch } from "@mui/icons-material"
 import { Tooltip } from "@mui/material"
 
 interface NodesLinkButtonProps {
   algoName: string
+  placement?: string
+  linkStyle?: CSSProperties
+  iconStyle?: CSSProperties
 }
 
-const NodesLinkButton: FC<NodesLinkButtonProps> = ({ algoName }) => {
+const NodesLinkButton: FC<NodesLinkButtonProps> = ({
+  algoName,
+  placement,
+  linkStyle,
+  iconStyle,
+}) => {
   const algoNameMapping: { [key: string]: string } = {
     eta: "eta-event-triggered-average",
     cca: "cca-canonical-correlation-analysis",
@@ -34,21 +41,16 @@ const NodesLinkButton: FC<NodesLinkButtonProps> = ({ algoName }) => {
   const parameterUrl = `https://optinist.readthedocs.io/en/latest/specifications/algorithm_nodes.html#${formattedAlgoName}`
 
   return (
-    <Tooltip title="Check Documentation" placement="right" arrow>
+    <Tooltip title="Check Documentation" placement="top" arrow>
       <a
         href={parameterUrl}
         target="_blank"
         rel="noopener noreferrer"
         style={{
-          textDecoration: "underline",
-          color: "inherit",
-          cursor: "pointer",
-          marginLeft: "5px",
-          display: "inline-flex",
-          alignItems: "center",
+          ...linkStyle,
         }}
       >
-        <Launch style={{ fontSize: "12px", color: "#808080" }} />
+        <Launch style={{ ...iconStyle }} />
       </a>
     </Tooltip>
   )

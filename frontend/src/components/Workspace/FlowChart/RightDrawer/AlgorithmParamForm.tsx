@@ -42,7 +42,16 @@ export const AlgorithmParamForm = memo(function AlgorithmParamForm() {
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex" }}>
         <SectionTitle>{algoName}</SectionTitle>
-        <NodesLinkButton algoName={algoName} />
+        <NodesLinkButton
+          algoName={algoName}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+          }}
+          iconStyle={{ fontSize: "16px" }}
+        />
       </div>
       {paramKeyList.map((paramKey) => (
         <ParamItem key={paramKey} paramKey={paramKey} />

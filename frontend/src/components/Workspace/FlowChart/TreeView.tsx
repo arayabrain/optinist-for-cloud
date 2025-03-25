@@ -378,7 +378,23 @@ const AddButton = memo(function AddButton({
           {name}
         </Typography>
       </Tooltip>
-      {showParameterUrl && <NodesLinkButton algoName={name} />}
+      {showParameterUrl && (
+        <NodesLinkButton
+          algoName={name}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          iconStyle={{
+            fontSize: "12px",
+            color: "#808080",
+          }}
+        />
+      )}
     </>
   )
 })
