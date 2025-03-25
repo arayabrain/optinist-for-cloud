@@ -1,9 +1,7 @@
 import { FC } from "react"
 import { useSelector, useDispatch } from "react-redux"
 
-import { Launch } from "@mui/icons-material"
 import ChevronRightIcon from "@mui/icons-material/ChevronRight"
-import { Tooltip } from "@mui/material"
 import Box from "@mui/material/Box"
 import Divider from "@mui/material/Divider"
 import Drawer, { drawerClasses } from "@mui/material/Drawer"
@@ -12,6 +10,7 @@ import { styled } from "@mui/material/styles"
 import Toolbar from "@mui/material/Toolbar"
 import Typography from "@mui/material/Typography"
 
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import { NWBSettingContents } from "components/Workspace/FlowChart/RightDrawer/NWBSettingContents"
 import { ParamFormContents } from "components/Workspace/FlowChart/RightDrawer/ParamFormContents"
 import { SnakemakeSettingContents } from "components/Workspace/FlowChart/RightDrawer/SnakemakeSettingContents"
@@ -49,9 +48,9 @@ const RightDrawer: FC = () => {
 
     const titleLink =
       mode === RIGHT_DRAWER_MODE.NWB
-        ? `${readTheDocsUrl}/gui/workflow.html#nwb-setting`
+        ? `${readTheDocsUrl}/gui_guide/workflow.html#nwb-settings`
         : mode === RIGHT_DRAWER_MODE.SNAKEMAKE
-          ? `${readTheDocsUrl}/gui/workflow.html#snakemane-settings`
+          ? `${readTheDocsUrl}/gui_guide/workflow.html#snakemake-settings`
           : ""
 
     const showLaunch =
@@ -69,19 +68,17 @@ const RightDrawer: FC = () => {
         </IconButton>
         <Typography variant="h6">{title}</Typography>
         {showLaunch && (
-          <a
-            href={titleLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
+          <NodesLinkButton
+            algoName={titleLink}
+            linkStyle={{
               marginLeft: "5px",
               marginRight: "10px",
             }}
-          >
-            <Tooltip title="Check Documentation">
-              <Launch style={{ fontSize: "16px" }} />
-            </Tooltip>
-          </a>
+            iconStyle={{
+              fontSize: "16px",
+            }}
+            desiredLink={titleLink}
+          />
         )}
       </Box>
       <Divider />

@@ -11,7 +11,9 @@ import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
+import { useCreateNodesUrl } from "components/utils/CreateNodesUrlUtils"
 import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import {
   DND_ITEM_TYPE_SET,
   TreeItemCollectedProps,
@@ -287,6 +289,7 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
       [onAddAlgoNode, name, node],
     ),
   )
+
   return (
     <LeafItem
       ref={dragRef}
@@ -306,11 +309,13 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
             {node.condaEnvExists ? (
               <AddButton
                 name={name}
+                showParameterUrl={true}
                 onClick={() => onAddAlgoNode(name, node.functionPath)}
               />
             ) : (
               <CondaNoticeButton
                 name={name}
+                showParameterUrl={true}
                 node={node}
                 onSkipClick={(_event, reason) => {
                   // Cancel operation from other than Skip (Cancel) button does nothing.
@@ -331,10 +336,15 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
 
 interface AddButtonProps {
   name: string
+  showParameterUrl?: boolean
   onClick: () => void
 }
 
-const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
+const AddButton = memo(function AddButton({
+  name,
+  showParameterUrl = false,
+  onClick,
+}: AddButtonProps) {
   return (
     <>
       <IconButton
@@ -345,7 +355,20 @@ const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
       >
         <AddIcon />
       </IconButton>
-      <Tooltip title={name} placement="right">
+      <Tooltip
+        title={name}
+        placement="top"
+        PopperProps={{
+          modifiers: [
+            {
+              name: "offset",
+              options: {
+                offset: [0, -15], // [horizontal, vertical] - decrease the number to move closer
+              },
+            },
+          ],
+        }}
+      >
         <Typography
           variant="inherit"
           style={{
@@ -355,6 +378,23 @@ const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
           {name}
         </Typography>
       </Tooltip>
+      {showParameterUrl && (
+        <NodesLinkButton
+          algoName={name}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          iconStyle={{
+            fontSize: "12px",
+            color: "#808080",
+          }}
+        />
+      )}
     </>
   )
 })

@@ -4,11 +4,13 @@ import { useDispatch, useSelector } from "react-redux"
 import { enqueueSnackbar } from "notistack"
 
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined"
+import Launch from "@mui/icons-material/Launch"
 import { Typography } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 import Tooltip from "@mui/material/Tooltip"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import { AlgorithmChild } from "store/slice/AlgorithmList/AlgorithmListType"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { run } from "store/slice/Pipeline/PipelineActions"
@@ -24,6 +26,7 @@ import { AppDispatch, store } from "store/store"
 
 interface CondaNoticeButtonProps {
   name: string
+  showParameterUrl: boolean
   node: AlgorithmChild
   onSkipClick: (
     event: SyntheticEvent | Event,
@@ -33,6 +36,7 @@ interface CondaNoticeButtonProps {
 
 export const CondaNoticeButton = memo(function CondaNoticeButton({
   name,
+  showParameterUrl = false,
   node,
   onSkipClick,
 }: CondaNoticeButtonProps) {
@@ -108,7 +112,20 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
       >
         <InfoOutlinedIcon />
       </IconButton>
-      <Tooltip title={name} placement="right-start">
+      <Tooltip
+        title={name}
+        placement="top"
+        PopperProps={{
+          modifiers: [
+            {
+              name: "offset",
+              options: {
+                offset: [0, -15], // [horizontal, vertical] - decrease the number to move closer
+              },
+            },
+          ],
+        }}
+      >
         <Typography
           variant="inherit"
           style={{
@@ -118,6 +135,23 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
           {name}
         </Typography>
       </Tooltip>
+      {showParameterUrl && (
+        <NodesLinkButton
+          algoName={name}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          iconStyle={{
+            fontSize: "12px",
+            color: "#808080",
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={open}
