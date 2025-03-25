@@ -31,8 +31,8 @@ setup_conda_wrapper_dict = {
         "function": setup_conda_optinist,
         "conda_name": "optinist",
     },
-    "setup_conda_custom_node": {
+    "setup_conda_custom": {
         "function": setup_conda_custom,
-        "conda_name": "optinist",
+        "conda_name": "custom_env",
     },
 }
