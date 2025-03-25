@@ -51,6 +51,7 @@ To reproduce a version 1 Workflow, a conversion script is provided, in the form 
 2. Open notebooks/yaml-converter.ipynb
 3. Setup environment following instructions at the top of yaml-converter.ipynb
 4. Convert files using the section at the bottom of yaml-converter.ipynb
+5. Upload converted .yaml files on OptiNiSt Workflow page
 ```python
 input_file = ".yaml"
 output_file = ".yaml" # any name you want
