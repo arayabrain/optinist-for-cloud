@@ -12,6 +12,7 @@ import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
+import { useCreateNodesUrl } from "components/utils/CreateNodesUrlUtils"
 import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
 import {
   DND_ITEM_TYPE_SET,
@@ -288,29 +289,8 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
       [onAddAlgoNode, name, node],
     ),
   )
-  const algoNameMapping: { [key: string]: string } = {
-    eta: "eta-event-triggered-average",
-    cca: "cca-canonical-correlation-analysis",
-    dpca: "dpca-demixed-principal-component-analysis",
-    dca: "dca-dynamical-component-analysis",
-    tsne: "tsne-t-distributed-stochastic-neighbor-embedding",
-    glm: "glm-generalized-linear-model",
-    lda: "lda-linear-discriminant-analysis",
-    svm: "svm-support-vector-machine",
-    granger: "granger-granger-causality-test",
-    "lccd-cell-detection": "lccd-detect",
-    "microscope-to-img": "microscope-to-image",
-    "cnmf-multisession": "caiman-cnmf-multisession",
-  }
 
-  let formattedAlgoName = name.toLowerCase().replace(/_/g, "-")
-
-  // Check if the formatted name exists in the mapping, otherwise keep it as is
-  formattedAlgoName =
-    algoNameMapping[formattedAlgoName as keyof typeof algoNameMapping] ||
-    formattedAlgoName
-
-  const parameterUrl = `https://optinist.readthedocs.io/en/latest/specifications/algorithm_nodes.html#${formattedAlgoName}`
+  const parameterUrl = useCreateNodesUrl(name)
 
   return (
     <LeafItem
@@ -381,7 +361,7 @@ const AddButton = memo(function AddButton({
       >
         <AddIcon />
       </IconButton>
-      <Tooltip title={name} placement="right">
+      <Tooltip title={name} placement="top">
         <Typography
           variant="inherit"
           style={{
@@ -403,7 +383,7 @@ const AddButton = memo(function AddButton({
             marginLeft: "5px",
           }}
         >
-          <Tooltip title="Check Documentation">
+          <Tooltip title="Check Documentation" placement="right" arrow>
             <Launch style={{ fontSize: "12px", color: "#808080" }} />
           </Tooltip>
         </a>

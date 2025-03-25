@@ -113,7 +113,7 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
       >
         <InfoOutlinedIcon />
       </IconButton>
-      <Tooltip title={name} placement="right-start">
+      <Tooltip title={name} placement="top">
         <Typography
           variant="inherit"
           style={{
@@ -135,7 +135,7 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
             marginLeft: "5px",
           }}
         >
-          <Tooltip title="Check Documentation">
+          <Tooltip title="Check Documentation" placement="right" arrow>
             <Launch style={{ fontSize: "12px", color: "#808080" }} />
           </Tooltip>
         </a>
