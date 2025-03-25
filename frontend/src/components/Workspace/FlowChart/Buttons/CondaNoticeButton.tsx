@@ -113,7 +113,20 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
       >
         <InfoOutlinedIcon />
       </IconButton>
-      <Tooltip title={name} placement="top">
+      <Tooltip
+        title={name}
+        placement="top"
+        PopperProps={{
+          modifiers: [
+            {
+              name: "offset",
+              options: {
+                offset: [0, -15], // [horizontal, vertical] - decrease the number to move closer
+              },
+            },
+          ],
+        }}
+      >
         <Typography
           variant="inherit"
           style={{
