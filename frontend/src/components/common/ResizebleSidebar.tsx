@@ -5,7 +5,7 @@ import { Box, Divider } from "@mui/material"
 import { DRAWER_WIDTH, MAX_DRAWER_WIDTH } from "const/Layout"
 
 export const ResizableSidebar = ({ children }: PropsWithChildren) => {
-  const [width, setWidth] = useState(240)
+  const [width, setWidth] = useState(DRAWER_WIDTH)
   const isDragging = useRef(false)
 
   const handleMouseDown = () => {
