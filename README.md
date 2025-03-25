@@ -36,17 +36,20 @@ OptiNiSt also supports reproducibility of scientific research, standardization o
 ### Support Library
 
 #### ROI detection
+
 - [x] [Suite2p](https://github.com/MouseLand/suite2p)
 - [x] [CaImAn](https://github.com/flatironinstitute/CaImAn)
 - [x] [LCCD](https://github.com/magnetizedCell/lccd-python)
 
 #### Postprocessing
+
 - [x] Basic Neural Analysis (Event Trigger Average...)
 - [x] Dimension Reduction (PCA...)
 - [x] Neural Decoding (LDA...)
 - [x] Neural Population Analysis (Correlation...)
 
 #### Saving Format
+
 - [x] [NWB](https://github.com/NeurodataWithoutBorders/pynwb)
 
 ## Key Features
@@ -134,9 +137,8 @@ Kenji Doya, Yukako Yamane [OIST Neural Computation Unit](https://groups.oist.jp/
 [[LCCD]](https://github.com/magnetizedCell/lccd-python) Tsubasa Ito, Keisuke Ota, Kanako Ueno, Yasuhiro Oisi, Chie Matsubara, Kenta Kobayashi, Masamichi Ohkura, Junichi Nakai, Masanori Murayama, Toru Aonishi, "Low computational-cost cell detection method for calcium imaging data", 2022
 [[PyNWB]](https://github.com/NeurodataWithoutBorders/pynwb) Oliver Rübel, Andrew Tritt, Ryan Ly, Benjamin K. Dichter, Satrajit Ghosh, Lawrence Niu, Ivan Soltesz, Karel Svoboda, Loren Frank, Kristofer E. Bouchard, "The Neurodata Without Borders ecosystem for neurophysiological data science", bioRxiv 2021.03.13.435173, March 15, 2021
 
-
-
 ## Citation
+
 <table width="100%">
 <tr>
 <td valign="top" width="50%">
@@ -160,3 +162,11 @@ If you use this software, please cite our paper:
 	publisher = {Cold Spring Harbor Laboratory},
 }
 ```
+
+## Join Our User Community on Slack
+
+We've launched a Slack workspace to provide a more casual space for discussions and interaction among users.
+
+[Join the Optinist User Community on Slack](https://join.slack.com/t/optinist-community/shared_invite/zt-32gtn36gx-stu8ywHn6L807k95zWVUkg)
+
+Feel free to use it as a space for casual conversations, product questions, requests, and feedback.
