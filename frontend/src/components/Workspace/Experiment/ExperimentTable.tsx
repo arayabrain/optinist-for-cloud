@@ -88,8 +88,10 @@ export const ExperimentTable: FC = () => {
   const isError = useSelector(selectExperimentsStatusIsError)
   const dispatch = useDispatch<AppDispatch>()
   useEffect(() => {
-    if (isUninitialized) {
-      setTimeout(() => dispatch(getExperiments()), 100)
+    if (!isUninitialized) return
+    const timeout = setTimeout(() => dispatch(getExperiments()), 1000)
+    return () => {
+      clearTimeout(timeout)
     }
   }, [dispatch, isUninitialized])
 
