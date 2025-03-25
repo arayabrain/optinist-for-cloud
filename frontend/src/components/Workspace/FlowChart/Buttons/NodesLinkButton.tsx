@@ -5,14 +5,12 @@ import { Tooltip } from "@mui/material"
 
 interface NodesLinkButtonProps {
   algoName: string
-  placement?: string
   linkStyle?: CSSProperties
   iconStyle?: CSSProperties
 }
 
 const NodesLinkButton: FC<NodesLinkButtonProps> = ({
   algoName,
-  placement,
   linkStyle,
   iconStyle,
 }) => {
