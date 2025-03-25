@@ -10,6 +10,7 @@ import IconButton from "@mui/material/IconButton"
 import Tooltip from "@mui/material/Tooltip"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import { AlgorithmChild } from "store/slice/AlgorithmList/AlgorithmListType"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { run } from "store/slice/Pipeline/PipelineActions"
@@ -25,7 +26,6 @@ import { AppDispatch, store } from "store/store"
 
 interface CondaNoticeButtonProps {
   name: string
-  parameterUrl: string
   showParameterUrl: boolean
   node: AlgorithmChild
   onSkipClick: (
@@ -36,7 +36,6 @@ interface CondaNoticeButtonProps {
 
 export const CondaNoticeButton = memo(function CondaNoticeButton({
   name,
-  parameterUrl,
   showParameterUrl = false,
   node,
   onSkipClick,
@@ -136,23 +135,7 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
           {name}
         </Typography>
       </Tooltip>
-      {showParameterUrl && (
-        <a
-          href={parameterUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            textDecoration: "underline",
-            color: "inherit",
-            cursor: "pointer",
-            marginLeft: "5px",
-          }}
-        >
-          <Tooltip title="Check Documentation" placement="right" arrow>
-            <Launch style={{ fontSize: "12px", color: "#808080" }} />
-          </Tooltip>
-        </a>
-      )}
+      {showParameterUrl && <NodesLinkButton algoName={name} />}
 
       <ConfirmDialog
         open={open}

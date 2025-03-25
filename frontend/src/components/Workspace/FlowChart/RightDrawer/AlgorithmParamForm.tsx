@@ -7,6 +7,7 @@ import { Tooltip } from "@mui/material"
 import { createParamFormItemComponent } from "components/common/ParamFormItemCreator"
 import { SectionTitle } from "components/common/ParamSection"
 import { useCreateNodesUrl } from "components/utils/CreateNodesUrlUtils"
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import { ParamFormContext } from "components/Workspace/FlowChart/RightDrawer/ParamFormContents"
 import { getAlgoParams } from "store/slice/AlgorithmNode/AlgorithmNodeActions"
 import {
@@ -31,8 +32,6 @@ export const AlgorithmParamForm = memo(function AlgorithmParamForm() {
     arrayEqualityFn,
   )
 
-  const parameterUrl = useCreateNodesUrl(algoName)
-
   useEffect(() => {
     if (!algoParamIsLoaded) {
       dispatch(getAlgoParams({ nodeId, algoName }))
@@ -43,21 +42,7 @@ export const AlgorithmParamForm = memo(function AlgorithmParamForm() {
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex" }}>
         <SectionTitle>{algoName}</SectionTitle>
-        <a
-          href={parameterUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            textDecoration: "underline",
-            color: "inherit",
-            cursor: "pointer",
-            marginLeft: "5px",
-          }}
-        >
-          <Tooltip title="Check Documentation">
-            <Launch style={{ fontSize: "16px" }} />
-          </Tooltip>
-        </a>
+        <NodesLinkButton algoName={algoName} />
       </div>
       {paramKeyList.map((paramKey) => (
         <ParamItem key={paramKey} paramKey={paramKey} />

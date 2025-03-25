@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect } from "react"
 import { useDrag } from "react-dnd"
 import { useSelector, useDispatch } from "react-redux"
 
-import { Launch } from "@mui/icons-material"
 import AddIcon from "@mui/icons-material/Add"
 import ChevronRightIcon from "@mui/icons-material/ChevronRight"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
@@ -14,6 +13,7 @@ import { TreeView } from "@mui/x-tree-view/TreeView"
 
 import { useCreateNodesUrl } from "components/utils/CreateNodesUrlUtils"
 import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
+import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
 import {
   DND_ITEM_TYPE_SET,
   TreeItemCollectedProps,
@@ -290,8 +290,6 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
     ),
   )
 
-  const parameterUrl = useCreateNodesUrl(name)
-
   return (
     <LeafItem
       ref={dragRef}
@@ -311,14 +309,12 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
             {node.condaEnvExists ? (
               <AddButton
                 name={name}
-                parameterUrl={parameterUrl}
                 showParameterUrl={true}
                 onClick={() => onAddAlgoNode(name, node.functionPath)}
               />
             ) : (
               <CondaNoticeButton
                 name={name}
-                parameterUrl={parameterUrl}
                 showParameterUrl={true}
                 node={node}
                 onSkipClick={(_event, reason) => {
@@ -340,14 +336,12 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
 
 interface AddButtonProps {
   name: string
-  parameterUrl?: string
   showParameterUrl?: boolean
   onClick: () => void
 }
 
 const AddButton = memo(function AddButton({
   name,
-  parameterUrl,
   showParameterUrl = false,
   onClick,
 }: AddButtonProps) {
@@ -384,23 +378,7 @@ const AddButton = memo(function AddButton({
           {name}
         </Typography>
       </Tooltip>
-      {showParameterUrl && (
-        <a
-          href={parameterUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            textDecoration: "underline",
-            color: "inherit",
-            cursor: "pointer",
-            marginLeft: "5px",
-          }}
-        >
-          <Tooltip title="Check Documentation" placement="right" arrow>
-            <Launch style={{ fontSize: "12px", color: "#808080" }} />
-          </Tooltip>
-        </a>
-      )}
+      {showParameterUrl && <NodesLinkButton algoName={name} />}
     </>
   )
 })
