@@ -29,42 +29,13 @@ def vacant_roi(
     roi = np.zeros((D.shape[0] * D.shape[1], 0))  # Empty ROIs
     num_frames = D.shape[2]
 
-    # Handle zero ROIs case
+    # Handle zero ROIs case (always)
     if num_cell == 0:
         empty_roi = np.full(D.shape[:2], np.nan)
         im = np.zeros((0, *D.shape[:2]))  # Empty stack of ROIs
         iscell = np.array([], dtype=int)
         timeseries = np.zeros((0, num_frames))
         timeseries_dff = np.zeros((0, num_frames))
-    else:
-        dff_f0_frames = params["f0_frames"]
-        dff_f0_percentile = params["f0_percentile"]
-        iscell = np.ones(num_cell, dtype=int)
-
-        reshapedD = D.reshape([D.shape[0] * D.shape[1], D.shape[2]])
-        timeseries = np.zeros([num_cell, num_frames])
-        roi_list = []
-
-        for i in range(num_cell):
-            roi_list.append((roi[:, i].reshape([D.shape[0], D.shape[1]])) * (i + 1))
-            timeseries[i, :] = np.mean(reshapedD[roi[:, i] > 0, :], axis=0)
-
-        im = np.stack(roi_list)
-        im = im.astype(np.float64)
-        im[im == 0] = np.nan
-        im -= 1
-
-        empty_roi = np.full_like(im[0], np.nan)
-
-        timeseries_dff = np.ones([num_cell, num_frames]) * np.nan
-        for i in range(num_cell):
-            for k in range(num_frames):
-                if (k - dff_f0_frames >= 0) and (k + dff_f0_frames < num_frames):
-                    f0 = np.percentile(
-                        timeseries[i, k - dff_f0_frames : k + dff_f0_frames],
-                        dff_f0_percentile,
-                    )
-                    timeseries_dff[i, k] = (timeseries[i, k] - f0) / f0
 
     # Create ROI list for NWB
     roi_list = [{"image_mask": roi[:, i].reshape(D.shape[:2])} for i in range(num_cell)]
