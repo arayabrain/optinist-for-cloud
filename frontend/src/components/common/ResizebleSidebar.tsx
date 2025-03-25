@@ -1,14 +1,10 @@
-import { useRef, useState } from "react"
+import { PropsWithChildren, useRef, useState } from "react"
 
 import { Box, Divider } from "@mui/material"
 
 import { DRAWER_WIDTH, MAX_DRAWER_WIDTH } from "const/Layout"
 
-export const ResizableSidebar = ({
-  children,
-}: {
-  children: React.ReactNode
-}) => {
+export const ResizableSidebar = ({ children }: PropsWithChildren) => {
   const [width, setWidth] = useState(240)
   const isDragging = useRef(false)
 
