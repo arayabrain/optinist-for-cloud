@@ -555,6 +555,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Parameters:**
 - **ch:** [int, default: 0] Channel to extract from the microscope data.
 
+(fluo-from-hdf5)=
 ###### Fluo from HDF5
 
 - **Description:** Extracts fluorescence data from HDF5 file and transposes for visualization
