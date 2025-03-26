@@ -272,7 +272,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
           <InputDim
             title="ROI"
             name="roi"
-            placeholder={`0:${maxRoi}`}
+            placeholder={`0:${maxRoi ?? 1}`}
             value={roi || ""}
             onChangeInput={(v) => onChange("roi", v)}
             multiple

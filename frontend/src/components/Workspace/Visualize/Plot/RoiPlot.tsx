@@ -3,6 +3,7 @@ import PlotlyChart from "react-plotlyjs-ts"
 import { useSelector, useDispatch } from "react-redux"
 
 import createColormap from "colormap"
+import { max, uniq } from "lodash"
 import { PlotMouseEvent } from "plotly.js"
 
 import { LinearProgress, Typography } from "@mui/material"
@@ -75,7 +76,9 @@ const RoiPlotImple = memo(function RoiPlotImple() {
   const roiVisualSelected = roisClick[itemId]
 
   useEffect(() => {
-    setMaxRoi?.(Math.max(...imageDataSelector.flat()) + 1)
+    const maxv =
+      max(uniq(imageDataSelector.map((e) => e.filter(Boolean)).flat())) ?? 0
+    setMaxRoi?.(maxv + 1)
   }, [imageDataSelector, setMaxRoi])
 
   const imageData = useMemo(() => {
