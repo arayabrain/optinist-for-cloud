@@ -257,6 +257,7 @@ async def download_file(
     workspace_id: str,
     file: DownloadFileRequest,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
     path = PurePath(urlparse(file.url).path)
     if path.suffix not in ACCEPT_FILE_EXT.ALL_EXT.value:
@@ -269,12 +270,14 @@ async def download_file(
         res.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
-    background_tasks.add_task(download, res, path.name, workspace_id)
+    background_tasks.add_task(download, db, res, path.name, workspace_id)
     background_tasks.add_task(update_image_shape, workspace_id, path.name)
     return {"file_name": path.name}
 
 
-def download(res: Response, file_name: str, workspace_id: str, chunk_size=1024):
+def download(
+    db: Session, res: Response, file_name: str, workspace_id: str, chunk_size=1024
+):
     total = int(res.headers.get("content-length", 0))
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, file_name])
     current = 0
@@ -294,3 +297,6 @@ def download(res: Response, file_name: str, workspace_id: str, chunk_size=1024):
                 bar.update(size)
     except Exception as e:
         DOWNLOAD_STATUS[filepath] = DownloadStatus(error=str(e))
+
+    if not MODE.IS_STANDALONE:
+        WorkspaceService.update_workspace_data_usage(db, workspace_id)
