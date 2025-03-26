@@ -128,7 +128,11 @@ export function handleWorkflowYamlError(
                 "_blank",
               )
             },
-            className: "text-inherit underline cursor-pointer",
+            style: {
+              cursor: "pointer",
+              textDecoration: "underline",
+            },
+            className: "text-inherit",
           },
           "Click here",
         )
