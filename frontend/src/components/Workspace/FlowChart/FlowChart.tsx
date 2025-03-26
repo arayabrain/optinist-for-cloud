@@ -20,6 +20,7 @@ import { styled } from "@mui/material/styles"
 import { CurrentPipelineInfo } from "components/common/CurrentPipelineInfo"
 import { DevelopmentInformation } from "components/common/DevelopmentInformation"
 import { SectionTitle } from "components/common/ParamSection"
+import { ResizableSidebar } from "components/common/ResizebleSidebar"
 import { AlgorithmOutputDialog } from "components/Workspace/FlowChart/Dialog/AlgorithmOutputDialog"
 import { ClearWorkflowIdDialog } from "components/Workspace/FlowChart/Dialog/ClearWorkflowIdDialog"
 import {
@@ -181,38 +182,40 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
         }}
       >
         <DndProvider backend={HTML5Backend}>
-          <Box width={DRAWER_WIDTH} borderRight={1} borderColor={grey[300]}>
-            <Box overflow="auto" marginRight={2}>
-              <CurrentPipelineInfo />
-            </Box>
-            {isDevelopment && (
+          <Box minWidth={DRAWER_WIDTH} borderRight={1} borderColor={grey[300]}>
+            <ResizableSidebar>
               <Box overflow="auto" marginRight={2}>
-                <DevelopmentInformation />
+                <CurrentPipelineInfo />
               </Box>
-            )}
-            <Box overflow="auto">
-              <SectionTitle
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                Nodes
-                <Tooltip title="Refresh Node">
-                  <span>
-                    <IconButton
-                      onClick={handleRefreshAlgoList}
-                      color="primary"
-                      disabled={nodeRefresh || !!isPending} // Disable while loading
-                    >
-                      {nodeRefresh ? (
-                        <CircularProgress size={24} />
-                      ) : (
-                        <CachedIcon />
-                      )}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </SectionTitle>
-              <AlgorithmTreeView />
-            </Box>
+              {isDevelopment && (
+                <Box overflow="auto" marginRight={2}>
+                  <DevelopmentInformation />
+                </Box>
+              )}
+              <Box overflow="auto">
+                <SectionTitle
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  Nodes
+                  <Tooltip title="Refresh Node">
+                    <span>
+                      <IconButton
+                        onClick={handleRefreshAlgoList}
+                        color="primary"
+                        disabled={nodeRefresh || !!isPending} // Disable while loading
+                      >
+                        {nodeRefresh ? (
+                          <CircularProgress size={24} />
+                        ) : (
+                          <CachedIcon />
+                        )}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </SectionTitle>
+                <AlgorithmTreeView />
+              </Box>
+            </ResizableSidebar>
           </Box>
           <MainContents open={open}>
             <ReactFlowComponent {...props} />
