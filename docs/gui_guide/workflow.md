@@ -373,6 +373,7 @@ Once you apply the filter:
 - When loading completes, the `eta` node will be highlighted in **yellow**.
 - Click the **RUN** button to execute the workflow and apply the filter changes.
 
+(DirectorySettings)=
 ## Directory Settings
 
 OptiNiSt uses `OPTINIST_DIR` for retrieving data and saving results. OptiNiSt searches for input data in the 'input' directory within `OPTINIST_DIR`. The default `OPTINIST_DIR` is `/tmp/studio` on your computer.
