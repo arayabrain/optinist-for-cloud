@@ -142,6 +142,7 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
       ...Object.keys(timeSeriesData).map(
         (e) => Object.keys(timeSeriesData[e]).length,
       ),
+      1,
     )
     setMaxDim?.(max)
   }, [setMaxDim, timeSeriesData])
