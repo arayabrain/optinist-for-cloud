@@ -83,8 +83,8 @@ const InputDim = (props: InputDim) => {
       let regex = /[^0-9,:]/g
       if (!multiple) regex = /[^0-9:]/g
       let value = event.target.value.replace(regex, "")
-      let regexTest = /^(\d+:\d+)(,\d+:\d+)*$/
-      if (!multiple) regexTest = /^(\d+:\d+)(\d+:\d+)*$/
+      let regexTest = /^(\d+(:\d+)?(,\d+(:\d+)?)*|\d+(,\d+)*)$/
+      if (!multiple) regexTest = /^(\d+:\d+|\d)$/
       value = validateValue(value)
       if (regexTest.test(value) || !value) setValuePassed(value.trim())
       setValue(value.trim())
