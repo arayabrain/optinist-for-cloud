@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
   MouseEvent,
+  Fragment,
 } from "react"
 import { useDispatch, useSelector } from "react-redux"
 import { useNavigate, useSearchParams } from "react-router-dom"
@@ -13,6 +14,7 @@ import { useSnackbar, VariantType } from "notistack"
 
 import DeleteIcon from "@mui/icons-material/Delete"
 import EditIcon from "@mui/icons-material/Edit"
+import LoginIcon from "@mui/icons-material/Login"
 import {
   Box,
   Button,
@@ -22,6 +24,7 @@ import {
   DialogTitle,
   Input,
   styled,
+  Tooltip,
   Typography,
 } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
@@ -51,6 +54,7 @@ import {
   createUser,
   getListUser,
   updateUser,
+  proxyLogin,
 } from "store/slice/User/UserActions"
 import {
   isAdmin,
@@ -277,11 +281,13 @@ const AccountManager = () => {
 
   const listUser = useSelector(selectListUser)
   const loading = useSelector(selectLoading)
+  const [loadingProxyLogin, setLoadingProxyLogin] = useState(false)
   const user = useSelector(selectCurrentUser)
   const admin = useSelector(isAdmin)
 
   const [openModal, setOpenModal] = useState(false)
   const [dataEdit, setDataEdit] = useState({})
+  const [userWaitingProxy, setUserWatingProxy] = useState<UserDTO>()
   const [newParams, setNewParams] = useState(
     window.location.search.replace("?", ""),
   )
@@ -585,6 +591,18 @@ const AccountManager = () => {
     setNewParams(param)
   }
 
+  const onProxyLogin = useCallback(async (userProxy: UserDTO) => {
+    setUserWatingProxy(userProxy)
+  }, [])
+
+  const handleOkeLoginProxy = useCallback(async () => {
+    if (!userWaitingProxy?.uid) return
+    setLoadingProxyLogin(true)
+    await dispatch(proxyLogin(userWaitingProxy.uid))
+    navigate("/console")
+    setLoadingProxyLogin(false)
+  }, [dispatch, navigate, userWaitingProxy?.uid])
+
   const columns: GridColDef[] = [
     {
       headerName: "ID",
@@ -690,23 +708,40 @@ const AccountManager = () => {
 
         return (
           <>
-            <IconButton
-              onClick={() =>
-                handleEdit({ id, role_id: role, name, email } as UserFormDTO)
-              }
-            >
-              <EditIcon />
-            </IconButton>
-            {!(params.row?.id === user?.id) ? (
+            <Tooltip title="Edit Account">
               <IconButton
-                sx={{ ml: 1.25 }}
-                color="error"
                 onClick={() =>
-                  handleOpenPopupDel(params.row?.id, params.row?.name)
+                  handleEdit({ id, role_id: role, name, email } as UserFormDTO)
                 }
               >
-                <DeleteIcon />
+                <EditIcon />
               </IconButton>
+            </Tooltip>
+
+            {!(params.row?.id === user?.id) ? (
+              <Fragment>
+                {user?.role_id === ROLE.ADMIN ? (
+                  <Tooltip title="Proxy SignIn">
+                    <IconButton
+                      color="info"
+                      onClick={() => onProxyLogin(params.row)}
+                    >
+                      <LoginIcon />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+                <Tooltip title="Delete Account">
+                  <IconButton
+                    sx={{ ml: 1.25 }}
+                    color="error"
+                    onClick={() =>
+                      handleOpenPopupDel(params.row?.id, params.row?.name)
+                    }
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
+              </Fragment>
             ) : null}
           </>
         )
@@ -760,7 +795,7 @@ const AccountManager = () => {
         open={openDel?.open || false}
         onCancel={handleClosePopupDel}
         onConfirm={handleOkDel}
-        title="Delete user?"
+        title="Delete Account?"
         content={
           <>
             <Typography>ID: {openDel?.id}</Typography>
@@ -769,6 +804,26 @@ const AccountManager = () => {
         }
         confirmLabel="delete"
         iconType="warning"
+        confirmButtonColor="error"
+      />
+      <ConfirmDialog
+        open={!!userWaitingProxy}
+        onCancel={() => setUserWatingProxy(undefined)}
+        onConfirm={handleOkeLoginProxy}
+        title="Proxy SignIn"
+        content={
+          userWaitingProxy ? (
+            <>
+              <Typography>
+                Sign in as <strong>{`${userWaitingProxy?.name}`}</strong>
+                {` (ID.${userWaitingProxy?.id})`}?
+              </Typography>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Ok"
       />
       {openModal ? (
         <ModalComponent
@@ -783,7 +838,7 @@ const AccountManager = () => {
           dataEdit={dataEdit}
         />
       ) : null}
-      <Loading loading={loading} />
+      <Loading loading={loading || loadingProxyLogin} />
     </AccountManagerWrapper>
   )
 }
