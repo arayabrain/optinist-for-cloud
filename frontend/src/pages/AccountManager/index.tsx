@@ -708,35 +708,39 @@ const AccountManager = () => {
 
         return (
           <>
-            <IconButton
-              onClick={() =>
-                handleEdit({ id, role_id: role, name, email } as UserFormDTO)
-              }
-            >
-              <EditIcon />
-            </IconButton>
+            <Tooltip title="Edit Account">
+              <IconButton
+                onClick={() =>
+                  handleEdit({ id, role_id: role, name, email } as UserFormDTO)
+                }
+              >
+                <EditIcon />
+              </IconButton>
+            </Tooltip>
 
             {!(params.row?.id === user?.id) ? (
               <Fragment>
                 {user?.role_id === ROLE.ADMIN ? (
-                  <Tooltip title="Proxy Sign In">
+                  <Tooltip title="Proxy SignIn">
                     <IconButton
-                      style={{ color: "#4285f4" }}
+                      color="info"
                       onClick={() => onProxyLogin(params.row)}
                     >
                       <LoginIcon />
                     </IconButton>
                   </Tooltip>
                 ) : null}
-                <IconButton
-                  sx={{ ml: 1.25 }}
-                  color="error"
-                  onClick={() =>
-                    handleOpenPopupDel(params.row?.id, params.row?.name)
-                  }
-                >
-                  <DeleteIcon />
-                </IconButton>
+                <Tooltip title="Delete Account">
+                  <IconButton
+                    sx={{ ml: 1.25 }}
+                    color="error"
+                    onClick={() =>
+                      handleOpenPopupDel(params.row?.id, params.row?.name)
+                    }
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
               </Fragment>
             ) : null}
           </>
@@ -791,7 +795,7 @@ const AccountManager = () => {
         open={openDel?.open || false}
         onCancel={handleClosePopupDel}
         onConfirm={handleOkDel}
-        title="Delete user?"
+        title="Delete Account?"
         content={
           <>
             <Typography>ID: {openDel?.id}</Typography>
@@ -800,17 +804,19 @@ const AccountManager = () => {
         }
         confirmLabel="delete"
         iconType="warning"
+        confirmButtonColor="error"
       />
       <ConfirmDialog
         open={!!userWaitingProxy}
         onCancel={() => setUserWatingProxy(undefined)}
         onConfirm={handleOkeLoginProxy}
-        title="Proxy Sign In"
+        title="Proxy SignIn"
         content={
           userWaitingProxy ? (
             <>
               <Typography>
-                {`Sign In as "${userWaitingProxy?.id}. ${userWaitingProxy?.name}"?`}
+                Sign in as <strong>{`${userWaitingProxy?.name}`}</strong>
+                {` (ID.${userWaitingProxy?.id})`}?
               </Typography>
             </>
           ) : (
