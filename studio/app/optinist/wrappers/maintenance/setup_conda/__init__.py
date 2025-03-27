@@ -33,6 +33,6 @@ setup_conda_wrapper_dict = {
     },
     "setup_conda_custom": {
         "function": setup_conda_custom,
-        "conda_name": "custom_env",
+        "conda_name": "custom",
     },
 }
