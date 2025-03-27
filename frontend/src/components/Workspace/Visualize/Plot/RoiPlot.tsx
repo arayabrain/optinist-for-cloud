@@ -87,9 +87,10 @@ const RoiPlotImple = memo(function RoiPlotImple() {
       img.map((e) => {
         if (!e && e !== 0) return null
         if (!filterParam?.roi?.length) return e
-        const check = filterParam?.roi.some(
-          (roi) => e >= (roi.start || 0) && (!roi.end || e < roi.end),
-        )
+        const check = filterParam?.roi.some((roi) => {
+          const roiStart = roi?.start || 0
+          return e >= roiStart && e < (roi.end || roiStart + 1)
+        })
         if (check) return e
         return null
       }),
