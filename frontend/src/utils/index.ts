@@ -21,6 +21,6 @@ export function convertBytes(bytes: number) {
     result = bytes / KB
     unit = "KB"
   }
-
-  return `${result.toFixed(2)} ${unit}`
+  if (result < 1024) return `${Math.floor(result)} ${unit}`
+  return `${Number(result.toFixed(2))} ${unit}`
 }
