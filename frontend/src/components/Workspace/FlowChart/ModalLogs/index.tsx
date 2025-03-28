@@ -14,6 +14,7 @@ import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import CloseIcon from "@mui/icons-material/Close"
 import ErrorIcon from "@mui/icons-material/Error"
+import FilterAltOffOutlinedIcon from "@mui/icons-material/FilterAltOffOutlined"
 import GradeIcon from "@mui/icons-material/Grade"
 import InfoIcon from "@mui/icons-material/Info"
 import KeyboardDoubleArrowDownIcon from "@mui/icons-material/KeyboardDoubleArrowDown"
@@ -269,18 +270,13 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
         {openSearchLevels ? (
           <BoxFilter>
-            <Box position="relative">
-              <MenuFilter
-                active={!levels?.length}
-                onClick={() => setLevels([])}
-              >
-                <InfoIcon />
-                <span>{TLevelsLog.ALL}</span>
-              </MenuFilter>
-              <BoxCloseLevel onClick={() => setOpenSearchLevels(false)}>
-                <CloseIcon />
-              </BoxCloseLevel>
-            </Box>
+            <BoxCloseLevel onClick={() => setOpenSearchLevels(false)}>
+              <CloseIcon />
+            </BoxCloseLevel>
+            <MenuFilter active={!levels?.length} onClick={() => setLevels([])}>
+              <FilterAltOffOutlinedIcon />
+              <span>{TLevelsLog.ALL}</span>
+            </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.INFO)}
               onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
@@ -338,14 +334,14 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
 const BoxCloseLevel = styled(Box)`
   position: absolute;
-  top: 50%;
+  top: -7%;
+  right: 4px;
   transform: translateY(-50%);
-  right: 8px;
   cursor: pointer;
-
   svg {
     font-size: 20px;
   }
+  color: white;
 `
 
 const MenuFilter = styled(Box, {
@@ -370,8 +366,8 @@ const MenuFilter = styled(Box, {
 
 const BoxFilter = styled(Box)`
   position: absolute;
-  right: 5px;
-  top: 85px;
+  right: 10px;
+  top: 120px;
   background: white;
   min-width: 150px;
 `
