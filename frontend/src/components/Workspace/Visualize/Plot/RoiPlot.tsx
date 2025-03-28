@@ -44,8 +44,8 @@ export const RoiPlot = memo(function RoiPlot() {
 
   const dispatch = useDispatch<AppDispatch>()
   useEffect(() => {
-    if (workspaceId) {
-      dispatch(getRoiData({ path, workspaceId, isFull: !!dialogFilterNodeId }))
+    if (workspaceId && !dialogFilterNodeId) {
+      dispatch(getRoiData({ path, workspaceId }))
     }
   }, [dialogFilterNodeId, dispatch, path, workspaceId])
 
