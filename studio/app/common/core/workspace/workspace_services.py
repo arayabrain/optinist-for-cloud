@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 
 import yaml
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Session, delete, update
 
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.utils.file_reader import get_folder_size
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -12,10 +14,16 @@ from studio.app.common.models.experiment import ExperimentRecord
 from studio.app.common.models.workspace import Workspace
 from studio.app.dir_path import DIRPATH
 
+logger = AppLogger.get_logger()
+
 
 class WorkspaceService:
     @classmethod
     def _update_exp_data_usage_yaml(cls, exp_filepath, data_usage):
+        if not os.path.isfile(exp_filepath):
+            logger.error(f"'{exp_filepath}' does not exist")
+            return
+
         with open(exp_filepath, "r") as f:
             config = yaml.safe_load(f)
             config["data_usage"] = data_usage
@@ -47,6 +55,10 @@ class WorkspaceService:
     @classmethod
     def update_experiment_data_usage(cls, workspace_id, unique_id):
         workflow_dir = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id])
+        if not os.path.exists(workflow_dir):
+            logger.error(f"'{workflow_dir}' does not exist")
+            return
+
         exp_filepath = join_filepath([workflow_dir, DIRPATH.EXPERIMENT_YML])
         data_usage = get_folder_size(workflow_dir)
 
@@ -57,9 +69,12 @@ class WorkspaceService:
 
     @classmethod
     def update_workspace_data_usage(cls, db: Session, workspace_id):
-        input_data_usage = get_folder_size(
-            join_filepath([DIRPATH.INPUT_DIR, workspace_id])
-        )
+        workspace_dir = join_filepath([DIRPATH.INPUT_DIR, workspace_id])
+        if not os.path.exists(workspace_dir):
+            logger.error(f"'{workspace_dir}' does not exist")
+            return
+
+        input_data_usage = get_folder_size(workspace_dir)
         db.execute(
             update(Workspace)
             .where(Workspace.id == workspace_id)
@@ -95,9 +110,10 @@ class WorkspaceService:
                 )
             )
 
-        db.execute(
-            delete(ExperimentRecord).where(
-                ExperimentRecord.workspace_id == workspace_id
+        if not MODE.IS_STANDALONE:
+            db.execute(
+                delete(ExperimentRecord).where(
+                    ExperimentRecord.workspace_id == workspace_id
+                )
             )
-        )
-        db.bulk_save_objects(exp_records)
+            db.bulk_save_objects(exp_records)
