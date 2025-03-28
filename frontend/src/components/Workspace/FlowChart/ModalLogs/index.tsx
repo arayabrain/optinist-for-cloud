@@ -285,35 +285,35 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
               active={levels?.includes(TLevelsLog.INFO)}
               onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
             >
-              <InfoIcon />
+              <InfoIcon color="info" />
               <span>{TLevelsLog.INFO}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.WARNING)}
               onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
             >
-              <WarningIcon />
+              <WarningIcon color="warning" />
               <span>{TLevelsLog.WARNING}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.DEBUG)}
               onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
             >
-              <AdbIcon />
+              <AdbIcon color="success" />
               <span>{TLevelsLog.DEBUG}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.ERROR)}
               onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
             >
-              <ErrorIcon />
+              <ErrorIcon color="error" />
               <span>{TLevelsLog.ERROR}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.CRITICAL)}
               onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
             >
-              <GradeIcon />
+              <GradeIcon color="secondary" />
               <span>{TLevelsLog.CRITICAL}</span>
             </MenuFilter>
           </BoxFilter>
@@ -354,17 +354,17 @@ const MenuFilter = styled(Box, {
   display: flex;
   padding: 5px 16px;
   align-items: center;
-  color: white;
   cursor: pointer;
   gap: 4px;
   padding-left: 5px;
-  color: ${({ active }) => (active ? "white" : "rgba(0, 0, 0, 0.3)")};
+  /* color: ${({ active }) => (active ? "white" : "rgba(0, 0, 0, 0.3)")}; */
+  color: black;
   svg {
     width: 30px;
   }
-  background-color: ${({ active }) => (active ? "#1976d2" : "transparent")};
+  background-color: ${({ active }) => (active ? "#abceff" : "transparent")};
   &:hover {
-    color: rgba(0, 0, 0, 0.8);
+    color: #0049ad;
   }
 `
 
