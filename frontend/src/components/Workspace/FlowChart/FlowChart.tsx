@@ -182,7 +182,17 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
         }}
       >
         <DndProvider backend={HTML5Backend}>
-          <Box minWidth={DRAWER_WIDTH} borderRight={1} borderColor={grey[300]}>
+          <Box
+            minWidth={DRAWER_WIDTH}
+            overflow="auto"
+            borderRight={1}
+            borderColor={grey[300]}
+            sx={{
+              height: CONTENT_HEIGHT,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <ResizableSidebar>
               <Box overflow="auto" marginRight={2}>
                 <CurrentPipelineInfo />
@@ -192,7 +202,7 @@ const FlowChart = memo(function FlowChart(props: UseRunPipelineReturnType) {
                   <DevelopmentInformation />
                 </Box>
               )}
-              <Box overflow="auto">
+              <Box overflow="auto" flexGrow={1}>
                 <SectionTitle
                   style={{ display: "flex", alignItems: "center", gap: "8px" }}
                 >
