@@ -20,7 +20,7 @@ import KeyboardDoubleArrowDownIcon from "@mui/icons-material/KeyboardDoubleArrow
 import MenuIcon from "@mui/icons-material/Menu"
 import SearchIcon from "@mui/icons-material/Search"
 import WarningIcon from "@mui/icons-material/Warning"
-import { Box, Modal, Tooltip } from "@mui/material"
+import { Badge, Box, Modal, Tooltip } from "@mui/material"
 
 import { TLevelsLog } from "components/Workspace/FlowChart/ModalLogs/helpers/service"
 import {
@@ -196,15 +196,6 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reset, levels])
 
-  useEffect(() => {
-    if (!openSearch) setKeywork("")
-  }, [openSearch])
-
-  useEffect(() => {
-    if (!openSearchLevels && levels.length) setLevels([])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSearchLevels])
-
   const onLayout = useCallback(
     (layout: { height: number; scrollHeight: number }) => {
       if (layout.scrollHeight <= layout.height) onPrevSearch()
@@ -258,7 +249,19 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           <BoxSearch width={"auto !important"}>
             <ButtonClose onClick={() => setOpenSearch(true)}>
               <Tooltip title="Search logs">
-                <SearchIcon />
+                <Box
+                  {...(keyword
+                    ? {
+                        display: "flex",
+                        padding: "4px",
+                        border: "1px solid white",
+                        borderRadius: 10,
+                        style: { backgroundColor: "#1976d2" },
+                      }
+                    : {})}
+                >
+                  <SearchIcon style={{ fill: "white" }} />
+                </Box>
               </Tooltip>
             </ButtonClose>
           </BoxSearch>
@@ -317,7 +320,9 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         ) : (
           <BoxMenu onClick={() => setOpenSearchLevels(true)}>
             <Tooltip title="Filter log levels">
-              <MenuIcon />
+              <Badge badgeContent={levels.length} color="primary">
+                <MenuIcon />
+              </Badge>
             </Tooltip>
           </BoxMenu>
         )}
@@ -353,12 +358,11 @@ const MenuFilter = styled(Box, {
   cursor: pointer;
   gap: 4px;
   padding-left: 5px;
-  color: ${({ active }) => (active ? "rgb(0, 0, 0)" : "rgba(0, 0, 0, 0.3)")};
+  color: ${({ active }) => (active ? "white" : "rgba(0, 0, 0, 0.3)")};
   svg {
     width: 30px;
   }
-  border-bottom: 2px solid;
-  border-color: ${({ active }) => (active ? "rgb(0, 0, 0)" : "transparent")};
+  background-color: ${({ active }) => (active ? "#1976d2" : "transparent")};
   &:hover {
     color: rgba(0, 0, 0, 0.8);
   }
