@@ -52,4 +52,5 @@ export interface ExperimentSortKeys {
   uid: string
   name: string
   startedAt: string
+  data_usage: string
 }

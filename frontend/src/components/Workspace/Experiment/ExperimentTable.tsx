@@ -466,9 +466,9 @@ const HeadItem = memo(function HeadItem({
         </TableCell>
         <TableCell>
           <TableSortLabel
-            active={sortTarget === "name"}
+            active={sortTarget === "data_usage"}
             direction={order}
-            onClick={sortHandler("name")}
+            onClick={sortHandler("data_usage")}
           >
             Data usage
           </TableSortLabel>
