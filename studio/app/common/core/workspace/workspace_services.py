@@ -95,6 +95,9 @@ class WorkspaceService:
     @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id):
         folder = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
+        if not os.path.exists(folder):
+            logger.error(f"'{folder}' does not exist")
+            return
         exp_records = []
 
         for exp_folder in Path(folder).iterdir():
