@@ -1,5 +1,5 @@
 export function convertBytes(bytes: number) {
-  if (!bytes) return bytes
+  if (!bytes) return ""
   const KB = 1024
   const MB = KB * 1024
   const GB = MB * 1024
