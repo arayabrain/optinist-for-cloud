@@ -320,7 +320,7 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
         ) : (
           <BoxMenu onClick={() => setOpenSearchLevels(true)}>
             <Tooltip title="Filter log levels">
-              <Badge badgeContent={levels.length} color="primary">
+              <Badge variant="dot" invisible={levels.length === 0} color="info">
                 <MenuIcon />
               </Badge>
             </Tooltip>
