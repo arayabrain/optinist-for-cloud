@@ -11,6 +11,7 @@ import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
 import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
 import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import {
