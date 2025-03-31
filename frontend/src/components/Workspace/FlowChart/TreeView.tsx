@@ -11,9 +11,9 @@ import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
-import { useCreateNodesUrl } from "components/utils/CreateNodesUrlUtils"
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
 import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
-import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import {
   DND_ITEM_TYPE_SET,
   TreeItemCollectedProps,
@@ -379,8 +379,8 @@ const AddButton = memo(function AddButton({
         </Typography>
       </Tooltip>
       {showParameterUrl && (
-        <NodesLinkButton
-          algoName={name}
+        <ExternalLinkButton
+          url={getDocumentationUrl(name)}
           linkStyle={{
             textDecoration: "underline",
             color: "inherit",

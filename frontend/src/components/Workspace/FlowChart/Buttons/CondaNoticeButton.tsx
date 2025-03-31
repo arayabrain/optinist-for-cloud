@@ -9,7 +9,8 @@ import IconButton from "@mui/material/IconButton"
 import Tooltip from "@mui/material/Tooltip"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
-import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import { AlgorithmChild } from "store/slice/AlgorithmList/AlgorithmListType"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { run } from "store/slice/Pipeline/PipelineActions"
@@ -135,8 +136,8 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
         </Typography>
       </Tooltip>
       {showParameterUrl && (
-        <NodesLinkButton
-          algoName={name}
+        <ExternalLinkButton
+          url={getDocumentationUrl(name)}
           linkStyle={{
             textDecoration: "underline",
             color: "inherit",
