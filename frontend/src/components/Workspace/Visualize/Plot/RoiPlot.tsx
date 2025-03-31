@@ -40,14 +40,13 @@ export const RoiPlot = memo(function RoiPlot() {
   const isFulfilled = useSelector(selectRoiDataIsFulfilled(path))
   const error = useSelector(selectRoiDataError(path))
   const workspaceId = useSelector(selectCurrentWorkspaceId)
-  const { dialogFilterNodeId } = useContext(DialogContext)
 
   const dispatch = useDispatch<AppDispatch>()
   useEffect(() => {
-    if (workspaceId && !dialogFilterNodeId) {
+    if (workspaceId) {
       dispatch(getRoiData({ path, workspaceId }))
     }
-  }, [dialogFilterNodeId, dispatch, path, workspaceId])
+  }, [dispatch, path, workspaceId])
 
   if (isPending) {
     return <LinearProgress />
