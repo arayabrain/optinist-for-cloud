@@ -181,12 +181,14 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
             <p style={{ display: "flex", alignItems: "center" }}>
               <InfoOutlinedIcon
                 style={{
+                  color: "orange",
                   marginRight: 8,
                 }}
                 color="info"
                 fontSize="small"
               />
-              Creating now will clear the current workflow.
+              Conda environment verification clears the current workflow. Skip
+              to avoid losing your workflow.
             </p>
           </>
         }
