@@ -57,6 +57,7 @@ import {
   selectVisualizeSaveFormat,
   selectImageItemRangeUnit,
 } from "store/slice/VisualizeItem/VisualizeItemSelectors"
+import { setTimeSeriesItemDrawOrder } from "store/slice/VisualizeItem/VisualizeItemSlice"
 import { AppDispatch } from "store/store"
 
 export const TimeSeriesPlot = memo(function TimeSeriesPlot() {
@@ -141,6 +142,7 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
       ...Object.keys(timeSeriesData).map(
         (e) => Object.keys(timeSeriesData[e]).length,
       ),
+      1,
     )
     setMaxDim?.(max)
   }, [setMaxDim, timeSeriesData])
@@ -390,7 +392,16 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
       setRoiSelected(Number(clickedSeriesId))
       return false
     }
-    if (itemIdRoi) setRoisClick(Number(itemIdRoi), Number(clickedSeriesId))
+    if (itemIdRoi) {
+      setRoisClick(Number(itemIdRoi), Number(clickedSeriesId))
+    } else {
+      dispatch(
+        setTimeSeriesItemDrawOrder({
+          itemId,
+          drawOrder: clickedSeriesId,
+        }),
+      )
+    }
     // set DisplayNumbers
     if (!drawOrderList.includes(clickedSeriesId)) {
       dispatch(getTimeSeriesDataById({ path, index: clickedSeriesId }))

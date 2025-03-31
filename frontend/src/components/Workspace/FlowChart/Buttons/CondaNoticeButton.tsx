@@ -9,6 +9,8 @@ import IconButton from "@mui/material/IconButton"
 import Tooltip from "@mui/material/Tooltip"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import { AlgorithmChild } from "store/slice/AlgorithmList/AlgorithmListType"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { run } from "store/slice/Pipeline/PipelineActions"
@@ -24,6 +26,7 @@ import { AppDispatch, store } from "store/store"
 
 interface CondaNoticeButtonProps {
   name: string
+  showParameterUrl: boolean
   node: AlgorithmChild
   onSkipClick: (
     event: SyntheticEvent | Event,
@@ -33,6 +36,7 @@ interface CondaNoticeButtonProps {
 
 export const CondaNoticeButton = memo(function CondaNoticeButton({
   name,
+  showParameterUrl = false,
   node,
   onSkipClick,
 }: CondaNoticeButtonProps) {
@@ -108,7 +112,20 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
       >
         <InfoOutlinedIcon />
       </IconButton>
-      <Tooltip title={name} placement="right-start">
+      <Tooltip
+        title={name}
+        placement="top"
+        PopperProps={{
+          modifiers: [
+            {
+              name: "offset",
+              options: {
+                offset: [0, -15], // [horizontal, vertical] - decrease the number to move closer
+              },
+            },
+          ],
+        }}
+      >
         <Typography
           variant="inherit"
           style={{
@@ -118,6 +135,23 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
           {name}
         </Typography>
       </Tooltip>
+      {showParameterUrl && (
+        <ExternalLinkButton
+          url={getDocumentationUrl(name)}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          iconStyle={{
+            fontSize: "12px",
+            color: "#808080",
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={open}
@@ -147,12 +181,14 @@ export const CondaNoticeButton = memo(function CondaNoticeButton({
             <p style={{ display: "flex", alignItems: "center" }}>
               <InfoOutlinedIcon
                 style={{
+                  color: "orange",
                   marginRight: 8,
                 }}
                 color="info"
                 fontSize="small"
               />
-              Creating now will clear the current workflow.
+              Conda environment verification clears the current workflow. Skip
+              to avoid losing your workflow.
             </p>
           </>
         }
