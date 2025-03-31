@@ -124,7 +124,7 @@ class SmkUtils:
 
 
 # Cache conda env path (performance consideration)
-_snakemake_conda_env_paths_cache: Dict[str, str] = {}
+_global_snakemake_conda_env_paths_cache: Dict[str, str] = {}
 
 
 class SmkInternalUtils:
@@ -198,14 +198,17 @@ class SmkInternalUtils:
               conda_env_dirpath = conda_env.address or ""
               ```
         """
-        global _snakemake_conda_env_paths_cache
-        if conda_env_filepath in _snakemake_conda_env_paths_cache:
-            conda_env_dirpath = _snakemake_conda_env_paths_cache[conda_env_filepath]
+        if conda_env_filepath in _global_snakemake_conda_env_paths_cache:
+            conda_env_dirpath = _global_snakemake_conda_env_paths_cache[
+                conda_env_filepath
+            ]
         else:
             conda_env_dirpath = cls._get_conda_env_address(
                 conda_env_filepath, conda_env_rootpath
             )
-            _snakemake_conda_env_paths_cache[conda_env_filepath] = conda_env_dirpath
+            _global_snakemake_conda_env_paths_cache[conda_env_filepath] = (
+                conda_env_dirpath
+            )
 
         """
         Verify that conda env has been created by snakemake
