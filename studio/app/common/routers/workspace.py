@@ -62,10 +62,9 @@ def search_workspaces(
             list_ws.append(item[0])
         return list_ws
 
-    query = (
+    data_capacity_subq = (
         select(
-            common_model.Workspace,
-            shared_count_subquery.label("shared_count"),
+            common_model.Workspace.id,
             (
                 common_model.Workspace.input_data_usage
                 + func.coalesce(func.sum(common_model.ExperimentRecord.data_usage), 0)
@@ -74,6 +73,20 @@ def search_workspaces(
         .outerjoin(
             common_model.ExperimentRecord,
             common_model.ExperimentRecord.workspace_id == common_model.Workspace.id,
+        )
+        .where(common_model.Workspace.deleted.is_(False))
+        .group_by(common_model.Workspace.id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            common_model.Workspace,
+            shared_count_subquery.label("shared_count"),
+            (data_capacity_subq.c.data_usage).label("data_usage"),
+        )
+        .outerjoin(
+            data_capacity_subq, data_capacity_subq.c.id == common_model.Workspace.id
         )
         .join(
             common_model.WorkspacesShareUser,
