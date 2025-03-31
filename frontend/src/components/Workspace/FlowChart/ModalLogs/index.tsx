@@ -14,13 +14,14 @@ import ArrowBackIosIcon from "@mui/icons-material/ArrowBackIos"
 import ArrowForwardIosIcon from "@mui/icons-material/ArrowForwardIos"
 import CloseIcon from "@mui/icons-material/Close"
 import ErrorIcon from "@mui/icons-material/Error"
+import FilterAltOffOutlinedIcon from "@mui/icons-material/FilterAltOffOutlined"
 import GradeIcon from "@mui/icons-material/Grade"
 import InfoIcon from "@mui/icons-material/Info"
 import KeyboardDoubleArrowDownIcon from "@mui/icons-material/KeyboardDoubleArrowDown"
 import MenuIcon from "@mui/icons-material/Menu"
 import SearchIcon from "@mui/icons-material/Search"
 import WarningIcon from "@mui/icons-material/Warning"
-import { Box, Modal, Tooltip } from "@mui/material"
+import { Badge, Box, Modal, Tooltip } from "@mui/material"
 
 import { TLevelsLog } from "components/Workspace/FlowChart/ModalLogs/helpers/service"
 import {
@@ -196,15 +197,6 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reset, levels])
 
-  useEffect(() => {
-    if (!openSearch) setKeywork("")
-  }, [openSearch])
-
-  useEffect(() => {
-    if (!openSearchLevels && levels.length) setLevels([])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSearchLevels])
-
   const onLayout = useCallback(
     (layout: { height: number; scrollHeight: number }) => {
       if (layout.scrollHeight <= layout.height) onPrevSearch()
@@ -258,7 +250,19 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
           <BoxSearch width={"auto !important"}>
             <ButtonClose onClick={() => setOpenSearch(true)}>
               <Tooltip title="Search logs">
-                <SearchIcon />
+                <Box
+                  {...(keyword
+                    ? {
+                        display: "flex",
+                        padding: "4px",
+                        border: "1px solid white",
+                        borderRadius: 10,
+                        style: { backgroundColor: "#1976d2" },
+                      }
+                    : {})}
+                >
+                  <SearchIcon style={{ fill: "white" }} />
+                </Box>
               </Tooltip>
             </ButtonClose>
           </BoxSearch>
@@ -266,58 +270,55 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
         {openSearchLevels ? (
           <BoxFilter>
-            <Box position="relative">
-              <MenuFilter
-                active={!levels?.length}
-                onClick={() => setLevels([])}
-              >
-                <InfoIcon />
-                <span>{TLevelsLog.ALL}</span>
-              </MenuFilter>
-              <BoxCloseLevel onClick={() => setOpenSearchLevels(false)}>
-                <CloseIcon />
-              </BoxCloseLevel>
-            </Box>
+            <BoxCloseLevel onClick={() => setOpenSearchLevels(false)}>
+              <CloseIcon />
+            </BoxCloseLevel>
+            <MenuFilter active={!levels?.length} onClick={() => setLevels([])}>
+              <FilterAltOffOutlinedIcon />
+              <span>{TLevelsLog.ALL}</span>
+            </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.INFO)}
               onClick={() => onChangeTypeFilter(TLevelsLog.INFO)}
             >
-              <InfoIcon />
+              <InfoIcon color="info" />
               <span>{TLevelsLog.INFO}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.WARNING)}
               onClick={() => onChangeTypeFilter(TLevelsLog.WARNING)}
             >
-              <WarningIcon />
+              <WarningIcon color="warning" />
               <span>{TLevelsLog.WARNING}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.DEBUG)}
               onClick={() => onChangeTypeFilter(TLevelsLog.DEBUG)}
             >
-              <AdbIcon />
+              <AdbIcon color="success" />
               <span>{TLevelsLog.DEBUG}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.ERROR)}
               onClick={() => onChangeTypeFilter(TLevelsLog.ERROR)}
             >
-              <ErrorIcon />
+              <ErrorIcon color="error" />
               <span>{TLevelsLog.ERROR}</span>
             </MenuFilter>
             <MenuFilter
               active={levels?.includes(TLevelsLog.CRITICAL)}
               onClick={() => onChangeTypeFilter(TLevelsLog.CRITICAL)}
             >
-              <GradeIcon />
+              <GradeIcon color="secondary" />
               <span>{TLevelsLog.CRITICAL}</span>
             </MenuFilter>
           </BoxFilter>
         ) : (
           <BoxMenu onClick={() => setOpenSearchLevels(true)}>
             <Tooltip title="Filter log levels">
-              <MenuIcon />
+              <Badge variant="dot" invisible={levels.length === 0} color="info">
+                <MenuIcon />
+              </Badge>
             </Tooltip>
           </BoxMenu>
         )}
@@ -333,14 +334,14 @@ const ModalLogs = ({ isOpen = false, onClose }: Props) => {
 
 const BoxCloseLevel = styled(Box)`
   position: absolute;
-  top: 50%;
+  top: -7%;
+  right: 4px;
   transform: translateY(-50%);
-  right: 8px;
   cursor: pointer;
-
   svg {
     font-size: 20px;
   }
+  color: white;
 `
 
 const MenuFilter = styled(Box, {
@@ -349,25 +350,24 @@ const MenuFilter = styled(Box, {
   display: flex;
   padding: 5px 16px;
   align-items: center;
-  color: white;
   cursor: pointer;
   gap: 4px;
   padding-left: 5px;
-  color: ${({ active }) => (active ? "rgb(0, 0, 0)" : "rgba(0, 0, 0, 0.3)")};
+  /* color: ${({ active }) => (active ? "white" : "rgba(0, 0, 0, 0.3)")}; */
+  color: black;
   svg {
     width: 30px;
   }
-  border-bottom: 2px solid;
-  border-color: ${({ active }) => (active ? "rgb(0, 0, 0)" : "transparent")};
+  background-color: ${({ active }) => (active ? "#abceff" : "transparent")};
   &:hover {
-    color: rgba(0, 0, 0, 0.8);
+    color: #0049ad;
   }
 `
 
 const BoxFilter = styled(Box)`
   position: absolute;
-  right: 5px;
-  top: 85px;
+  right: 10px;
+  top: 120px;
   background: white;
   min-width: 150px;
 `
