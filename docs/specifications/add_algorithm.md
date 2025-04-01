@@ -357,3 +357,57 @@ Restart the Application, connect imageNode and run it, and you will see the outp
 ![](../_static/add_algorithm/run.png)
 
 ![](../_static/add_algorithm/visualize_output.png)
+
+## Create New Setup Conda (if Needed)
+
+This guide walks you through creating a new Conda setup script and registering it.
+
+---
+
+### 1. Create `setup_conda_{name}.py`
+
+Create a new Python file named `setup_conda_{name}.py`. Replace `{name}` with your desired identifier.
+
+Paste the following code into the file:
+
+```python
+from studio.app.common.core.logger import AppLogger
+from studio.app.common.dataclass import ImageData
+
+logger = AppLogger.get_logger()
+
+
+def setup_conda_custom(
+    image: ImageData, output_dir: str, params: dict = None, **kwargs
+) -> dict:
+    """
+    This is a mock wrapper function used to signal Snakemake to create a Conda environment.
+    No actual processing occurs in this function.
+    """
+
+    logger.info("Conda environment setup complete.")
+
+    # Dummy return data
+    return {"image": image}
+```
+
+> **Note:** This function doesn't perform any real processing. It simply acts as a placeholder to trigger Conda environment creation through Snakemake.
+
+### 2. Register the New Setup Conda in `__init__.py`
+
+Open the `__init__.py` file where setup functions are registered.
+
+Add the new entry in the format below:
+
+```python
+"setup_conda_custom": {
+    "function": setup_conda_custom,
+    "conda_name": "custom",  # Set this to the name of the Conda environment you want
+},
+```
+
+> **Tip:** Make sure that the `conda_name` matches the environment you’ve defined in your Snakemake workflow.
+
+---
+
+You're all set! Your custom Conda setup function is now ready to be used with Snakemake.
