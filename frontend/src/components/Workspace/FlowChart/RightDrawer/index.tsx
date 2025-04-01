@@ -10,7 +10,7 @@ import { styled } from "@mui/material/styles"
 import Toolbar from "@mui/material/Toolbar"
 import Typography from "@mui/material/Typography"
 
-import NodesLinkButton from "components/Workspace/FlowChart/Buttons/NodesLinkButton"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import { NWBSettingContents } from "components/Workspace/FlowChart/RightDrawer/NWBSettingContents"
 import { ParamFormContents } from "components/Workspace/FlowChart/RightDrawer/ParamFormContents"
 import { SnakemakeSettingContents } from "components/Workspace/FlowChart/RightDrawer/SnakemakeSettingContents"
@@ -68,16 +68,10 @@ const RightDrawer: FC = () => {
         </IconButton>
         <Typography variant="h6">{title}</Typography>
         {showLaunch && (
-          <NodesLinkButton
-            algoName={titleLink}
-            linkStyle={{
-              marginLeft: "5px",
-              marginRight: "10px",
-            }}
-            iconStyle={{
-              fontSize: "16px",
-            }}
-            desiredLink={titleLink}
+          <ExternalLinkButton
+            url={titleLink}
+            linkStyle={{ marginLeft: "5px", marginRight: "10px" }}
+            iconStyle={{ fontSize: "16px" }}
           />
         )}
       </Box>
