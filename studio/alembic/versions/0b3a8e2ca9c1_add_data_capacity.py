@@ -27,6 +27,7 @@ def upgrade() -> None:
         sa.Column(
             "data_usage",
             mysql.BIGINT(unsigned=True),
+            server_default="0",
             nullable=False,
             comment="data usage in bytes",
         ),
