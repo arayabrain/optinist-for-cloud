@@ -74,19 +74,22 @@ async def run_id(
 
         return uid
 
-    except KeyError as e:
-        logger.error(e, exc_info=True)
-        # Pass through the specific error message for KeyErrors
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e).strip('"'),  # Remove quotes from the KeyError message
-        )
     except Exception as e:
-        logger.error(e, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to run workflow.",
-        )
+        # Check if this is a KeyError with a specific workflow yaml error message
+        if isinstance(e, KeyError) and "Workflow yaml error" in str(e):
+            logger.error(f"YAML validation error: {e}", exc_info=True)
+            # Return 422 for YAML validation errors
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Workflow yaml error, see FAQ",
+            )
+        else:
+            # Keep original error handling for other errors
+            logger.error(e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to run workflow.",
+            )
 
 
 @router.post(
