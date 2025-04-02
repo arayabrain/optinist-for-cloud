@@ -26,6 +26,16 @@ def caiman_mc(
 
     function_id = ExptOutputPathIds(output_dir).function_id
     logger.info(f"start caiman motion_correction: {function_id}")
+    print(image.path, type(image.path[0]))
+    if not os.path.isfile(image.path[0]):
+        raise FileNotFoundError(f"File not found: {image.path}")
+    else:
+        base_name = os.path.basename(image.path[0])
+        file_name, file_ext = os.path.splitext(base_name)
+        new_file_name = f"{file_name}_{function_id}{file_ext}"
+        if os.path.isfile(image.path[0]):
+            shutil.copy2(image.path[0], new_file_name)
+            image.path[0] = new_file_name
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
@@ -150,4 +160,5 @@ def __move_file_safely(src: str, dest: str) -> None:
         elif os.path.isdir(dest):
             shutil.rmtree(dest)
 
-    shutil.move(src, dest)
+    if os.path.exists(src):
+        shutil.move(src, dest)
