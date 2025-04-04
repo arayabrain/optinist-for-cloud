@@ -130,7 +130,7 @@ If your function requires specific packages, you can set them using a conda env 
 ```yaml
 dependencies:
   - python=3.9 # Add the dependencies needed for you function
-  - numpy>2 # Exclude numpy 2.x versions
+  - numpy<2 # Exclude numpy 2.x versions
 ```
 
 - Note:
