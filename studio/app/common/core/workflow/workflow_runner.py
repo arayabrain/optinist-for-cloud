@@ -6,7 +6,9 @@ from datetime import datetime
 from glob import glob
 from typing import Dict, List, Optional
 
+import h5py
 import numpy as np
+from pynwb.ophys import Fluorescence
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
@@ -251,8 +253,17 @@ class WorkflowNodeDataFilter:
         ).write()
 
     def _backup_original_data(self):
+        logger = AppLogger.get_logger()
         shutil.copyfile(self.pkl_filepath, self.original_pkl_filepath)
 
+        # Back up NWB files
+        nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
+        for nwb_file in nwb_files:
+            original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
+            logger.debug(f"Backing up NWB file: {nwb_file} → {original_nwb_file}")
+            shutil.copyfile(nwb_file, original_nwb_file)
+
+        # Back up other files as before
         shutil.copyfile(self.cell_roi_filepath, self.original_cell_roi_filepath)
         shutil.copytree(
             self.tiff_dirpath,
@@ -264,8 +275,28 @@ class WorkflowNodeDataFilter:
             self.original_fluorescence_dirpath,
             dirs_exist_ok=True,
         )
+        logger.debug(f"Searching for filtered NWB files in {self.workflow_dirpath}")
+        nwb_backup_files = glob(
+            join_filepath([self.node_dirpath, "*.nwb" + ORIGINAL_DATA_EXT])
+        )
+        logger.debug(f"Found {len(nwb_backup_files)} backed up NWB files")
+        # Analyze each backup file
+        for backup_file in nwb_backup_files:
+            try:
+                from pynwb import NWBHDF5IO
+
+                with NWBHDF5IO(backup_file, "r") as io:
+                    nwbfile_obj = io.read()
+                    self._dump_nwb_structure_from_file(
+                        nwbfile_obj, f"Backup NWB file: {os.path.basename(backup_file)}"
+                    )
+            except Exception as e:
+                logger.error(f"Error analyzing backup NWB file {backup_file}: {e}")
 
     def _recover_original_data(self):
+        logger = AppLogger.get_logger()
+        logger.debug("Recovering original data")
+        logger.debug(f"Restoring original data from: {self.original_pkl_filepath}")
         os.remove(self.pkl_filepath)
         shutil.move(self.original_pkl_filepath, self.pkl_filepath)
 
@@ -275,6 +306,18 @@ class WorkflowNodeDataFilter:
             (os.path.getctime(self.pkl_filepath), datetime.now().timestamp()),
         )
 
+        # Restore NWB files
+        nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
+        for nwb_file in nwb_files:
+            original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
+            if os.path.exists(original_nwb_file):
+                logger.debug(f"Restoring NWB file: {original_nwb_file} → {nwb_file}")
+                os.remove(nwb_file)
+                shutil.move(original_nwb_file, nwb_file)
+            else:
+                logger.warning(f"No backup found for NWB file: {nwb_file}")
+
+        # Restore other files as before
         os.remove(self.cell_roi_filepath)
         shutil.move(self.original_cell_roi_filepath, self.cell_roi_filepath)
 
@@ -294,6 +337,94 @@ class WorkflowNodeDataFilter:
 
                 if len(nwb_files) > 0:
                     overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
+
+    def _dump_nwb_structure(self, nwbfile, label="NWB structure"):
+        """Debug helper to dump the structure of NWB data dictionary."""
+        logger = AppLogger.get_logger()
+        logger.debug(f"=== {label} ===")
+
+        if not nwbfile:
+            logger.debug("NWB file is empty or None")
+            return
+
+        # Log the top-level keys
+        logger.debug(f"Top-level keys: {list(nwbfile.keys())}")
+
+        # Check for important datasets
+        for dataset_name in [
+            NWBDATASET.ROI,
+            NWBDATASET.COLUMN,
+            NWBDATASET.FLUORESCENCE,
+            NWBDATASET.POSTPROCESS,
+        ]:
+            if dataset_name in nwbfile:
+                logger.debug(
+                    f"{dataset_name} contains: {list(nwbfile[dataset_name].keys())}"
+                )
+
+                # Log details for specific dataset types
+                if dataset_name == NWBDATASET.ROI:
+                    for func_id, roi_list in nwbfile[dataset_name].items():
+                        logger.debug(f"  ROI for {func_id}: {len(roi_list)} ROIs")
+
+                elif dataset_name == NWBDATASET.FLUORESCENCE:
+                    for func_id, fluo_data in nwbfile[dataset_name].items():
+                        for s_name, s_info in fluo_data.items():
+                            if "data" in s_info:
+                                shape = getattr(s_info["data"], "shape", "unknown")
+                                logger.debug(
+                                    f"Fluorescence {s_name} in {func_id}: shape={shape}"
+                                )
+
+    def _dump_nwb_structure_from_file(self, nwbfile_obj, label="NWB file structure"):
+        """Debug helper to dump the structure of a loaded NWB file object."""
+        logger = AppLogger.get_logger()
+        logger.debug(f"=== {label} ===")
+
+        # Log basic file info
+        logger.debug(f"NWB identifier: {nwbfile_obj.identifier}")
+        logger.debug(f"NWB creation date: {nwbfile_obj.session_start_time}")
+
+        # Log processing modules
+        logger.debug(f"Processing modules: {list(nwbfile_obj.processing.keys())}")
+
+        # Check for important processing modules
+        if "ophys" in nwbfile_obj.processing:
+            ophys = nwbfile_obj.processing["ophys"]
+            logger.debug(f"Ophys interfaces: {list(ophys.data_interfaces.keys())}")
+
+            # Check for ImageSegmentation
+            if "ImageSegmentation" in ophys.data_interfaces:
+                img_seg = ophys.data_interfaces["ImageSegmentation"]
+                logger.debug(
+                    f"Plane segmentations: {list(img_seg.plane_segmentations.keys())}"
+                )
+
+            # Check for Fluorescence
+            for key, interface in ophys.data_interfaces.items():
+                if isinstance(interface, Fluorescence):
+                    keys = list(interface.roi_response_series.keys())
+                    logger.debug(f"Fluorescence {key}: {keys}")
+
+        if "optinist" in nwbfile_obj.processing:
+            optinist = nwbfile_obj.processing["optinist"]
+            logger.debug(
+                f"Optinist interfaces: {list(optinist.data_interfaces.keys())}"
+            )
+
+    def _dump_h5py_structure(self, h5obj, logger, path=""):
+        """Recursively print the structure of an h5py object"""
+        logger = AppLogger.get_logger()
+        if isinstance(h5obj, h5py.Group):
+            logger.debug(f"{path} (Group):")
+            for key in h5obj.keys():
+                filtered = "filtered_" in key
+                marker = "**FILTERED**" if filtered else ""
+                new_path = f"{path}/{key}"
+                logger.debug(f"  {new_path} {marker}")
+                self._dump_h5py_structure(h5obj[key], logger, new_path)
+        elif isinstance(h5obj, h5py.Dataset):
+            logger.debug(f"{path} (Dataset): shape={h5obj.shape}, dtype={h5obj.dtype}")
 
     @classmethod
     def filter_data(
