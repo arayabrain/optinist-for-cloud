@@ -56,8 +56,9 @@ const InputDim = (props: InputDim) => {
             if (max && dim0 && !dim1 && Number(dim0) >= max) {
               return `${max - 1}:`
             }
-            if (min && dim0 && !dim1 && Number(dim0) <= min && isBlur)
+            if (min && dim0 && !dim1 && Number(dim0) <= min && isBlur) {
               return `${min}:`
+            }
             if (dim0 && dim1) {
               let start = dim0
               if (max && Number(dim0) >= max) start = String(max - 1)
@@ -65,7 +66,9 @@ const InputDim = (props: InputDim) => {
               return `${start}:${Number(dim1) > max ? max : dim1}`
             }
             if (dim1 && !dim0 && isBlur) return `${min || 0}:${dim1}`
-            if (isBlur && dim0 && !dim1) return `${dim0}:${max}`
+            if (e.includes(":") && isBlur && dim0 && !dim1) {
+              return `${dim0}:${max}`
+            }
             return e
           })
           .join(",")
@@ -80,8 +83,8 @@ const InputDim = (props: InputDim) => {
       let regex = /[^0-9,:]/g
       if (!multiple) regex = /[^0-9:]/g
       let value = event.target.value.replace(regex, "")
-      let regexTest = /^(\d+:\d+)(,\d+:\d+)*$/
-      if (!multiple) regexTest = /^(\d+:\d+)(\d+:\d+)*$/
+      let regexTest = /^(\d+(:\d+)?(,\d+(:\d+)?)*|\d+(,\d+)*)$/
+      if (!multiple) regexTest = /^(\d+:\d+|\d)$/
       value = validateValue(value)
       if (regexTest.test(value) || !value) setValuePassed(value.trim())
       setValue(value.trim())
@@ -186,17 +189,15 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
     return { dim1: dim1?.filter(Boolean), roi: roi?.filter(Boolean) }
   }, [filterParam])
 
-  useEffect(() => {
-    setFilterParam(filterSelector)
-  }, [filterSelector, setFilterParam])
-
   const getData = useCallback(
     (value?: TDim[]) =>
       value
         ?.map((r) => {
-          if (!isNaN(r.start!) && !isNaN(r.end!)) return `${r.start}:${r.end}`
+          if (!isNaN(r.start!) && (r.end || r.end === 0)) {
+            return `${r.start}:${r.end}`
+          }
           if (!isNaN(r.start!)) return r.start
-          if (!isNaN(r.end!)) return r.end
+          if (r.end || r.end === 0) return r.end
           return ""
         })
         .toString(),
@@ -217,7 +218,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
         const array = v.split(":")
         const dim: TDim = {}
         if (array[0]) dim.start = Number(array[0])
-        if (array[1]) dim.end = Number(array[1])
+        dim.end = array[1] ? Number(array[1]) : null
         return dim
       })
       setFilterParam((pre) => ({ ...pre, [name]: values?.filter(Boolean) }))
@@ -276,7 +277,7 @@ const BoxFilter = ({ nodeId }: { nodeId: string }) => {
           <InputDim
             title="ROI"
             name="roi"
-            placeholder={`0:${maxRoi}`}
+            placeholder={`0:${maxRoi ?? 1}`}
             value={roi || ""}
             onChangeInput={(v) => onChange("roi", v)}
             multiple
