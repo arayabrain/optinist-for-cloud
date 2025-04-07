@@ -10,9 +10,8 @@ from studio.app.common.core.utils.filepath_creater import (
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import RoiData
-from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
-
 from studio.app.optinist.wrappers.caiman.caiman_utils import CaimanUtils
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 

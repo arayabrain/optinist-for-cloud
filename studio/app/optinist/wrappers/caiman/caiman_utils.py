@@ -5,7 +5,7 @@ import shutil
 
 class CaimanUtils:
     """
-    Utilty functions for Caiman
+    Utility functions for Caiman
     """
 
     CAIMAN_TEMP_ENV_VAR_NAME = "CAIMAN_TEMP"
