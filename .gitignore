@@ -9,6 +9,7 @@ dist
 
 *.extensions.yaml
 *.namespace.yaml
+*.namespace.yaml.lock
 
 files/*
 Pipfile.lock
