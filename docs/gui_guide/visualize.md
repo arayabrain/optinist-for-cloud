@@ -46,11 +46,6 @@ You can select the range of the frames using the Start/End Index in the left sid
 Click on the PLAY button within the plotting box to play the loaded movie.
 The number indicated on the right of PAUSE button is the frame interval in milliseconds.
 
-```{eval-rst}
-.. note::
-  No Lazy Loading for Movies: Currently, movies are not lazy-loaded. This may impact performance when handling large datasets, as all movie data is loaded upfront.
-```
-
 ### Customizing Visualization Parameters
 
 Select one of the display boxes by clicking inside of the box. The selected box will be highlighted with a blue outline.
