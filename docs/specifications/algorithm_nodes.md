@@ -556,6 +556,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **ch:** [int, default: 0] Channel to extract from the microscope data.
 
 (fluo-from-hdf5)=
+
 ###### Fluo from HDF5
 
 - **Description:** Extracts fluorescence data from HDF5 file and transposes for visualization
@@ -597,7 +598,6 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Parameters:**
   - **transpose** [bool, default: False]: Whether to transpose the neural data matrix.
 
-  
 ###### Vacant ROI
 
 - **Description:** Prepare for manual ROI editing in VISUALIZE field. The average fluorescence of the added ROI area will be calculated.
@@ -610,4 +610,3 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Parameters:**
   - **f0_frames** [int (0, f0_frames, Time), default: 100]: Number of frames used to calculate the baseline fluorescence.
   - **f0_percentile** [float (0 <= f0_percentile <= 100), default: 8]: Percentile used for calculating the baseline fluorescence.
-
