@@ -252,13 +252,14 @@ class WorkflowNodeDataFilter:
 
     def _backup_original_data(self):
         logger = AppLogger.get_logger()
+        logger.info(f"Backing up data to {ORIGINAL_DATA_EXT} before applying filter")
         shutil.copyfile(self.pkl_filepath, self.original_pkl_filepath)
 
         # Back up NWB files in node directory
         nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
         for nwb_file in nwb_files:
             original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
-            logger.debug(f"Backing up NWB file: {nwb_file} → {original_nwb_file}")
+            logger.info(f"Backing up NWB file: {nwb_file} → {original_nwb_file}")
             shutil.copyfile(nwb_file, original_nwb_file)
 
         shutil.copyfile(self.cell_roi_filepath, self.original_cell_roi_filepath)
@@ -275,7 +276,7 @@ class WorkflowNodeDataFilter:
 
     def _recover_original_data(self):
         logger = AppLogger.get_logger()
-        logger.debug("Recovering original data")
+        logger.info("Recovering original data after filter removed")
 
         # Restore original pickle file
         os.remove(self.pkl_filepath)
@@ -291,17 +292,14 @@ class WorkflowNodeDataFilter:
         nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
         for nwb_file in nwb_files:
             original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
-            if os.path.exists(original_nwb_file):
-                if os.path.exists(nwb_file):
-                    os.remove(nwb_file)
-                shutil.move(original_nwb_file, nwb_file)
-                logger.debug(f"Restored NWB file: {original_nwb_file} → {nwb_file}")
+            os.remove(nwb_file)
+            shutil.move(original_nwb_file, nwb_file)
+            logger.info(f"Restored NWB file: {original_nwb_file} → {nwb_file}")
 
         # Delete whole.nwb file to force regeneration when needed
         whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
         if os.path.exists(whole_nwb_path):
             os.remove(whole_nwb_path)
-            logger.debug(f"Deleted whole.nwb: {whole_nwb_path} to force regeneration")
 
         os.remove(self.cell_roi_filepath)
         shutil.move(self.original_cell_roi_filepath, self.cell_roi_filepath)
