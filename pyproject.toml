@@ -82,6 +82,7 @@ ruamel-yaml = "^0.18.5"
 pymatreader = "^0.0.32"
 xmltodict = "*"
 matplotlib = "3.7.*"
+concurrent-log-handler = "^0.9.25"
 
 [tool.poetry.group.dev]
 optional = true
