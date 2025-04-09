@@ -325,7 +325,16 @@ class WorkflowNodeDataFilter:
                 # Update local node NWB file
                 nwb_files = glob(join_filepath([node_dirpath, "[!tmp_]*.nwb"]))
                 if len(nwb_files) > 0:
-                    overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
+                    # Extract the node-specific data from nwbfile
+                    type_key = self.workflow_config.nodeDict[self.node_id].data.label
+                    if type_key in v:
+                        # Pass the node-specific data to overwrite_nwb
+                        overwrite_nwb(
+                            v[type_key], node_dirpath, os.path.basename(nwb_files[0])
+                        )
+                    else:
+                        # If type_key not in v, use the original method
+                        overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
 
                 # Update whole.nwb at workflow level
                 whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
