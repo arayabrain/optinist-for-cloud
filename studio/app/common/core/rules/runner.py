@@ -15,12 +15,15 @@ from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import Rule
+from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
 from studio.app.common.schemas.workflow import WorkflowPIDFileData
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
+from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.core.nwb.nwb_creater import (
     merge_nwbfile,
     overwrite_nwbfile,
@@ -198,6 +201,36 @@ class Runner:
         )
         del func
         gc.collect()
+
+        try:
+            # Initialize CONFIG dictionary structure
+            function_id = ExptOutputPathIds(output_dir).function_id
+            if NWBDATASET.CONFIG not in output_info["nwbfile"]:
+                output_info["nwbfile"][NWBDATASET.CONFIG] = {}
+            if function_id not in output_info["nwbfile"][NWBDATASET.CONFIG]:
+                output_info["nwbfile"][NWBDATASET.CONFIG][function_id] = {}
+
+            # Store conda env config in CONFIG dataset
+            conda_name = wrapper.get("conda_name")
+            conda_env_path = find_condaenv_filepath(conda_name)
+            conda_config = ConfigReader.read(conda_env_path)
+            config_str = json.dumps(conda_config, separators=(",", ":"))
+            logger.debug("Conda config string: %s", config_str)
+
+            # Store conda env config in CONFIG dataset
+            output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
+                "conda_config"
+            ] = config_str
+            logger.debug(f"Added conda env'{conda_name}' config {config_str} to NWB")
+
+            # Store node parameters in CONFIG dataset
+            params_str = json.dumps(params, separators=(",", ":"))
+            output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
+                "node_params"
+            ] = params_str
+            logger.debug(f"Added node '{function_id}' params {params_str} to NWB")
+        except Exception as e:
+            logger.warning(f"Failed to add conda environment config to NWB file: {e}")
 
         return output_info
 
