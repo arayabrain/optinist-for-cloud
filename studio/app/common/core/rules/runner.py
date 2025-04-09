@@ -215,20 +215,19 @@ class Runner:
             conda_env_path = find_condaenv_filepath(conda_name)
             conda_config = ConfigReader.read(conda_env_path)
             config_str = json.dumps(conda_config, separators=(",", ":"))
-            logger.debug("Conda config string: %s", config_str)
 
             # Store conda env config in CONFIG dataset
             output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
                 "conda_config"
             ] = config_str
-            logger.debug(f"Added conda env'{conda_name}' config {config_str} to NWB")
+            logger.info(f"Added conda env'{conda_name}' config {config_str} to NWB")
 
             # Store node parameters in CONFIG dataset
             params_str = json.dumps(params, separators=(",", ":"))
             output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
                 "node_params"
             ] = params_str
-            logger.debug(f"Added node '{function_id}' params {params_str} to NWB")
+            logger.info(f"Added node '{function_id}' params {params_str} to NWB")
         except Exception as e:
             logger.warning(f"Failed to add conda environment config to NWB file: {e}")
 
