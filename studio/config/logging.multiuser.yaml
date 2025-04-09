@@ -13,22 +13,23 @@ handlers:
     level: DEBUG
     formatter: default
   rotating_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: DEBUG
+    formatter: default
+    filename: logs/studio.log
+    encoding: utf-8
+    when: midnight
+    interval: 1
+    backupCount: 365
+  rotating_file_concurrency:
     class: concurrent_log_handler.ConcurrentTimedRotatingFileHandler
     level: DEBUG
     formatter: default
     filename: logs/studio.log
     encoding: utf-8
     maxBytes: 5242880
-    backupCount: 200
-  # rotating_file_standard:
-  #   class: logging.handlers.TimedRotatingFileHandler
-  #   level: DEBUG
-  #   formatter: default
-  #   filename: logs/studio.log
-  #   encoding: utf-8
-  #   when: midnight
-  #   interval: 1
-  #   backupCount: 365
+    # backupCount ... Number of backups on the same date
+    backupCount: 100
 loggers:
   optinist:
     level: DEBUG
