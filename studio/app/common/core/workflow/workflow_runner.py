@@ -288,7 +288,7 @@ class WorkflowNodeDataFilter:
             (os.path.getctime(self.pkl_filepath), datetime.now().timestamp()),
         )
 
-        # Restore NWB files in node directory
+        # Restore node NWB files
         nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
         for nwb_file in nwb_files:
             original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
@@ -296,10 +296,16 @@ class WorkflowNodeDataFilter:
             shutil.move(original_nwb_file, nwb_file)
             logger.info(f"Restored NWB file: {original_nwb_file} → {nwb_file}")
 
-        # Delete whole.nwb file to force regeneration when needed
+        # Delete whole.nwb file to force regeneration without filter
         whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
         if os.path.exists(whole_nwb_path):
             os.remove(whole_nwb_path)
+
+        # Read the restored data to regenerate whole.nwb
+        output_info = PickleReader.read(self.pkl_filepath)
+        if "nwbfile" in output_info:
+            Runner.save_all_nwb(whole_nwb_path, output_info["nwbfile"])
+            logger.info(f"Regenerated whole.nwb: {whole_nwb_path}")
 
         os.remove(self.cell_roi_filepath)
         shutil.move(self.original_cell_roi_filepath, self.cell_roi_filepath)
@@ -316,10 +322,14 @@ class WorkflowNodeDataFilter:
                 v.save_json(node_dirpath)
 
             if k == "nwbfile":
+                # Update local node NWB file
                 nwb_files = glob(join_filepath([node_dirpath, "[!tmp_]*.nwb"]))
-
                 if len(nwb_files) > 0:
                     overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
+
+                # Update whole.nwb at workflow level
+                whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
+                Runner.save_all_nwb(whole_nwb_path, v)
 
     @classmethod
     def filter_data(
