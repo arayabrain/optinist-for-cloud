@@ -547,7 +547,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 
 #### OptiNiSt (Utils)
 
-###### Microscope to Image
+###### microscope_to_img
 
 - **Description:** Data type conversion: Converts microscope data to image data.
 - **Input:** MicroscopeData
@@ -557,7 +557,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 
 (fluo-from-hdf5)=
 
-###### Fluo from HDF5
+###### fluo_from_hdf5
 
 - **Description:** Extracts fluorescence data from HDF5 file and transposes for visualization
 - **Input:** FluoData, HDF5Data
@@ -568,7 +568,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Parameters:**
   - **transpose** [bool, default: False]: Whether to transpose the neural data matrix.
 
-###### ROI from HDF5
+###### roi_from_hdf5
 
 - **Description:** Extracts ROI data from HDF5 file and prepares it for visualization
 - **Input:** ImageData, HDF5Data, IscellData
@@ -581,7 +581,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
       - processing/ophys/ImageSegmentation/caiman_cnmf_UNIQUE-ID/iscell
 - **Output:** IscellData
 
-###### ROI and Fluo from HDF5
+###### roi_fluo_from_hdf5
 
 - **Description:** Extracts ROI data and fluorescence data from HDF5 file and prepares it for visualization
 - **Input:** ImageData, FluoData, HDF5Data, IscellData
@@ -595,18 +595,36 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
     - fluorescence
       - processing/ophys/suite2p_roi_UNIQUE-ID/Fluorescence/data
       - processing/ophys/caiman_cnmf_UNIQUE-ID/Fluorescence/data
+- **Output:** IscellData, FluoData
 - **Parameters:**
   - **transpose** [bool, default: False]: Whether to transpose the neural data matrix.
 
-###### Vacant ROI
 
-- **Description:** Prepare for manual ROI editing in VISUALIZE field. The average fluorescence of the added ROI area will be calculated.
+###### vacant_roi
+
+- **Description:** Prepared for manual ROI editing in VISUALIZE field. The average fluorescence of the added ROI area will be calculated.
 - **Input:** ImageData
   - If using optinist nwb format:
     - cell_img:
       - processing/ophys/ImageSegmentation/vacant_roi_UNIQUE-ID/image_mask
     - fluorescence
       - processing/ophys/vacant_roi_UNIQUE-ID/Fluorescence/data
+- **Output** FluoData, IscellData
 - **Parameters:**
   - **f0_frames** [int (0, f0_frames, Time), default: 100]: Number of frames used to calculate the baseline fluorescence.
   - **f0_percentile** [float (0 <= f0_percentile <= 100), default: 8]: Percentile used for calculating the baseline fluorescence.
+
+#### Maintenance
+- **Description:** For debugging purposes, OptiNiSt provides setup_conda_* nodes. These nodes do not contain any analysis or processing, and are used to setup conda environments. If the Conda environment used by each Node has not yet been created, there is a function to automatically generate it in advance. See the [Debugging](debugging) page for more details.
+
+- **Input:** ImageData (setup_conda_mouse2p_image.tiff)
+- **Output:** None
+
+#### Custom
+- **Description:** Example minimal working node provided as an example for users to [add your own algorithm](Add-your-algorithm).
+- **Input:** ImageData
+- **Output:** FluoData, ImageData, HeatMapData
+- **Parameters:**
+  - **window_size** [int, default: 10]: Example
+  - **custom_params_nested**
+      - **threshold** [int, default: 0.5]: Example

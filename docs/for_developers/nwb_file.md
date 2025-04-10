@@ -101,7 +101,7 @@ info = {
 #### NWB Output
 
 - [CorrectedImageStack](https://pynwb.readthedocs.io/en/stable/pynwb.ophys.html#pynwb.ophys.CorrectedImageStack)
-  - [correncted](https://pynwb.readthedocs.io/en/stable/pynwb.image.html#pynwb.image.ImageSeries)
+  - [corrected](https://pynwb.readthedocs.io/en/stable/pynwb.image.html#pynwb.image.ImageSeries)
     - [external_file](https://pynwb.readthedocs.io/en/stable/pynwb.image.html#pynwb.image.ImageSeries.external_file)
     - [format](https://pynwb.readthedocs.io/en/stable/pynwb.image.html#pynwb.image.ImageSeries.format): 'external'
   - [xy_translation](https://pynwb.readthedocs.io/en/stable/pynwb.base.html#pynwb.base.TimeSeries)
@@ -219,6 +219,8 @@ save_data=['ops', 'fluorescence', 'all_roi', 'non_cell_roi', 'cell_roi', 'nwbfil
 save_json_data(ops, im, save_path=node_dirpath,
 save_data=['ops', 'fluorescence', 'all_roi', 'non_cell_roi', 'cell_roi'],
 )
+
+## Filter
 
 ## OptiNiSt
 

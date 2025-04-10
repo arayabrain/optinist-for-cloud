@@ -1,4 +1,6 @@
-# Add your Algorithm
+(Add-your-algorithm)=
+Add your algorithm
+=================
 
 ```{contents}
 :depth: 3
@@ -6,16 +8,12 @@
 
 ## Example of Algorithm Addition Procedure
 
-Below we describe an example procedure for adding a new algorithm.
-
-**Prerequisite**
-
-- Sample Algorithm Function Name ... `my_function`
-- {OPTINIST_SRC_DIR} ... Replace with the actual source storage directory path.
-
 ### 1. Prepare Necessary Directories and Files for the Algorithm
 
 First, prepare the necessary directories and files for the algorithm.
+
+- Sample Algorithm Function Name ... `my_function`
+- {OPTINIST_SRC_DIR} ... Replace with your actual source storage directory path.
 
 - {OPTINIST_SRC_DIR}/studio/app/optinist/wrappers/
 
@@ -45,11 +43,11 @@ from studio.app.common.dataclass import *
 
 - Explanation:
 
-  - If the required dataclass does not exist, you can add your own.
+  - If the required data class does not exist, you can add your own.
   - see. [DataClass](#data-classes)
 
-- Cautions:
-  - Error might show because dataclass is not specifieid. Please fix it with correct dataclass your using.
+- Caution:
+  - Error might show because data class is not specifieid. Please fix it with correct data class you are using.
 
 #### Define the Input/Output of the Function and Implement the Logic.
 
@@ -118,7 +116,12 @@ custom_wrapper_dict = {                       # (*1)
   - (\*4) Algorithm function name specifies the python function name
   - (\*5) The conda setting is optional, to be defined when using conda with snakemake (see example below)
 
-After the registration process up to this point, restart the application browser or click the refresh button beside the node title to confirm that the algorithm has been added.
+After the registration process up to this point, restart the application browser or click the refresh button beside the Nodes menu to confirm that the algorithm has been added.
+
+<p align="left">
+  <img src="../_static/add_algorithm/refresh.png" alt="Refresh button" style="width: 30%;" />
+</p>
+
 
 ### Definition of conda environment for the function
 
@@ -162,6 +165,7 @@ Optinist defines several [DataClasses](../specifications/data_nodes.md) to ensur
   - NWBFile
   - RoiData
   - SpikingActivityData,
+
 
 - OptiNiSt supports these data visualisation classes:
   - BarData
@@ -248,14 +252,15 @@ You can set plot title and axis labels to some outputs.
 To do this:
 
 1. import PlotMetaData in the algorithm function file.
-2. Add PlotMetaData to the output dataclass's `meta` attribute with title or labels you want. If you need only one of them, you can omit the other attributes.
+2. Add PlotMetaData to the output data class's `meta` attribute with title or labels you want. If you need only one of them, you can omit the other attributes.
 
 ## Complete custom node example
 
-{eval-rst}
+```{eval-rst}
 .. note::
-For development and debugging we have included a set of ipython notebooks
-The function below is reproduced in `notebooks/custom_node.ipynb` and can be run for testing and debugging your node. Once you are happy with the output, please use the above method to add your node to OptiNiSt.
+   For development and debugging we have included a set of ipython notebooks
+   The function below is reproduced in `notebooks/custom_node.ipynb` and can be run for testing and debugging your node. Once you are happy with the output, please use the above method to add your node to OptiNiSt.
+```
 
 ```python
 import numpy as np
@@ -346,7 +351,7 @@ params: dict = None, # Additional parameters to customize processing
 
 ```{eval-rst}
 .. note::
-    Following dataclasses are not supported to visualize these metadata.
+    Following data classes are not supported to visualize metadata.
 
     - CsvData
     - HTMLData
@@ -357,7 +362,7 @@ params: dict = None, # Additional parameters to customize processing
 Restart the Application, connect imageNode and run it, and you will see the output as follows.
 
 - Note:
-  - This is a quick process (only a few seconds), so if the process does not terminate, an error may have occurred. If the error persists, please submit a question to the issue.
+  - This is a quick process (only a few seconds), so if the process does not terminate, an error may have occurred. If the error persists, please submit a question as an issue on Github.
 
 ![](../_static/add_algorithm/run.png)
 
