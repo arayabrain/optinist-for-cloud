@@ -46,7 +46,7 @@ config_data = NWBGroupSpec(
 
 # Now we set up the builder and add this object
 
-export_nwb_namespace_file(name, ns_path, ext_source, [postprocess,config_data])
+export_nwb_namespace_file(name, ns_path, ext_source, [postprocess, config_data])
 
 load_namespaces(ns_path)
 
