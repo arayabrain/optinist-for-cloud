@@ -45,7 +45,7 @@ We're building in the open! You can explore the codebase, check out open issues,
 `Visit the Optinist GitHub Repository <https://github.com/oist/optinist>`_
 
 Join Our User Community on Slack
---------------
+--------------------------------
 We've launched a Slack workspace to provide a more casual space for discussions and interaction among users.
 
 `Join the Optinist User Community on Slack <https://join.slack.com/t/optinist-community/shared_invite/zt-32gtn36gx-stu8ywHn6L807k95zWVUkg>`_

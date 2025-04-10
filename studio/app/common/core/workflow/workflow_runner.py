@@ -10,6 +10,7 @@ import numpy as np
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.snakemake.smk import FlowConfig, Rule, SmkParam
 from studio.app.common.core.snakemake.snakemake_executor import (
@@ -250,7 +251,16 @@ class WorkflowNodeDataFilter:
         ).write()
 
     def _backup_original_data(self):
+        logger = AppLogger.get_logger()
+        logger.info(f"Backing up data to {ORIGINAL_DATA_EXT} before applying filter")
         shutil.copyfile(self.pkl_filepath, self.original_pkl_filepath)
+
+        # Back up NWB files in node directory
+        nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
+        for nwb_file in nwb_files:
+            original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
+            logger.info(f"Backing up NWB file: {nwb_file} → {original_nwb_file}")
+            shutil.copyfile(nwb_file, original_nwb_file)
 
         shutil.copyfile(self.cell_roi_filepath, self.original_cell_roi_filepath)
         shutil.copytree(
@@ -265,14 +275,37 @@ class WorkflowNodeDataFilter:
         )
 
     def _recover_original_data(self):
+        logger = AppLogger.get_logger()
+        logger.info("Recovering original data after filter removed")
+
+        # Restore original pickle file
         os.remove(self.pkl_filepath)
         shutil.move(self.original_pkl_filepath, self.pkl_filepath)
 
-        # trigger snakemake re-run next node by update modification time
+        # Trigger snakemake re-run next node by update modification time
         os.utime(
             self.pkl_filepath,
             (os.path.getctime(self.pkl_filepath), datetime.now().timestamp()),
         )
+
+        # Restore node NWB files
+        nwb_files = glob(join_filepath([self.node_dirpath, "[!tmp_]*.nwb"]))
+        for nwb_file in nwb_files:
+            original_nwb_file = nwb_file + ORIGINAL_DATA_EXT
+            os.remove(nwb_file)
+            shutil.move(original_nwb_file, nwb_file)
+            logger.info(f"Restored NWB file: {original_nwb_file} → {nwb_file}")
+
+        # Delete whole.nwb file to force regeneration without filter
+        whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
+        if os.path.exists(whole_nwb_path):
+            os.remove(whole_nwb_path)
+
+        # Read the restored data to regenerate whole.nwb
+        output_info = PickleReader.read(self.pkl_filepath)
+        if "nwbfile" in output_info:
+            Runner.save_all_nwb(whole_nwb_path, output_info["nwbfile"])
+            logger.info(f"Regenerated whole.nwb: {whole_nwb_path}")
 
         os.remove(self.cell_roi_filepath)
         shutil.move(self.original_cell_roi_filepath, self.cell_roi_filepath)
@@ -289,10 +322,23 @@ class WorkflowNodeDataFilter:
                 v.save_json(node_dirpath)
 
             if k == "nwbfile":
+                # Update local node NWB file
                 nwb_files = glob(join_filepath([node_dirpath, "[!tmp_]*.nwb"]))
-
                 if len(nwb_files) > 0:
-                    overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
+                    # Extract the node-specific data from nwbfile
+                    type_key = self.workflow_config.nodeDict[self.node_id].data.label
+                    if type_key in v:
+                        # Pass the node-specific data to overwrite_nwb
+                        overwrite_nwb(
+                            v[type_key], node_dirpath, os.path.basename(nwb_files[0])
+                        )
+                    else:
+                        # If type_key not in v, use the original method
+                        overwrite_nwb(v, node_dirpath, os.path.basename(nwb_files[0]))
+
+                # Update whole.nwb at workflow level
+                whole_nwb_path = join_filepath([self.workflow_dirpath, "whole.nwb"])
+                Runner.save_all_nwb(whole_nwb_path, v)
 
     @classmethod
     def filter_data(
@@ -302,11 +348,13 @@ class WorkflowNodeDataFilter:
         type: str,
         output_dir,
     ) -> dict:
+        logger = AppLogger.get_logger()
         im = output_info["edit_roi_data"].im
         fluorescence = output_info["fluorescence"].data
         dff = output_info["dff"].data if output_info.get("dff") else None
         iscell = output_info["iscell"].data
 
+        # Apply filters
         if data_filter_param.dim1:
             dim1_filter_mask = data_filter_param.dim1_mask(
                 max_size=fluorescence.shape[1]
@@ -321,11 +369,76 @@ class WorkflowNodeDataFilter:
 
         nwbfile = output_info["nwbfile"]
         function_id = list(nwbfile[type][NWBDATASET.POSTPROCESS].keys())[0]
-        nwbfile[type][NWBDATASET.COLUMN][function_id]["data"] = iscell
-        nwbfile[type][NWBDATASET.FLUORESCENCE][function_id]["Fluorescence"][
-            "data"
-        ] = fluorescence.T
+        filtered_function_id = f"filtered_{function_id}"
 
+        # 1. Create ROI section with filtered_function_id
+        if NWBDATASET.ROI in nwbfile[type]:
+            nwbfile[type][NWBDATASET.ROI][filtered_function_id] = nwbfile[type][
+                NWBDATASET.ROI
+            ][function_id]
+
+        # 2. Create COLUMN section with filtered_function_id
+        if NWBDATASET.COLUMN in nwbfile[type]:
+            # Copy structure first if it doesn't exist
+            if filtered_function_id not in nwbfile[type][NWBDATASET.COLUMN]:
+                nwbfile[type][NWBDATASET.COLUMN][filtered_function_id] = dict(
+                    nwbfile[type][NWBDATASET.COLUMN][function_id]
+                )
+            # Update with filtered data
+            nwbfile[type][NWBDATASET.COLUMN][filtered_function_id]["data"] = iscell
+
+        # 3. Create FLUORESCENCE section with filtered_function_id
+        if NWBDATASET.FLUORESCENCE in nwbfile[type]:
+            # Copy structure first if it doesn't exist
+            if filtered_function_id not in nwbfile[type][NWBDATASET.FLUORESCENCE]:
+                nwbfile[type][NWBDATASET.FLUORESCENCE][filtered_function_id] = dict(
+                    nwbfile[type][NWBDATASET.FLUORESCENCE][function_id]
+                )
+            # Update with filtered data
+            nwbfile[type][NWBDATASET.FLUORESCENCE][filtered_function_id][
+                "Fluorescence"
+            ]["data"] = fluorescence.T
+
+        # 4. Add filter parameters to optinist section
+        logger.info(
+            f"Saving filter ROI {data_filter_param.roi}, Time {data_filter_param.dim1}"
+        )
+        if filtered_function_id not in nwbfile[type][NWBDATASET.POSTPROCESS]:
+            nwbfile[type][NWBDATASET.POSTPROCESS][filtered_function_id] = {}
+
+            # Process ROI filter indices if they exist
+            if data_filter_param.roi:
+                filtered_roi_indices = []
+                for range_param in data_filter_param.roi:
+                    if range_param.end:  # Check if end is defined
+                        filtered_roi_indices.extend(
+                            range(range_param.start, range_param.end)
+                        )
+                    else:
+                        filtered_roi_indices.append(
+                            range_param.start
+                        )  # Just add the start if no end
+                filtered_roi_indices = np.array(filtered_roi_indices, dtype="float")
+                nwbfile[type][NWBDATASET.POSTPROCESS][filtered_function_id][
+                    "filter_roi_ind"
+                ] = filtered_roi_indices
+
+            # Process dimension 1 filter indices if they exist
+            if data_filter_param.dim1:
+                filtered_dim1_indices = []
+                for range_param in data_filter_param.dim1:
+                    if range_param.end:  # Check if end is defined
+                        filtered_dim1_indices.extend(
+                            range(range_param.start, range_param.end)
+                        )
+                    else:
+                        filtered_dim1_indices.append(range_param.start)
+                filtered_dim1_indices = np.array(filtered_dim1_indices, dtype="float")
+                nwbfile[type][NWBDATASET.POSTPROCESS][filtered_function_id][
+                    "filter_time_ind"
+                ] = filtered_dim1_indices
+
+        # Build return info
         info = {
             **output_info,
             "cell_roi": RoiData(
