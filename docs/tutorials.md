@@ -77,9 +77,9 @@ You can also see a heatmap of all of the data using `mean_heatmap`. If you want 
 </p>
 
 ## Practice with Tutorial 2 & 3
-Now it's your turn. Try loading `Tutorial 2` from the `Record` tab. Tutorial 2 uses CaImAn, while tutorial 3 uses LCCD. Give them all a try and compare different ROI produced on the same data. They are surprisingly different! Don't forget to `RUN` it the first time.
+Now it's your turn. Try loading `Tutorial 2` from the `Record` tab. Tutorial 2 uses CaImAn, while `Tutorial 3` uses LCCD. Give all the tutorials a try and compare different ROI produced on the same data. The results are surprisingly different! Don't forget to `RUN` it the first time.
 
-For Tutorial 2, if you check the Visualise output of `explained_variance` and `projectedNd`, you would recreate the figure below.
+For `Tutorial 2`, if you check the Visualise output of `explained_variance` and `projectedNd`, you would recreate the figure below.
 
 <p align="center">
 <img width="600px" src="./_static/tutorials/PCA.png" alt="Whole" />

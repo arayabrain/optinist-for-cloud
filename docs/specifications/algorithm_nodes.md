@@ -621,7 +621,7 @@ OptiNiSt includes a variety of third-party calcium (Ca<sup>2+</sup>) imaging sof
 - **Output:** None
 
 #### Custom
-- **Description:** Example minimal working node provided as an example for users to [add your own algorithm](Add-your-algorithm).
+- **Description:** Example minimal working node provided as an example for users to [add their own algorithm](Add-your-algorithm).
 - **Input:** ImageData
 - **Output:** FluoData, ImageData, HeatMapData
 - **Parameters:**

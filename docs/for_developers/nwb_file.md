@@ -220,7 +220,6 @@ save_json_data(ops, im, save_path=node_dirpath,
 save_data=['ops', 'fluorescence', 'all_roi', 'non_cell_roi', 'cell_roi'],
 )
 
-## Filter
 
 ## OptiNiSt
 

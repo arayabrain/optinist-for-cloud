@@ -380,15 +380,15 @@ Once you apply the filter you must `RUN` in order for the filter to be applied d
 Filtered data will be saved to the output NWB file once `RUN` has been performed. Filtered data will be saved in the same folders as the ROI detection algorithm, and additionally filter parameters will be saved in the optinist directory of the NWB. For example for CaImAn:
 - ophys
   - ImageSegmentation
-    - **filtered_**caiman_cnmf_xxxx (id...iscell)
+    - **filtered_caiman_cnmf_xxxx (id...iscell)**
     - caiman_cnmf_xxxx (id...iscell)
-  - **filtered_**caiman_cnmf_xxxx
+  - **filtered_caiman_cnmf_xxxx**
     - Fluorescence (data, rois, ...)
   - caiman_cnmf_xxxx
     - Fluorescence (data, rois, ...)
 - optinist
-  - **filtered_**caiman_cnmf_xxxx_filter_roi_ind
-  - **filtered_**caiman_cnmf_xxxx_filter_time_ind
+  - **filtered_caiman_cnmf_xxxx_filter_roi_ind**
+  - **filtered_caiman_cnmf_xxxx_filter_time_ind**
 
 (DirectorySettings)=
 ## Directory Settings
