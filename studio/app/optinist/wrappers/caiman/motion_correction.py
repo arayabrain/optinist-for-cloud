@@ -10,6 +10,7 @@ from studio.app.common.core.utils.filepath_creater import (
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import RoiData
+from studio.app.optinist.wrappers.caiman.caiman_utils import CaimanUtils
 from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
@@ -25,10 +26,17 @@ def caiman_mc(
     from caiman.source_extraction.cnmf.params import CNMFParams
 
     function_id = ExptOutputPathIds(output_dir).function_id
+    unique_id = ExptOutputPathIds(output_dir).unique_id
     logger.info(f"start caiman motion_correction: {function_id}")
+
     flattened_params = {}
     recursive_flatten_params(params, flattened_params)
     params = flattened_params
+
+    # Specify a unique CAIMAN_TEMPDIR
+    # *To avoid collisions of temporary files (memmap files)
+    mc_unique_id = f"{unique_id}_{function_id}"
+    CaimanUtils.set_caimam_byid_tempdir(mc_unique_id)
 
     opts = CNMFParams()
 
@@ -96,7 +104,18 @@ def caiman_mc(
     }
 
     # Clean up temporary files
-    __handle_mmap_cleanup(mc, fname_new, output_dir)
+    try:
+        __handle_mmap_cleanup(mc, fname_new, output_dir)
+    except Exception as e:
+        logger.error("caiman_mc: Failed to cleanup memmap files.")
+        logger.error(e)
+
+    # Clean up unique CAIMAN_TEMPDIR
+    try:
+        CaimanUtils.cleanup_caiman_byid_tempdir(mc_unique_id)
+    except Exception as e:
+        logger.error("caiman_mc: Failed to cleanup tempdir.")
+        logger.error(e)
 
     return info
 
@@ -150,4 +169,8 @@ def __move_file_safely(src: str, dest: str) -> None:
         elif os.path.isdir(dest):
             shutil.rmtree(dest)
 
-    shutil.move(src, dest)
+    if os.path.exists(src):
+        try:
+            shutil.move(src, dest)
+        except FileNotFoundError:
+            logger.warning("caiman_mc: Failed to cleanup move files.")
