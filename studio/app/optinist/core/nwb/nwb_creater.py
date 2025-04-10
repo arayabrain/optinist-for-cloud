@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from datetime import datetime
@@ -16,8 +17,9 @@ from pynwb.ophys import (
     TwoPhotonSeries,
 )
 
+from studio.app.common.core.logger import AppLogger
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
-from studio.app.optinist.core.nwb.optinist_data import PostProcess
+from studio.app.optinist.core.nwb.optinist_data import ConfigData, PostProcess
 
 
 class NWBCreater:
@@ -290,6 +292,32 @@ class NWBCreater:
         return nwbfile
 
     @classmethod
+    def store_config(cls, nwbfile, function_id, config_data):
+        """Add configuration data to the NWB file."""
+        logger = AppLogger.get_logger()
+        for key, value in config_data.items():
+            config_name = f"{function_id}_{key}"
+
+            try:
+                # Convert any non-string data to JSON
+                if not isinstance(value, str):
+                    value = json.dumps(value)
+
+                # Pass config_json as an initializer argument
+                config_container = ConfigData(name=config_name, config_json=value)
+
+                try:
+                    nwbfile.processing["optinist"].add_container(config_container)
+                except ValueError:
+                    nwbfile.processing["optinist"].data_interfaces.pop(config_name)
+                    nwbfile.processing["optinist"].add_container(config_container)
+
+            except Exception as e:
+                logger.warning(f"Failed to add config data to NWB: {e}")
+
+        return nwbfile
+
+    @classmethod
     def re_acquisition(cls, nwbfile: NWBFile):
         new_nwbfile = NWBFile(
             session_description=nwbfile.session_description,
@@ -407,6 +435,12 @@ def set_nwbconfig(nwbfile, config):
                 config[NWBDATASET.FLUORESCENCE][function_key],
             )
 
+    if NWBDATASET.CONFIG in config:
+        for function_key in config[NWBDATASET.CONFIG]:
+            nwbfile = NWBCreater.store_config(
+                nwbfile, function_key, config[NWBDATASET.CONFIG][function_key]
+            )
+
     return nwbfile
 
 
@@ -462,6 +496,7 @@ def merge_nwbfile(old_nwbfile, new_nwbfile):
         NWBDATASET.FLUORESCENCE,
         NWBDATASET.BEHAVIOR,
         NWBDATASET.IMAGE_SERIES,
+        NWBDATASET.CONFIG,
     ]:
         if pattern in old_nwbfile and pattern in new_nwbfile:
             for function_id in new_nwbfile[pattern]:
