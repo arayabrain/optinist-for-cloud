@@ -1,12 +1,16 @@
 import os
 import time
+from typing import List, Union
 
 from filelock import FileLock
 from pynwb.spec import NWBGroupSpec, NWBNamespaceBuilder
 
 
 def export_nwb_namespace_file(
-    ns_name: str, ns_path: str, ext_path: str, group_spec: NWBGroupSpec
+    ns_name: str,
+    ns_path: str,
+    ext_path: str,
+    group_spec: Union[NWBGroupSpec, List[NWBGroupSpec]],
 ):
     """
     Generation of NWB namespace file (*.extensions.yaml)
@@ -27,5 +31,13 @@ def export_nwb_namespace_file(
             ns_builder = NWBNamespaceBuilder(
                 f"{ns_name} extensions", ns_name, version="0.1.0"
             )
-            ns_builder.add_spec(ext_path, group_spec)
+
+            if isinstance(group_spec, list):
+                group_specs = group_spec
+            else:
+                group_specs = [group_spec]
+
+            for spec in group_specs:
+                ns_builder.add_spec(ext_path, spec)
+
             ns_builder.export(ns_path)

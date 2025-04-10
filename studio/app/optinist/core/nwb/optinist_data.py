@@ -31,10 +31,24 @@ postprocess = NWBGroupSpec(
     neurodata_type_inc="NWBDataInterface",
 )
 
+config_data = NWBGroupSpec(
+    doc="configuration data",
+    datasets=[
+        NWBDatasetSpec(
+            doc="configuration as JSON string",
+            name="config_json",
+            dtype="text",  # Use text datatype for strings
+        )
+    ],
+    neurodata_type_def="ConfigData",
+    neurodata_type_inc="NWBDataInterface",
+)
+
 # Now we set up the builder and add this object
 
-export_nwb_namespace_file(name, ns_path, ext_source, postprocess)
+export_nwb_namespace_file(name, ns_path, ext_source, [postprocess, config_data])
 
 load_namespaces(ns_path)
 
 PostProcess = get_class("PostProcess", name)
+ConfigData = get_class("ConfigData", name)
