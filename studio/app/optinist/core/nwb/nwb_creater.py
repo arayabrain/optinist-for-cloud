@@ -306,11 +306,19 @@ class NWBCreater:
                 # Pass config_json as an initializer argument
                 config_container = ConfigData(name=config_name, config_json=value)
 
+                # Create "config" processing module if it doesn't exist
+                if "config" not in nwbfile.processing:
+                    nwbfile.create_processing_module(
+                        name="config",
+                        description="Configuration data for the experiment",
+                    )
+
                 try:
-                    nwbfile.processing["optinist"].add_container(config_container)
+                    nwbfile.processing["config"].add_container(config_container)
                 except ValueError:
-                    nwbfile.processing["optinist"].data_interfaces.pop(config_name)
-                    nwbfile.processing["optinist"].add_container(config_container)
+                    # Remove existing container if it exists
+                    nwbfile.processing["config"].data_interfaces.pop(config_name, None)
+                    nwbfile.processing["config"].add_container(config_container)
 
             except Exception as e:
                 logger.warning(f"Failed to add config data to NWB: {e}")
