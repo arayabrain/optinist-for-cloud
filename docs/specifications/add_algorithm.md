@@ -130,7 +130,12 @@ If your function requires specific packages, you can set them using a conda env 
 ```yaml
 dependencies:
   - python=3.9 # Add the dependencies needed for you function
+  - numpy<2 # Exclude numpy 2.x versions
 ```
+
+- Note:
+  - Currently, Optinist packages supports NumPy versions below 2. Please ensure that your Conda environment is configured with an appropriate version of NumPy.
+  - If you plan to use NumPy 2.x or higher, ensure all other packages in your environment are compatible with it.
 
 ### Check your custom node inputs and outputs
 
