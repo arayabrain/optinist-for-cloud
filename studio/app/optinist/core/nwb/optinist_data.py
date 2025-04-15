@@ -1,5 +1,7 @@
 from pynwb import get_class, load_namespaces
-from pynwb.spec import NWBDatasetSpec, NWBGroupSpec, NWBNamespaceBuilder
+from pynwb.spec import NWBDatasetSpec, NWBGroupSpec
+
+from studio.app.optinist.core.nwb.nwb_loader import export_nwb_namespace_file
 
 name = "optinist"
 ns_path = f"{name}.namespace.yaml"
@@ -44,11 +46,9 @@ config_data = NWBGroupSpec(
 
 # Now we set up the builder and add this object
 
-ns_builder = NWBNamespaceBuilder(f"{name} extensions", name, version="0.1.0")
-ns_builder.add_spec(ext_source, postprocess)
-ns_builder.add_spec(ext_source, config_data)
-ns_builder.export(ns_path)
+export_nwb_namespace_file(name, ns_path, ext_source, [postprocess, config_data])
 
 load_namespaces(ns_path)
+
 PostProcess = get_class("PostProcess", name)
 ConfigData = get_class("ConfigData", name)

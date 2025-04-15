@@ -1,5 +1,6 @@
 import os
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from typing import Dict
 
 from snakemake import snakemake
@@ -15,20 +16,42 @@ logger = AppLogger.get_logger()
 
 
 def snakemake_execute(workspace_id: str, unique_id: str, params: SmkParam):
+    with ProcessPoolExecutor(max_workers=1) as executor:
+        logger.info("start snakemake running process.")
+
+        future = executor.submit(
+            _snakemake_execute_process, workspace_id, unique_id, params
+        )
+        future_result = future.result()
+
+        logger.info("finish snakemake running process. result: %s", future_result)
+
+        return future_result
+
+
+def _snakemake_execute_process(
+    workspace_id: str, unique_id: str, params: SmkParam
+) -> bool:
     smk_logger = SmkStatusLogger(workspace_id, unique_id)
+    smk_workdir = join_filepath(
+        [
+            DIRPATH.OUTPUT_DIR,
+            workspace_id,
+            unique_id,
+        ]
+    )
 
     result = snakemake(
         DIRPATH.SNAKEMAKE_FILEPATH,
         forceall=params.forceall,
         cores=params.cores,
         use_conda=params.use_conda,
-        workdir=f"{os.path.dirname(DIRPATH.STUDIO_DIR)}",
+        conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
+        workdir=smk_workdir,
         configfiles=[
             join_filepath(
                 [
-                    DIRPATH.OUTPUT_DIR,
-                    workspace_id,
-                    unique_id,
+                    smk_workdir,
                     DIRPATH.SNAKEMAKE_CONFIG_YML,
                 ]
             )
@@ -42,6 +65,8 @@ def snakemake_execute(workspace_id: str, unique_id: str, params: SmkParam):
         logger.error("snakemake_execute failed..")
 
     smk_logger.clean_up()
+
+    return result
 
 
 def delete_dependencies(

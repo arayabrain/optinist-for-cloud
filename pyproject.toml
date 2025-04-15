@@ -82,6 +82,7 @@ ruamel-yaml = "^0.18.5"
 pymatreader = "^0.0.32"
 xmltodict = "*"
 matplotlib = "3.7.*"
+concurrent-log-handler = "^0.9.25"
 
 [tool.poetry.group.dev]
 optional = true
@@ -125,8 +126,8 @@ profile = "black"
 
 [tool.pytest.ini_options]
 pythonpath = "."
-testpaths = "studio/tests"
-env = ["OPTINIST_DIR=studio/test_data"]
+testpaths = "/app/studio/tests"
+env = ["OPTINIST_DIR=/app/studio/test_data"]
 filterwarnings = [
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning",
