@@ -223,7 +223,7 @@ class Runner:
             output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
                 "conda_config"
             ] = config_str
-            logger.info(f"Added conda env'{conda_name}' config {config_str} to NWB")
+            # logger.info(f"Added conda env'{conda_name}' config {config_str} to NWB")
         except Exception as e:
             logger.info(f"Failed to add conda environment config to NWB file: {e}")
 
@@ -233,7 +233,7 @@ class Runner:
             output_info["nwbfile"][NWBDATASET.CONFIG][function_id][
                 "node_params"
             ] = params_str
-            logger.info(f"Added node '{function_id}' params {params_str} to NWB")
+            # logger.info(f"Added node '{function_id}' params {params_str} to NWB")
         except Exception as e:
             logger.warning(f"Failed to add node parameters to NWB file: {e}")
 
