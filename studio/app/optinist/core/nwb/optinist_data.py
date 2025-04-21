@@ -1,54 +1,9 @@
 from pynwb import get_class, load_namespaces
-from pynwb.spec import NWBDatasetSpec, NWBGroupSpec
 
-from studio.app.optinist.core.nwb.nwb_loader import export_nwb_namespace_file
+from studio.app.optinist.core.nwb.nwb_spec_utils import get_namespace_file_path
+from studio.app.optinist.core.nwb.specs.optinist_spec import NAME
 
-name = "optinist"
-ns_path = f"{name}.namespace.yaml"
-ext_source = f"{name}.extensions.yaml"
+load_namespaces(get_namespace_file_path(NAME))
 
-# Now we define the data structures. We use `NWBDataInterface` as the base type,
-# which is the most primitive type you are likely to use as a base. The name of the
-# class is `CorticalSurface`, and it requires two matrices, `vertices` and
-# `faces`.
-
-postprocess = NWBGroupSpec(
-    doc="postprocess",
-    datasets=[
-        NWBDatasetSpec(
-            doc="data",
-            shape=[
-                (None,),
-                (None, None),
-                (None, None, None),
-                (None, None, None, None),
-            ],
-            name="data",
-            dtype="float",
-        )
-    ],
-    neurodata_type_def="PostProcess",
-    neurodata_type_inc="NWBDataInterface",
-)
-
-config_data = NWBGroupSpec(
-    doc="configuration data",
-    datasets=[
-        NWBDatasetSpec(
-            doc="configuration as JSON string",
-            name="config_json",
-            dtype="text",  # Use text datatype for strings
-        )
-    ],
-    neurodata_type_def="ConfigData",
-    neurodata_type_inc="NWBDataInterface",
-)
-
-# Now we set up the builder and add this object
-
-export_nwb_namespace_file(name, ns_path, ext_source, [postprocess, config_data])
-
-load_namespaces(ns_path)
-
-PostProcess = get_class("PostProcess", name)
-ConfigData = get_class("ConfigData", name)
+PostProcess = get_class("PostProcess", NAME)
+ConfigData = get_class("ConfigData", NAME)
