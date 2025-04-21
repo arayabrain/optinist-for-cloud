@@ -19,7 +19,7 @@ def export_spec_files(
     file_cache_interval: int = 60,
 ):
     """
-    Generation of NWB namespace fils
+    Generation of NWB namespace files
       (*.namespace.yaml, *.extensions.yaml)
     """
 
@@ -58,8 +58,8 @@ def export_spec_files(
 
             try:
                 # ATTENTION:
-                #  There seems to be a restriction that the extensions file is automatically
-                # created in the current directory.
+                #  There seems to be a restriction that the extensions file
+                #  is automatically created in the current directory.
                 #  Therefore, before generating the extensions file,
                 # move the current directory to the output path.
                 # *The extensions file is generated in NWBNamespaceBuilder.export.

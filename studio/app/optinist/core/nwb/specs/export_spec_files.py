@@ -15,8 +15,6 @@ if __name__ == "__main__":
     from studio.app.optinist.core.nwb.specs.optinist_spec import (
         GROUP_SPEC as OPTINIST_GROUP_SPEC,
     )
-    from studio.app.optinist.core.nwb.specs.optinist_spec import (
-        NAME as OPTINIST_NAME,
-    )
+    from studio.app.optinist.core.nwb.specs.optinist_spec import NAME as OPTINIST_NAME
 
     export_spec_files(OPTINIST_NAME, OPTINIST_GROUP_SPEC, 0)
