@@ -30,6 +30,11 @@ Please follow instructions below.
     - `Miniforge3-Windows-x86_64.exe`
       - _The latest version is fine._
 
+#### Install Git tool
+
+- Install Git for Windows
+  - [https://gitforwindows.org/](https://github.com/conda-forge/miniforge/releases)
+
 ##### setting configs
 
 On the Terminal (Miniforge Prompt, etc)
