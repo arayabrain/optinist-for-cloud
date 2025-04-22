@@ -33,7 +33,7 @@ Please follow instructions below.
 #### Install Git tool
 
 - Install Git for Windows
-  - [https://gitforwindows.org/](https://github.com/conda-forge/miniforge/releases)
+  - [https://gitforwindows.org/](https://gitforwindows.org/)
 
 ##### setting configs
 
