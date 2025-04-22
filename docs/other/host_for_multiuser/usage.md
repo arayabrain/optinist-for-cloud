@@ -130,6 +130,7 @@ So, in the image above,
   - Create new user (By clicking "Add" button)
   - Edit users' name, role, email (By clicking edit icon in the users' row)
   - Delete users (By clicking delete icon in the users' row)
+  - Switch to another user (Proxy sign in) (By clicking door icon in the users' row)
 
 <br>
 <p align="center">

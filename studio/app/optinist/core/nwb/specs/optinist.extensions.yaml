@@ -1,0 +1,26 @@
+groups:
+- neurodata_type_def: PostProcess
+  neurodata_type_inc: NWBDataInterface
+  doc: postprocess
+  datasets:
+  - name: data
+    dtype: float
+    shape:
+    - - null
+    - - null
+      - null
+    - - null
+      - null
+      - null
+    - - null
+      - null
+      - null
+      - null
+    doc: data
+- neurodata_type_def: ConfigData
+  neurodata_type_inc: NWBDataInterface
+  doc: configuration data
+  datasets:
+  - name: config_json
+    dtype: text
+    doc: configuration as JSON string

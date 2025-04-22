@@ -37,14 +37,14 @@ You can create a new workflow by clicking the + button.
 
 ```{eval-rst}
 .. caution::
-   By creating workflow, current workflow will be deleted.
+   By creating a new workflow, current workflow will be deleted.
 
-   The records are kept if you have already run the workflow. You can reproduce the workflow from RECORD tab. See details :ref:`here <ReproduceButton>`.
+   The records are kept if you have already RUN the workflow. You can reproduce the workflow from RECORD tab. See details :ref:`here <ReproduceButton>`.
 ```
 
 ### Adding Nodes
 
-Select Data or Algorithm node from the treeview on the left.
+Select or drag Data or Algorithm nodes from the treeview on the left.
 Clicking the + button adds the analysis nodes to the Workflow field.
 
 <br>
@@ -186,7 +186,8 @@ Each algorithm node has PARAM button and OUTPUT button.
 - **PARAM**
 
   You can see or edit parameters for the algorithm.
-  Clicking param button, the parameters are displayed in the right side of the window.
+  Clicking `PARAM` button, the parameters are displayed in the right side of the window.
+  More information on each parameter can be found by clicking the external link icon which links to our [Algorithm Specifications](algorithm_nodes) page.
 
   <br>
   <p align="center">
@@ -343,6 +344,8 @@ Before applying filters, make sure that you have executed the workflow. For exam
 
 ##### 2. Selecting the Filter Option
 
+The filter placeholder values tell you the accepted range, based on the current data. Values can be added as comma-seaparated single integers or as a range, for example: 0, 1, 4:10.
+
 If you want to filter ROI data within a specific range (e.g., 0 to 100), follow these steps:
 
 1. Locate the `suite2p_roi` node in your workflow.
@@ -367,11 +370,25 @@ If you want to filter ROI data within a specific range (e.g., 0 to 100), follow 
 
 ##### 4. Running the Workflow
 
-Once you apply the filter:
+Once you apply the filter you must `RUN` in order for the filter to be applied downstream.
 
 - The `suite2p_roi` node will start **loading**.
 - When loading completes, the `eta` node will be highlighted in **yellow**.
 - Click the **RUN** button to execute the workflow and apply the filter changes.
+
+##### 5. Filter output
+Filtered data will be saved to the output NWB file once `RUN` has been performed. Filtered data will be saved in the same folders as the ROI detection algorithm, and additionally filter parameters will be saved in the optinist directory of the NWB. For example for CaImAn:
+- ophys
+  - ImageSegmentation
+    - **filtered_caiman_cnmf_xxxx (id...iscell)**
+    - caiman_cnmf_xxxx (id...iscell)
+  - **filtered_caiman_cnmf_xxxx**
+    - Fluorescence (data, rois, ...)
+  - caiman_cnmf_xxxx
+    - Fluorescence (data, rois, ...)
+- optinist
+  - **filtered_caiman_cnmf_xxxx_filter_roi_ind**
+  - **filtered_caiman_cnmf_xxxx_filter_time_ind**
 
 (DirectorySettings)=
 ## Directory Settings

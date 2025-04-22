@@ -25,9 +25,13 @@ Follow the steps in the `Install Tools` section for each platform below.
     - [Install Tools](../users/mac.md#install-tools)
   - Windows WSL
     - [Install Tools](../users/windows_wsl.md#install-tools)
+
 - Other platforms
   - Windows Native
-    - [Install Tools](../users/windows_native.md#install-tools)
+    1. [Install Tools](../users/windows_native.md#install-tools)
+    2. Install Unix commands
+        - Commands included in "Git for Windows" are available
+        - Add `{Git for Windows installation path}\usr\bin` to the Windows environment variable "PATH"
 
 #### Install Node.js
 

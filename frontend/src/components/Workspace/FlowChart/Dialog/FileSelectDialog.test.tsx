@@ -37,6 +37,7 @@ describe("TreeItemLabel Component", () => {
     render(
       <Provider store={store}>
         <TreeItemLabel
+          multiSelect={true}
           fileType="image"
           shape={[100, 100]}
           label="testFile"
@@ -69,6 +70,7 @@ describe("TreeItemLabel Component", () => {
     render(
       <Provider store={store}>
         <TreeItemLabel
+          multiSelect={true}
           fileType="image"
           shape={[100, 100]}
           label="testFile"
@@ -95,6 +97,7 @@ describe("TreeItemLabel Component", () => {
     render(
       <Provider store={store}>
         <TreeItemLabel
+          multiSelect={true}
           fileType="image"
           shape={[100, 100]}
           label="testFile"
@@ -114,6 +117,7 @@ describe("TreeItemLabel Component", () => {
     render(
       <Provider store={store}>
         <TreeItemLabel
+          multiSelect={true}
           fileType="image"
           shape={[100, 100]}
           label="testFile"

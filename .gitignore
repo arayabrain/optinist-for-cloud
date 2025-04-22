@@ -7,8 +7,7 @@ __pycache__
 dist
 /build
 
-*.extensions.yaml
-*.namespace.yaml
+*.namespace.yaml.lock
 
 files/*
 Pipfile.lock
@@ -22,7 +21,7 @@ docs/_build
 
 studio/notebooks
 conda/envs/*
-tensorflow-2.4.1-py3-none-any.whl
+tensorflow-*.whl
 
 .env*
 !*.env.example
