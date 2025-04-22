@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from glob import glob
 from typing import Dict, List
@@ -53,7 +54,23 @@ class EditRoiUtils:
         return algo
 
     @classmethod
-    def execute(cls, filepath):
+    def execute(cls, filepath: set):
+        result = False
+
+        with ProcessPoolExecutor(max_workers=1) as executor:
+            logger.info("start snakemake edit_roi process.")
+
+            future = executor.submit(cls._execute_process, filepath)
+            result = future.result()
+
+            logger.info("finish snakemake edit_roi process. result: %s", result)
+
+        if not result:
+            logger.error("edit_ROI snakemake run failed.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @classmethod
+    def _execute_process(cls, filepath: str) -> bool:
         result = snakemake(
             DIRPATH.SNAKEMAKE_FILEPATH,
             use_conda=True,
@@ -66,9 +83,7 @@ class EditRoiUtils:
             },
         )
 
-        if not result:
-            logger.error("edit_ROI snakemake run failed.")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return result
 
 
 class EditROI:

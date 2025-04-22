@@ -7,8 +7,7 @@ from sqlmodel import create_engine
 from studio.app.common.db.config import DATABASE_CONFIG
 
 
-@lru_cache
-def get_engine():
+def get_new_engine():
     return create_engine(
         DATABASE_CONFIG.DATABASE_URL,
         pool_recycle=360,
@@ -16,8 +15,13 @@ def get_engine():
     )
 
 
-def get_session():
-    engine = get_engine()
+@lru_cache
+def get_cached_engine():
+    return get_new_engine()
+
+
+def get_session(use_cache: bool = True):
+    engine = get_cached_engine() if use_cache else get_new_engine()
     SessionLocal = sessionmaker(
         autocommit=False, autoflush=False, expire_on_commit=False, bind=engine
     )
@@ -25,8 +29,8 @@ def get_session():
 
 
 @contextmanager
-def session_scope():
-    session = get_session()
+def session_scope(use_cache: bool = True):
+    session = get_session(use_cache)
     try:
         yield session
         session.commit()
@@ -37,9 +41,9 @@ def session_scope():
         session.close()
 
 
-def get_db():
+def get_db(use_cache: bool = True):
     try:
-        db = get_session()
+        db = get_session(use_cache)
         yield db
     finally:
         db.close()
