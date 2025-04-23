@@ -19,23 +19,25 @@ In RECORD table, you can:
   - Snakemake config file
   - Results as NWB files
 - Copy workflow record
+- Check the output data usage
 - Delete workflow record
 
 <p align="center">
 <img width="600px" src="../_static/record/table.png" alt="Record table"/>
 </p>
 
-| Header    | Description                                                                                                                                                       |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Timestamp | Latest execution timestamp. <br>It shows start time, end time and elapsed time of the workflow.                                                                   |
-| ID        | Workflow's unique id. <br>This is same as the directory name for the whole results of the workflow.                                                               |
-| Name      | User-defined workflow name. You can edit the name by clicking the name.                                                                                           |
-| Success   | Workflow's status. Success, error or running.                                                                                                                     |
-| Reproduce | Button to reproduce the workflow to the WORKFLOW field. <br>You can visualize the results for the workflow by clicking the button.                                |
-| Workflow  | Button to download the workflow config yaml file. <br>This file can be used on import workflow button on WORKFLOW tab. <br>See details in [](ImportWorkflowYaml). |
-| SnakeFile | Button to download the snakemake config file.                                                                                                                     |
-| NWB       | Button to download the analysis results as NWB file.                                                                                                              |
-| Delete    | Button to delete the workflow record from the OPTINIST_DIR.                                                                                                       |
+| Header     | Description                                                                                                                                                       |
+| ---------  | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Timestamp  | Latest execution timestamp. <br>It shows start time, end time and elapsed time of the workflow.                                                                   |
+| ID         | Workflow's unique id. <br>This is same as the directory name for the whole results of the workflow.                                                               |
+| Name       | User-defined workflow name. You can edit the name by clicking the name.                                                                                           |
+| Data Usage | Record Output data usage can be checked with this.                                                                                                                |
+| Success    | Workflow's status. Success, error or running.                                                                                                                     |
+| Reproduce  | Button to reproduce the workflow to the WORKFLOW field. <br>You can visualize the results for the workflow by clicking the button.                                |
+| Workflow   | Button to download the workflow config yaml file. <br>This file can be used on import workflow button on WORKFLOW tab. <br>See details in [](ImportWorkflowYaml). |
+| SnakeFile  | Button to download the snakemake config file.                                                                                                                     |
+| NWB        | Button to download the analysis results as NWB file.                                                                                                              |
+| Delete     | Button to delete the workflow record from the OPTINIST_DIR.                                                                                                       |
 
 ### Details
 
