@@ -1,12 +1,3 @@
----
-name: Default
-about: Default template for Pull Request
-title: ''
-labels: ''
-assignees: ''
-
----
-
 ### Content
 > *Describes a content of the pull request
 
