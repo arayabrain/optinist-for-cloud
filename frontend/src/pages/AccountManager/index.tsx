@@ -689,7 +689,7 @@ const AccountManager = () => {
       ],
     },
     {
-      headerName: "Data usage",
+      headerName: "Data size",
       field: "data_usage",
       renderCell: (params: GridRenderCellParams<GridValidRowModel>) => {
         return convertBytes(params.value)

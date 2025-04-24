@@ -470,7 +470,7 @@ const HeadItem = memo(function HeadItem({
             direction={order}
             onClick={sortHandler("data_usage")}
           >
-            Data usage
+            Data size
           </TableSortLabel>
         </TableCell>
         <TableCell>Success</TableCell>
