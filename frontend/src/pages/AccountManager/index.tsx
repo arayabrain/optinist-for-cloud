@@ -45,6 +45,7 @@ import { isRejectedWithValue } from "@reduxjs/toolkit"
 import { ROLE } from "@types"
 import { AddUserDTO, UserDTO } from "api/users/UsersApiDTO"
 import { ConfirmDialog } from "components/common/ConfirmDialog"
+import DeleteConfirmModal from "components/common/DeleteConfirmModal"
 import InputError from "components/common/InputError"
 import Loading from "components/common/Loading"
 import PaginationCustom from "components/common/PaginationCustom"
@@ -288,6 +289,7 @@ const AccountManager = () => {
   const admin = useSelector(isAdmin)
 
   const [openModal, setOpenModal] = useState(false)
+  const [textDelete, setTextDelete] = useState("")
   const [dataEdit, setDataEdit] = useState({})
   const [userWaitingProxy, setUserWatingProxy] = useState<UserDTO>()
   const [newParams, setNewParams] = useState(
@@ -552,6 +554,11 @@ const AccountManager = () => {
 
   const handleOkDel = async () => {
     if (!openDel?.id || !openDel) return
+    if (textDelete !== "DELETE") {
+      handleClickVariant("error", "Please type DELETE to confirm")
+      return
+    }
+    setTextDelete("")
     const data = await dispatch(
       deleteUser({
         id: openDel.id,
@@ -800,20 +807,13 @@ const AccountManager = () => {
           limit={Number(limit)}
         />
       ) : null}
-      <ConfirmDialog
+      <DeleteConfirmModal
         open={openDel?.open || false}
-        onCancel={handleClosePopupDel}
-        onConfirm={handleOkDel}
-        title="Delete Account?"
-        content={
-          <>
-            <Typography>ID: {openDel?.id}</Typography>
-            <Typography>Name: {openDel?.name}</Typography>
-          </>
-        }
-        confirmLabel="delete"
-        iconType="warning"
-        confirmButtonColor="error"
+        onClose={handleClosePopupDel}
+        onSubmit={handleOkDel}
+        titleSubmit="Delete Account"
+        description={`Do you want to delete ID:${openDel?.id} Name:${openDel?.name}? `}
+        loading={loading}
       />
       <ConfirmDialog
         open={!!userWaitingProxy}

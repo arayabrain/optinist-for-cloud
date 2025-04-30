@@ -4,10 +4,9 @@ import { useSelector, useDispatch } from "react-redux"
 import { useSnackbar } from "notistack"
 
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline"
-import { Box, Input, Typography } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 
-import { ConfirmDialog } from "components/common/ConfirmDialog"
+import DeleteConfirmModal from "components/common/DeleteConfirmModal"
 import { ExperimentUidContext } from "components/Workspace/Experiment/ExperimentTable"
 import { deleteExperimentByUid } from "store/slice/Experiments/ExperimentsActions"
 import { selectExperimentName } from "store/slice/Experiments/ExperimentsSelectors"
@@ -65,35 +64,13 @@ export const DeleteButton = memo(function DeleteButton() {
       >
         <DeleteOutlineIcon />
       </IconButton>
-      <ConfirmDialog
+      <DeleteConfirmModal
         open={open}
-        setOpen={setOpen}
-        onConfirm={handleDelete}
-        title="Delete record?"
-        content={
-          <>
-            <Typography>
-              Do you want to delete {name}? This operation cannot be undone. To
-              continue, type &quot;
-              <Typography component="span" style={{ fontWeight: 600 }}>
-                DELETE
-              </Typography>
-              &quot; in the box below:
-            </Typography>
-            <Box>
-              <Input
-                placeholder="DELETE"
-                value={textDelete}
-                onChange={(e) => setTextDelete(e.target.value)}
-                error={false}
-                style={{ marginTop: 8, width: "100%" }}
-              />
-            </Box>
-          </>
-        }
-        confirmLabel="delete"
-        iconType="warning"
-        confirmButtonColor="error"
+        onClose={() => setOpen(false)}
+        onSubmit={handleDelete}
+        titleSubmit="Delete"
+        description={`Do you want to delete ${name}? `}
+        loading={false}
       />
     </>
   )

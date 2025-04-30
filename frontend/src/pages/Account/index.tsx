@@ -170,7 +170,7 @@ const Account = () => {
         onClose={handleCloseDeleteComfirmModal}
         open={isDeleteConfirmModalOpen}
         onSubmit={onConfirmDelete}
-        description="Delete account will erase all of your data."
+        description="Delete account will erase all of your data. "
       />
       <ChangePasswordModal
         onSubmit={onConfirmChangePw}

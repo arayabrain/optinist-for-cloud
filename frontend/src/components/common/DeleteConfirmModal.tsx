@@ -1,5 +1,7 @@
 import { FC, useState } from "react"
 
+import { enqueueSnackbar } from "notistack"
+
 import {
   Box,
   Button,
@@ -33,7 +35,10 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
   const [textDelete, setTextDelete] = useState("")
 
   const onConfirm = () => {
-    if (textDelete !== "DELETE") return
+    if (textDelete !== "DELETE") {
+      enqueueSnackbar("Please type DELETE to confirm", { variant: "error" })
+      return
+    }
     onSubmit?.()
     setTextDelete("")
   }
@@ -45,7 +50,7 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
           <Typography style={{ whiteSpace: "pre-wrap" }}>
             {description}
             This operation cannot be undone. To continue, type
-            <span style={{ fontWeight: 600 }}>DELETE</span> in the box below:
+            <span style={{ fontWeight: 600 }}> DELETE</span> in the box below:
           </Typography>
         </DialogTitle>
         <DialogContent>
