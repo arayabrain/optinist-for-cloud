@@ -34,6 +34,7 @@ import { isRejectedWithValue } from "@reduxjs/toolkit"
 
 import { UserDTO } from "api/users/UsersApiDTO"
 import { ConfirmDialog } from "components/common/ConfirmDialog"
+import DeleteConfirmModal from "components/common/DeleteConfirmModal"
 import Loading from "components/common/Loading"
 import PaginationCustom from "components/common/PaginationCustom"
 import PopupShare from "components/Workspace/PopupShare"
@@ -567,6 +568,19 @@ const Workspaces = () => {
         iconType="warning"
         confirmLabel="delete"
         confirmButtonColor="error"
+      />
+      <DeleteConfirmModal
+        open={open.del}
+        onClose={handleClosePopupDel}
+        onSubmit={handleOkDel}
+        titleSubmit={"Delete Workspace"}
+        description={
+          "Delete ID: " +
+          workspaceDel?.id +
+          " Name: " +
+          workspaceDel?.name +
+          " ? \n"
+        }
       />
       <PopupNew
         open={open.new}
