@@ -3,6 +3,7 @@ import shutil
 
 import pytest
 
+from studio.app.common.core.mode import MODE
 from studio.app.common.core.snakemake.smk import ForceRun, SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
 from studio.app.common.core.snakemake.snakemake_executor import (
@@ -97,6 +98,9 @@ def test_snakemake_execute(client):
     """
     Test for Run snakemake
     """
+
+    # Force running in standalone-mode
+    MODE.reset_mode(is_standalone=True)
 
     # Run snakemake executor
     snakemake_execute(workspace_id, unique_id, smk_param)
