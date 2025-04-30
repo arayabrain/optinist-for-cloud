@@ -66,6 +66,7 @@ def _snakemake_execute_process(
         logger.error("snakemake_execute failed..")
 
     WorkspaceService.update_experiment_data_usage(workspace_id, unique_id)
+
     smk_logger.clean_up()
 
     return result
