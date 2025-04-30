@@ -115,6 +115,7 @@ const ExperimentsErrorView: FC = () => {
 }
 
 const LOCAL_STORAGE_KEY_PER_PAGE = "optinist_experiment_table_per_page"
+const DELETE_NAME = "DELETE"
 
 const TableImple = memo(function TableImple() {
   const isOwner = useSelector(selectIsWorkspaceOwner)
@@ -124,7 +125,10 @@ const TableImple = memo(function TableImple() {
   const experimentListKeys = Object.keys(experimentList)
   const dispatch = useDispatch<AppDispatch>()
   const [checkedList, setCheckedList] = useState<string[]>([])
-  const [open, setOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [page, setPage] = useState(0)
+  const [textDelete, setTextDelete] = useState("")
+  const isTextDeleteValid = textDelete === DELETE_NAME
   const [openCopy, setOpenCopy] = useState(false)
   const isRunning = useSelector((state: RootState) => {
     const currentUid = selectPipelineLatestUid(state)
@@ -182,9 +186,14 @@ const TableImple = memo(function TableImple() {
   const recordsIsEmpty = experimentListKeys.length === 0
 
   const onClickDelete = () => {
-    setOpen(true)
+    setTextDelete("")
+    setDeleteOpen(true)
   }
   const onClickOk = () => {
+    if (!isTextDeleteValid) {
+      enqueueSnackbar("Please type DELETE to confirm", { variant: "error" })
+      return
+    }
     dispatch(deleteExperimentByList(checkedList))
       .unwrap()
       .then(() => {
@@ -193,14 +202,12 @@ const TableImple = memo(function TableImple() {
       .catch(() => {
         enqueueSnackbar("Failed to delete", { variant: "error" })
       })
-
     checkedList.filter((v) => v === currentPipelineUid).length > 0 &&
       dispatch(clearCurrentPipeline())
     setCheckedList([])
-    setOpen(false)
+    setDeleteOpen(false)
+    setTextDelete("")
   }
-
-  const [page, setPage] = useState(0)
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage)
@@ -277,25 +284,38 @@ const TableImple = memo(function TableImple() {
         )}
       </Box>
       <ConfirmDialog
-        open={open}
-        setOpen={setOpen}
+        open={deleteOpen}
+        setOpen={setDeleteOpen}
         onConfirm={onClickOk}
         title="Delete records?"
-        content={
-          <>
-            {checkedList.map((uid) => {
-              const experiment = experimentList[uid]
-              return (
-                <Typography key={uid}>
-                  ・
-                  {experiment
-                    ? `${experiment.name} (${uid})`
-                    : `Unknown (${uid})`}
+        content={(() => {
+          const experimentNames = checkedList
+            .map((uid) => experimentList[uid]?.name)
+            .filter(Boolean) // removes undefined/null
+            .join(", ")
+
+          return (
+            <>
+              <Typography>
+                Do you want to delete {experimentNames}? This operation cannot
+                be undone. To continue, type &quot;
+                <Typography component="span" style={{ fontWeight: 600 }}>
+                  DELETE
                 </Typography>
-              )
-            })}
-          </>
-        }
+                &quot; in the box below:
+              </Typography>
+              <Box>
+                <Input
+                  placeholder="DELETE"
+                  value={textDelete}
+                  onChange={(e) => setTextDelete(e.target.value)}
+                  error={false}
+                  style={{ marginTop: 8 }}
+                />
+              </Box>
+            </>
+          )
+        })()}
         iconType="warning"
         confirmLabel="delete"
         confirmButtonColor="error"

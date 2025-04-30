@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from "react-redux"
 import { useSnackbar } from "notistack"
 
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline"
+import { Box, Input, Typography } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 
 import { ConfirmDialog } from "components/common/ConfirmDialog"
@@ -28,12 +29,21 @@ export const DeleteButton = memo(function DeleteButton() {
   })
   const name = useSelector(selectExperimentName(uid))
   const [open, setOpen] = useState(false)
+  const [textDelete, setTextDelete] = useState("")
+  const isDeleteTextValid = textDelete === "DELETE"
   const { enqueueSnackbar } = useSnackbar()
 
   const openDialog = () => {
     setOpen(true)
+    setTextDelete("")
   }
   const handleDelete = () => {
+    if (!isDeleteTextValid) {
+      enqueueSnackbar("Please type DELETE to confirm", { variant: "error" })
+      return
+    }
+    setOpen(false)
+    setTextDelete("")
     dispatch(deleteExperimentByUid(uid))
       .unwrap()
       .then(() => {
@@ -60,7 +70,27 @@ export const DeleteButton = memo(function DeleteButton() {
         setOpen={setOpen}
         onConfirm={handleDelete}
         title="Delete record?"
-        content={`${name} (${uid})`}
+        content={
+          <>
+            <Typography>
+              Do you want to delete {name}? This operation cannot be undone. To
+              continue, type &quot;
+              <Typography component="span" style={{ fontWeight: 600 }}>
+                DELETE
+              </Typography>
+              &quot; in the box below:
+            </Typography>
+            <Box>
+              <Input
+                placeholder="DELETE"
+                value={textDelete}
+                onChange={(e) => setTextDelete(e.target.value)}
+                error={false}
+                style={{ marginTop: 8, width: "100%" }}
+              />
+            </Box>
+          </>
+        }
         confirmLabel="delete"
         iconType="warning"
         confirmButtonColor="error"
