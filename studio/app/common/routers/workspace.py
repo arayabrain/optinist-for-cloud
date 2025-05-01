@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_pagination import LimitOffsetPage
 from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import func
@@ -6,10 +6,12 @@ from sqlmodel import Session, or_, select
 
 from studio.app.common import models as common_model
 from studio.app.common.core.auth.auth_dependencies import get_current_user
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.base import SortOptions
 from studio.app.common.schemas.users import User
@@ -22,6 +24,7 @@ from studio.app.common.schemas.workspace import (
 )
 
 router = APIRouter(tags=["Workspace"])
+logger = AppLogger.get_logger()
 
 
 shared_count_subquery = (
@@ -220,20 +223,31 @@ def delete_workspace(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ws = (
-        db.query(common_model.Workspace)
-        .filter(
-            common_model.Workspace.id == workspace_id,
-            common_model.Workspace.user_id == current_user.id,
-            common_model.Workspace.deleted.is_(False),
+    try:
+        ws = (
+            db.query(common_model.Workspace)
+            .filter(
+                common_model.Workspace.id == workspace_id,
+                common_model.Workspace.user_id == current_user.id,
+                common_model.Workspace.deleted.is_(False),
+            )
+            .first()
         )
-        .first()
-    )
-    if not ws:
-        raise HTTPException(status_code=404)
-    ws.deleted = True
-    db.commit()
-    return True
+        if not ws:
+            raise HTTPException(status_code=404)
+
+        WorkspaceService.delete_workspace_data(workspace_id=workspace_id)
+
+        ws.deleted = True
+        db.commit()
+
+        return True
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="delete workspace failed",
+        ) from e
 
 
 @router.get(

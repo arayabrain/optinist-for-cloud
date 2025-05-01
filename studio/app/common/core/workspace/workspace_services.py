@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 
 import yaml
@@ -120,3 +121,12 @@ class WorkspaceService:
                 )
             )
             db.bulk_save_objects(exp_records)
+
+    @classmethod
+    def delete_workspace_data(cls, workspace_id: int):
+        logger.info(f"Deleting workspace data for '{workspace_id}'")
+        workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
+        if os.path.exists(workspace_dir):
+            shutil.rmtree(workspace_dir)  # Fix: use rmtree for directories
+        else:
+            logger.error(f"'{workspace_dir}' does not exist")
