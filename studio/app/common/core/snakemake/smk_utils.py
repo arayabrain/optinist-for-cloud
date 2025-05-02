@@ -1,8 +1,13 @@
+import copy
 import hashlib
+import json
 import os
 import platform
 import subprocess
+from pathlib import Path
 from typing import Dict
+
+import yaml
 
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -121,6 +126,49 @@ class SmkUtils:
             logger.info("Disabled CNN usage in CaImAn parameters for Apple Silicon")
 
         return modified_params
+
+    @staticmethod
+    def resolve_nwbfile_reference(rule_config):
+        """Resolve NWB template reference if necessary"""
+        if hasattr(rule_config, "nwbfile"):
+            if isinstance(rule_config.nwbfile, str) and rule_config.nwbfile.startswith(
+                "ref:"
+            ):
+                workflow_dirpath = str(Path(rule_config.output).parent.parent)
+
+                config_path = join_filepath(
+                    [DIRPATH.OUTPUT_DIR, workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
+                )
+
+                # Check if file exists
+                if os.path.exists(config_path):
+                    with open(config_path, "r") as f:
+                        config = yaml.safe_load(f)
+
+                    if config and "nwb_template" in config:
+                        template = config["nwb_template"]
+                        rule_config.nwbfile = template
+                else:
+                    logger.error(f"Config file does not exist: {config_path}")
+
+        return rule_config
+
+    @staticmethod
+    def replace_nwbfile_with_reference(config):
+        config_copy = copy.deepcopy(config)
+        nwb_template = config_copy.get("nwb_template", {})
+
+        template_str = json.dumps(nwb_template, sort_keys=True) if nwb_template else ""
+
+        # Check each rule and convert matching nwbfiles to references
+        for rule_name, rule in config_copy.get("rules", {}).items():
+            nwbfile = rule.get("nwbfile")
+            if isinstance(nwbfile, dict) and nwbfile:
+                # Convert to string and  compare string representations
+                rule_nwbfile_str = json.dumps(nwbfile, sort_keys=True)
+                if rule_nwbfile_str == template_str:
+                    config_copy["rules"][rule_name]["nwbfile"] = "ref:nwb_template"
+        return config_copy
 
 
 # Cache conda env path (performance consideration)
