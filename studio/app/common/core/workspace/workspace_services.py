@@ -94,6 +94,22 @@ class WorkspaceService:
         db.commit()
 
     @classmethod
+    def delete_workspace_experiment_by_workspace_id(cls, db: Session, workspace_id):
+        db.execute(
+            delete(ExperimentRecord).where(
+                ExperimentRecord.workspace_id == workspace_id
+            )
+        )
+        db.commit()
+
+    @classmethod
+    def delete_workspace_data_by_user_id(cls, db: Session, user_id):
+        db.execute(
+            update(Workspace).where(Workspace.user_id == user_id).values(deleted=True)
+        )
+        db.commit()
+
+    @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id):
         folder = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
         if not os.path.exists(folder):

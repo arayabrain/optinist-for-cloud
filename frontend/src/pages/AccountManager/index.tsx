@@ -289,7 +289,6 @@ const AccountManager = () => {
   const admin = useSelector(isAdmin)
 
   const [openModal, setOpenModal] = useState(false)
-  const [textDelete, setTextDelete] = useState("")
   const [dataEdit, setDataEdit] = useState({})
   const [userWaitingProxy, setUserWatingProxy] = useState<UserDTO>()
   const [newParams, setNewParams] = useState(
@@ -554,11 +553,6 @@ const AccountManager = () => {
 
   const handleOkDel = async () => {
     if (!openDel?.id || !openDel) return
-    if (textDelete !== "DELETE") {
-      handleClickVariant("error", "Please type DELETE to confirm")
-      return
-    }
-    setTextDelete("")
     const data = await dispatch(
       deleteUser({
         id: openDel.id,
