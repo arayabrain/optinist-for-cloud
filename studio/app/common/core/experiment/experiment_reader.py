@@ -3,10 +3,22 @@ from typing import Dict
 import yaml
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
+from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import NodeRunStatus, OutputPath
+from studio.app.dir_path import DIRPATH
 
 
 class ExptConfigReader:
+    @staticmethod
+    def read_raw(workspace_id: str, unique_id: str) -> dict:
+        config = ConfigReader.read(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+            )
+        )
+        return config
+
     @classmethod
     def read(cls, filepath) -> ExptConfig:
         with open(filepath, "r") as f:
