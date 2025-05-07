@@ -2,6 +2,7 @@ from typing import Dict
 
 import yaml
 
+from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.workflow.workflow import (
     Edge,
     Node,
@@ -15,8 +16,7 @@ from studio.app.common.schemas.workflow import WorkflowConfig
 class WorkflowConfigReader:
     @classmethod
     def read(cls, filepath) -> WorkflowConfig:
-        with open(filepath, "r") as f:
-            config = yaml.safe_load(f)
+        config = ConfigReader.read(filepath)
 
         return WorkflowConfig(
             nodeDict=cls.read_nodeDict(config["nodeDict"]),

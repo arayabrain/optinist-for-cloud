@@ -21,8 +21,7 @@ class ExptConfigReader:
 
     @classmethod
     def read(cls, filepath) -> ExptConfig:
-        with open(filepath, "r") as f:
-            config = yaml.safe_load(f)
+        config = ConfigReader.read(filepath)
 
         return ExptConfig(
             workspace_id=config["workspace_id"],
