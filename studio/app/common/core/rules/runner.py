@@ -17,6 +17,7 @@ from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import Rule
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.file_reader import JsonReader
+from studio.app.common.core.utils.filelock_handler import FileLockUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
@@ -182,11 +183,10 @@ class Runner:
         nwbconfig = {}
         for x in all_nwbfile.values():
             nwbconfig = merge_nwbfile(nwbconfig, x)
-        # 同一のnwbfileに対して、複数の関数を実行した場合、h5pyエラーが発生する
-        lock_path = save_path + ".lock"
-        timeout = 30  # ロック取得のタイムアウト時間（秒）
-        with FileLock(lock_path, timeout=timeout):
-            # ロックが取得できたら、ファイルに書き込みを行う
+
+        # Controls locking for simultaneous writing to nwbfile from multiple nodes.
+        lock_path = FileLockUtils.get_lockfile_path(save_path)
+        with FileLock(lock_path, timeout=30):
             if os.path.exists(save_path):
                 overwrite_nwbfile(save_path, nwbconfig)
             else:
