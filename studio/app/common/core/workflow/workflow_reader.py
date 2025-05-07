@@ -1,7 +1,5 @@
 from typing import Dict
 
-import yaml
-
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.workflow.workflow import (
     Edge,
