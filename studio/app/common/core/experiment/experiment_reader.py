@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
 from studio.app.common.core.utils.config_handler import ConfigReader
@@ -8,18 +8,10 @@ from studio.app.dir_path import DIRPATH
 
 
 class ExptConfigReader:
-    @staticmethod
-    def read_raw(workspace_id: str, unique_id: str) -> dict:
-        config = ConfigReader.read(
-            join_filepath(
-                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
-            )
-        )
-        return config
-
     @classmethod
-    def read(cls, filepath) -> ExptConfig:
-        config = ConfigReader.read(filepath)
+    def read(cls, file: Union[str, bytes]) -> ExptConfig:
+        config = ConfigReader.read(file)
+        assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
         return ExptConfig(
             workspace_id=config["workspace_id"],
@@ -34,6 +26,15 @@ class ExptConfigReader:
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
         )
+
+    @staticmethod
+    def read_raw(workspace_id: str, unique_id: str) -> dict:
+        config = ConfigReader.read(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+            )
+        )
+        return config
 
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:

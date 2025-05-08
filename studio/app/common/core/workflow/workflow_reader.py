@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.workflow.workflow import (
@@ -13,8 +13,9 @@ from studio.app.common.schemas.workflow import WorkflowConfig
 
 class WorkflowConfigReader:
     @classmethod
-    def read(cls, filepath) -> WorkflowConfig:
-        config = ConfigReader.read(filepath)
+    def read(cls, file: Union[str, bytes]) -> WorkflowConfig:
+        config = ConfigReader.read(file)
+        assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
         return WorkflowConfig(
             nodeDict=cls.read_nodeDict(config["nodeDict"]),
