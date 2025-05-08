@@ -13,7 +13,6 @@ from requests.models import Response
 from sqlmodel import Session
 from tqdm import tqdm
 
-from studio.app.common.core.mode import MODE
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -199,7 +198,8 @@ async def create_file(
         shutil.copyfileobj(file.file, f)
 
     update_image_shape(workspace_id, filename)
-    if not MODE.IS_STANDALONE:
+
+    if WorkspaceService.is_data_usage_available():
         background_tasks.add_task(
             WorkspaceService.update_workspace_data_usage, db, workspace_id
         )
@@ -226,7 +226,8 @@ async def delete_file(
         raise HTTPException(status_code=404, detail="File not found.")
     try:
         os.remove(filepath)
-        if not MODE.IS_STANDALONE:
+
+        if WorkspaceService.is_data_usage_available():
             background_tasks.add_task(
                 WorkspaceService.update_workspace_data_usage, db, workspace_id
             )
@@ -298,5 +299,5 @@ def download(
     except Exception as e:
         DOWNLOAD_STATUS[filepath] = DownloadStatus(error=str(e))
 
-    if not MODE.IS_STANDALONE:
+    if WorkspaceService.is_data_usage_available():
         WorkspaceService.update_workspace_data_usage(db, workspace_id)
