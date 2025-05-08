@@ -18,6 +18,18 @@ from studio.app.dir_path import DIRPATH
 logger = AppLogger.get_logger()
 
 
+def load_experiment_success_status(yaml_path: str) -> str:
+    if not os.path.exists(yaml_path):
+        return "not_found"
+
+    try:
+        with open(yaml_path, "r") as file:
+            data = yaml.safe_load(file)
+            return data.get("success", "unknown")
+    except yaml.YAMLError:
+        return "error"
+
+
 class WorkspaceService:
     @classmethod
     def _update_exp_data_usage_yaml(cls, exp_filepath, data_usage):
@@ -140,9 +152,35 @@ class WorkspaceService:
 
     @classmethod
     def delete_workspace_data(cls, workspace_id: int):
-        logger.info(f"Deleting workspace data for '{workspace_id}'")
+        logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
+
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
-        if os.path.exists(workspace_dir):
-            shutil.rmtree(workspace_dir)  # Fix: use rmtree for directories
-        else:
+        if not os.path.exists(workspace_dir):
             logger.error(f"'{workspace_dir}' does not exist")
+            return
+
+        for experiment_id in os.listdir(workspace_dir):
+            experiment_path = join_filepath([workspace_dir, experiment_id])
+            if not os.path.isdir(experiment_path):
+                continue  # Skip non-directories
+
+            yaml_path = join_filepath([experiment_path, "experiment.yaml"])
+            status = load_experiment_success_status(yaml_path)
+
+            logger.info(f"Experiment '{experiment_id}' status: {status}")
+            logger.info(f"Experiment path: {experiment_path}")
+
+            if status == "running":
+                logger.info(
+                    f"Skipping delete of experiment '{experiment_id}' (status: running)"
+                )
+                # Throw an error if the experiment is running
+                raise Exception(
+                    f"Experiment '{experiment_id}' is still running. Cannot delete."
+                )
+
+            try:
+                shutil.rmtree(experiment_path)
+                logger.info(f"Deleted experiment data at: {experiment_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete {experiment_path}: {e}")
