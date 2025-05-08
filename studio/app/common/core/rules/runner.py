@@ -166,7 +166,7 @@ class Runner:
 
         # Controls locking for simultaneous writing to nwbfile from multiple nodes.
         lock_path = FileLockUtils.get_lockfile_path(save_path)
-        with FileLock(lock_path, timeout=30):
+        with FileLock(lock_path, timeout=120):
             if os.path.exists(save_path):
                 overwrite_nwbfile(save_path, nwbconfig)
             else:
