@@ -10,7 +10,7 @@ logger = AppLogger.get_logger()
 
 class SmkConfigWriter:
     @staticmethod
-    def write_raw(workspace_id: str, unique_id: str, config: dict) -> None:
+    def write_raw(workspace_id, unique_id, config):
         config = SmkUtils.replace_nwbfile_with_reference(config)
         ConfigWriter.write(
             dirname=join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id]),
