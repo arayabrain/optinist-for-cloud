@@ -21,7 +21,7 @@ logger = AppLogger.get_logger()
 class WorkspaceService:
     @classmethod
     def _update_exp_data_usage_yaml(cls, workspace_id: str, unique_id: str, data_usage):
-        # Read cofig
+        # Read config
         config = ExptConfigReader.read_raw(workspace_id, unique_id)
         if not config:
             logger.error(f"[{workspace_id}/{unique_id}] does not exist")
@@ -29,7 +29,7 @@ class WorkspaceService:
 
         config["data_usage"] = data_usage
 
-        # Update & Write cofig
+        # Update & Write config
         ExptConfigWriter.write_raw(workspace_id, unique_id, config)
 
     @classmethod

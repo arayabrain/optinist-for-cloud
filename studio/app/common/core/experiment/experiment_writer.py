@@ -143,11 +143,11 @@ class ExptDataWriter:
         # Note: "r+" option for file-open is not used here
         #   because it requires file pointer control.
 
-        # Read cofig
+        # Read config
         config = ExptConfigReader.read_raw(self.workspace_id, self.unique_id)
         config["name"] = new_name
 
-        # Update & Write cofig
+        # Update & Write config
         ExptConfigWriter.write_raw(self.workspace_id, self.unique_id, config)
 
         config_path = join_filepath(
@@ -341,11 +341,11 @@ class ExptDataWriter:
         logger = AppLogger.get_logger()
 
         try:
-            # Read cofig
+            # Read config
             config = ExptConfigReader.read_raw(workspace_id, unique_id)
             config["name"] = f"{config.get('name', 'experiment')}_copy"
 
-            # Update & Write cofig
+            # Update & Write config
             ExptConfigWriter.write_raw(workspace_id, unique_id, config)
 
             logger.info(f"Updated experiment.yml: {workspace_id}/{unique_id}")
