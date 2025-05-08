@@ -56,6 +56,12 @@ class WorkspaceService:
                 db.add(exp)
 
     @classmethod
+    def is_data_usage_available(cls) -> bool:
+        # The workspace data usage feature is available in multiuser mode
+        available = MODE.IS_MULTIUSER
+        return available
+
+    @classmethod
     def update_experiment_data_usage(cls, workspace_id: str, unique_id: str):
         workflow_dir = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id])
         if not os.path.exists(workflow_dir):
@@ -66,7 +72,7 @@ class WorkspaceService:
 
         cls._update_exp_data_usage_yaml(workspace_id, unique_id, data_usage)
 
-        if not MODE.IS_STANDALONE:
+        if cls.is_data_usage_available():
             cls._update_exp_data_usage_db(workspace_id, unique_id, data_usage)
 
     @classmethod
@@ -118,7 +124,7 @@ class WorkspaceService:
                 )
             )
 
-        if not MODE.IS_STANDALONE:
+        if cls.is_data_usage_available():
             db.execute(
                 delete(ExperimentRecord).where(
                     ExperimentRecord.workspace_id == workspace_id
