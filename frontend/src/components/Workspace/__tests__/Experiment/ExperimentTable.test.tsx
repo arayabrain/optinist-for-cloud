@@ -95,6 +95,7 @@ describe("ExperimentTable", () => {
             },
             startedAt: "2023-09-17",
             hasNWB: true,
+            data_usage: 0,
           },
           2: {
             uid: "2",
@@ -109,6 +110,7 @@ describe("ExperimentTable", () => {
             },
             startedAt: "2023-09-15",
             hasNWB: true,
+            data_usage: 0,
           },
         },
       } as Experiments,
@@ -171,6 +173,7 @@ describe("ExperimentTable", () => {
         selectedItemId: null,
         items: {},
         layout: [],
+        clickedRois: {},
       },
       snakemake: {
         params: {},
@@ -404,25 +407,36 @@ describe("ExperimentTable", () => {
       </Provider>,
     )
 
-    // Find the delete button in the first row
-    const deleteButton = screen.getAllByTestId("delete-button")[0]
+    // Wait for the table to render
+    await waitFor(() => {
+      expect(screen.queryByText(/No Rows\.\.\./i)).not.toBeInTheDocument()
+    })
 
-    // // Click the delete button
-    fireEvent.click(deleteButton)
+    // Select the first experiment row by clicking its checkbox
+    const rowCheckboxes = await screen.findAllByRole("checkbox")
+    const firstRowCheckbox = rowCheckboxes[1] // 0 is "select all", 1 is the first row
+    fireEvent.click(firstRowCheckbox)
 
-    // Wait for the dialog to appear
-    const dialog = await waitFor(() =>
-      screen.getByRole("dialog", { name: /delete record\?/i }),
+    // Click the delete-selected button
+    const deleteSelectedButton = await screen.findByTestId(
+      "delete-selected-button",
     )
-    expect(dialog).toBeInTheDocument()
+    expect(deleteSelectedButton).toBeEnabled()
+    fireEvent.click(deleteSelectedButton)
 
-    // Find and click the "Cancel" button
+    // Confirm that the dialog appears
+    const dialogText = await screen.findByText(/Do you want to delete/i)
+    expect(dialogText).toBeInTheDocument()
+
+    // Click the Cancel button
     const cancelButton = screen.getByText(/cancel/i)
     fireEvent.click(cancelButton)
 
-    // Check if the dialog has been closed
+    // Assert the dialog has closed
     await waitFor(() => {
-      expect(dialog).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/Do you want to delete/i),
+      ).not.toBeInTheDocument()
     })
   })
 
