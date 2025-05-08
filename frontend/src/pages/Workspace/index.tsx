@@ -235,17 +235,36 @@ const columns = (
     headerName: "",
     flex: 1,
     minWidth: 70,
-    filterable: false, // todo enable when api complete
-    sortable: false, // todo enable when api complete
-    renderCell: (params: GridRenderCellParams<GridValidRowModel>) =>
-      isMine(user, params.row?.user?.id) ? (
-        <IconButton
-          onClick={() => handleOpenPopupDel(params.row.id, params.row.name)}
-          color="error"
+    filterable: false,
+    sortable: false,
+    renderCell: (params: GridRenderCellParams<GridValidRowModel>) => {
+      const isOwner = isMine(user, params.row?.user?.id)
+      const canDelete = params.row?.canDelete
+
+      if (!isOwner) return null
+
+      return (
+        <Tooltip
+          title={
+            canDelete
+              ? "Delete workspace"
+              : "Cannot delete while experiment is running"
+          }
         >
-          <DeleteIcon />
-        </IconButton>
-      ) : null,
+          <span>
+            <IconButton
+              onClick={() =>
+                canDelete && handleOpenPopupDel(params.row.id, params.row.name)
+              }
+              color="error"
+              disabled={!canDelete}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      )
+    },
   },
 ]
 
