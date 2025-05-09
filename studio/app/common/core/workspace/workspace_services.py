@@ -184,3 +184,10 @@ class WorkspaceService:
                 logger.info(f"Deleted experiment data at: {experiment_path}")
             except Exception as e:
                 logger.error(f"Failed to delete {experiment_path}: {e}")
+
+        # Delete the workspace directory itself
+        try:
+            shutil.rmtree(workspace_dir)
+            logger.info(f"Deleted workspace data at: {workspace_dir}")
+        except Exception as e:
+            logger.error(f"Failed to delete {workspace_dir}: {e}")
