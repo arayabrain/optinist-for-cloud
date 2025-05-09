@@ -573,21 +573,6 @@ const Workspaces = () => {
           id={open.shareId}
         />
       ) : null}
-      <ConfirmDialog
-        open={open.del}
-        onCancel={handleClosePopupDel}
-        onConfirm={handleOkDel}
-        title={"Delete Workspace?"}
-        content={
-          <>
-            <Typography>ID: {workspaceDel?.id}</Typography>
-            <Typography>Name: {workspaceDel?.name}</Typography>
-          </>
-        }
-        iconType="warning"
-        confirmLabel="delete"
-        confirmButtonColor="error"
-      />
       <DeleteConfirmModal
         open={open.del}
         onClose={handleClosePopupDel}
