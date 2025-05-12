@@ -288,34 +288,21 @@ const TableImple = memo(function TableImple() {
         setOpen={setDeleteOpen}
         onConfirm={onClickOk}
         title="Delete records?"
-        content={(() => {
-          const experimentNames = checkedList
-            .map((uid) => experimentList[uid]?.name)
-            .filter(Boolean) // removes undefined/null
-            .join(", ")
-
-          return (
-            <>
-              <Typography>
-                Do you want to delete {experimentNames}? This operation cannot
-                be undone. To continue, type &quot;
-                <Typography component="span" style={{ fontWeight: 600 }}>
-                  DELETE
+        content={
+          <>
+            {checkedList.map((uid) => {
+              const experiment = experimentList[uid]
+              return (
+                <Typography key={uid}>
+                  ・
+                  {experiment
+                    ? `${experiment.name} (${uid})`
+                    : `Unknown (${uid})`}
                 </Typography>
-                &quot; in the box below:
-              </Typography>
-              <Box>
-                <Input
-                  placeholder="DELETE"
-                  value={textDelete}
-                  onChange={(e) => setTextDelete(e.target.value)}
-                  error={false}
-                  style={{ marginTop: 8 }}
-                />
-              </Box>
-            </>
-          )
-        })()}
+              )
+            })}
+          </>
+        }
         iconType="warning"
         confirmLabel="delete"
         confirmButtonColor="error"

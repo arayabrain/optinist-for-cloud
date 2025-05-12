@@ -6,7 +6,7 @@ import { useSnackbar } from "notistack"
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline"
 import IconButton from "@mui/material/IconButton"
 
-import DeleteConfirmModal from "components/common/DeleteConfirmModal"
+import { ConfirmDialog } from "components/common/ConfirmDialog"
 import { ExperimentUidContext } from "components/Workspace/Experiment/ExperimentTable"
 import { deleteExperimentByUid } from "store/slice/Experiments/ExperimentsActions"
 import { selectExperimentName } from "store/slice/Experiments/ExperimentsSelectors"
@@ -56,14 +56,15 @@ export const DeleteButton = memo(function DeleteButton() {
       >
         <DeleteOutlineIcon />
       </IconButton>
-      <DeleteConfirmModal
+      <ConfirmDialog
         open={open}
-        onClose={() => setOpen(false)}
-        onSubmit={handleDelete}
-        titleSubmit="Delete"
-        description={`Do you want to delete ${name}? `}
-        loading={false}
+        setOpen={setOpen}
+        onConfirm={handleDelete}
+        title="Delete record?"
+        content={`${name} (${uid})`}
+        confirmLabel="delete"
         iconType="warning"
+        confirmButtonColor="error"
       />
     </>
   )
