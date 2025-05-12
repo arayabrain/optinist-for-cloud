@@ -47,6 +47,11 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
     setTextDelete("")
   }
 
+  const onCancel = () => {
+    setTextDelete("")
+    onClose()
+  }
+
   const content = (
     <DialogContentText>
       <Typography style={{ whiteSpace: "pre-wrap" }}>
@@ -76,7 +81,7 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
           </BoxConfirm>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose} variant={"outlined"}>
+          <Button onClick={onCancel} variant={"outlined"}>
             CANCEL
           </Button>
           <Button onClick={onConfirm} color={"error"} variant="contained">
