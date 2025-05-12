@@ -171,6 +171,7 @@ const Account = () => {
         open={isDeleteConfirmModalOpen}
         onSubmit={onConfirmDelete}
         description="Delete account will erase all of your data. "
+        iconType="warning"
       />
       <ChangePasswordModal
         onSubmit={onConfirmChangePw}

@@ -63,6 +63,7 @@ export const DeleteButton = memo(function DeleteButton() {
         titleSubmit="Delete"
         description={`Do you want to delete ${name}? `}
         loading={false}
+        iconType="warning"
       />
     </>
   )

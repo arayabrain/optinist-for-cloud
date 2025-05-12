@@ -585,6 +585,7 @@ const Workspaces = () => {
           workspaceDel?.name +
           " ? \n"
         }
+        iconType="warning"
       />
       <PopupNew
         open={open.new}

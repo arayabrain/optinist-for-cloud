@@ -8,11 +8,13 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   styled,
   Typography,
 } from "@mui/material"
 
+import { DialogContentWithIcon } from "components/common/ConfirmDialog"
 import Input from "components/common/Input"
 import Loading from "components/common/Loading"
 
@@ -23,6 +25,7 @@ type DeleteConfirmModalProps = {
   titleSubmit: string
   description: string
   loading?: boolean
+  iconType?: "warning" | "info"
 }
 const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
   onClose,
@@ -31,6 +34,7 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
   loading,
   titleSubmit,
   description,
+  iconType,
 }) => {
   const [textDelete, setTextDelete] = useState("")
 
@@ -43,17 +47,25 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
     setTextDelete("")
   }
 
+  const content = (
+    <DialogContentText>
+      <Typography style={{ whiteSpace: "pre-wrap" }}>
+        To continue, type <span style={{ fontWeight: 600 }}>DELETE</span> in the
+        box below:
+      </Typography>
+    </DialogContentText>
+  )
+
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth={"xs"}>
-        <DialogTitle>
-          <Typography style={{ whiteSpace: "pre-wrap" }}>
-            {description}
-            This operation cannot be undone. To continue, type
-            <span style={{ fontWeight: 600 }}> DELETE</span> in the box below:
-          </Typography>
-        </DialogTitle>
+        <DialogTitle>{description}</DialogTitle>
         <DialogContent>
+          {iconType ? (
+            <DialogContentWithIcon content={content} iconType={iconType} />
+          ) : (
+            content
+          )}
           <BoxConfirm>
             <Input
               placeholder="DELETE"
@@ -67,12 +79,7 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
           <Button onClick={onClose} variant={"outlined"}>
             CANCEL
           </Button>
-          <Button
-            onClick={onConfirm}
-            color={"error"}
-            variant="contained"
-            disabled={textDelete !== "DELETE"}
-          >
+          <Button onClick={onConfirm} color={"error"} variant="contained">
             {titleSubmit}
           </Button>
         </DialogActions>
