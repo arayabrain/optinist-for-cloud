@@ -104,6 +104,12 @@ def util_get_image_memmap(function_id: str, images: np.ndarray, file_path: str):
     return mmap_images, dims, mmap_path
 
 
+def util_cleanup_image_memmap(mmap_paths: list):
+    for mmap_path in mmap_paths:
+        if mmap_path.endswith(".mmap") and os.path.isfile(mmap_path):
+            os.remove(mmap_path)
+
+
 def util_download_model_files():
     """
     download model files for component evaluation
@@ -166,7 +172,9 @@ def caiman_cnmf(
         file_path = file_path[0]
 
     images = images.data
+    mmap_paths = []
     mmap_images, dims, mmap_path = util_get_image_memmap(function_id, images, file_path)
+    mmap_paths.append(mmap_path)
 
     del images
     gc.collect()
@@ -370,5 +378,12 @@ def caiman_cnmf(
         "edit_roi_data": EditRoiData(mmap_images, im),
         "nwbfile": nwbfile,
     }
+
+    # Clean up temporary files
+    try:
+        util_cleanup_image_memmap(mmap_paths)
+    except Exception as e:
+        logger.error("Failed to cleanup memmap files.")
+        logger.error(e)
 
     return info
