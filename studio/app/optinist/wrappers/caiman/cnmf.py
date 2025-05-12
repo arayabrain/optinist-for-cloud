@@ -73,7 +73,7 @@ def get_roi(A, roi_thr, thr_method, swap_dim, dims):
     return ims
 
 
-def util_get_memmap(images: np.ndarray, file_path: str):
+def util_get_image_memmap(function_id: str, images: np.ndarray, file_path: str):
     """
     convert np.ndarray to mmap
     """
@@ -86,8 +86,9 @@ def util_get_memmap(images: np.ndarray, file_path: str):
     shape_mov = (np.prod(dims), T)
 
     dir_path = join_filepath(file_path.split("/")[:-1])
-    basename = file_path.split("/")[-1]
-    fname_tot = memmap_frames_filename(basename, dims, T, order)
+    file_basename = file_path.split("/")[-1]
+    mmap_basename = f"{file_basename}.{function_id}"
+    fname_tot = memmap_frames_filename(mmap_basename, dims, T, order)
     mmap_path = join_filepath([dir_path, fname_tot])
 
     mmap_images = np.memmap(
@@ -165,7 +166,7 @@ def caiman_cnmf(
         file_path = file_path[0]
 
     images = images.data
-    mmap_images, dims, mmap_path = util_get_memmap(images, file_path)
+    mmap_images, dims, mmap_path = util_get_image_memmap(function_id, images, file_path)
 
     del images
     gc.collect()

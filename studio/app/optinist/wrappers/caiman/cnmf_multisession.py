@@ -11,7 +11,7 @@ from studio.app.optinist.dataclass import EditRoiData, FluoData, IscellData, Roi
 from studio.app.optinist.wrappers.caiman.cnmf import (
     get_roi,
     util_download_model_files,
-    util_get_memmap,
+    util_get_image_memmap,
 )
 from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
@@ -93,7 +93,9 @@ def caiman_cnmf_multisession(
     templates = []
     for split_image_path in split_image_paths:
         split_image = imageio.volread(split_image_path)
-        split_image_mmap, _, _ = util_get_memmap(split_image, split_image_path)
+        split_image_mmap, _, _ = util_get_image_memmap(
+            function_id, split_image, split_image_path
+        )
         del split_image
         gc.collect()
 
@@ -204,7 +206,7 @@ def caiman_cnmf_multisession(
     if isinstance(file_path, list):
         file_path = file_path[0]
     images = images.data
-    mmap_images, dims, _ = util_get_memmap(images.data, file_path)
+    mmap_images, dims, _ = util_get_image_memmap(function_id, images.data, file_path)
 
     Cn = local_correlations(mmap_images.transpose(1, 2, 0))
     Cn[np.isnan(Cn)] = 0
