@@ -1,4 +1,4 @@
-import { FC, useState } from "react"
+import { FC, useEffect, useState } from "react"
 
 import { enqueueSnackbar } from "notistack"
 
@@ -36,6 +36,12 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
   description,
   iconType,
 }) => {
+  useEffect(() => {
+    if (!open) {
+      setTextDelete("")
+    }
+  }, [open])
+
   const [textDelete, setTextDelete] = useState("")
 
   const onConfirm = () => {

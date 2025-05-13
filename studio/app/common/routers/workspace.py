@@ -264,7 +264,7 @@ def delete_workspace(
         if not ws:
             raise HTTPException(status_code=404)
 
-        WorkspaceService.delete_workspace_data(workspace_id=workspace_id)
+        WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
 
         ws.deleted = True
         db.commit()

@@ -70,7 +70,7 @@ async def delete_me(
         db.commit()
 
         for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_data(workspace_id=workspace_id)
+            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
 
         firebase_auth.delete_user(user_uid)
 

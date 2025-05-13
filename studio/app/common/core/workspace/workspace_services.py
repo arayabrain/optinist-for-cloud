@@ -148,7 +148,7 @@ class WorkspaceService:
             db.bulk_save_objects(exp_records)
 
     @classmethod
-    def delete_workspace_data(cls, workspace_id: int):
+    def delete_workspace_data(cls, workspace_id: int, db: Session):
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
 
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
@@ -159,24 +159,25 @@ class WorkspaceService:
         for experiment_id in os.listdir(workspace_dir):
             experiment_path = join_filepath([workspace_dir, experiment_id])
             if not os.path.isdir(experiment_path):
-                continue  # Skip non-directories
+                continue
 
             yaml_path = join_filepath([experiment_path, "experiment.yaml"])
             status = load_experiment_success_status(yaml_path)
-
-            logger.info(f"Experiment '{experiment_id}' status: {status}")
-            logger.info(f"Experiment path: {experiment_path}")
 
             if status == "running":
                 logger.info(
                     f"Skipping delete of experiment '{experiment_id}' (status: running)"
                 )
-                # Throw an error if the experiment is running
                 raise Exception(
                     f"Experiment '{experiment_id}' is still running. Cannot delete."
                 )
 
             try:
+                if ExperimentRecord.exists(workspace_id, uid=str(experiment_id)):
+                    WorkspaceService.delete_workspace_experiment(
+                        db=db, workspace_id=workspace_id, unique_id=experiment_id
+                    )
+
                 shutil.rmtree(experiment_path)
                 logger.info(f"Deleted experiment data at: {experiment_path}")
             except Exception as e:

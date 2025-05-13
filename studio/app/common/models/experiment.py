@@ -1,6 +1,7 @@
 from sqlalchemy.dialects.mysql import BIGINT
 from sqlmodel import Column, Field, ForeignKey, String
 
+from studio.app.common.db.database import session_scope
 from studio.app.common.models.base import Base, TimestampMixin
 
 
@@ -19,3 +20,11 @@ class ExperimentRecord(Base, TimestampMixin, table=True):
         ),
         default=0,
     )
+
+    @classmethod
+    def exists(cls, workspace_id: int, uid: str) -> bool:
+        with session_scope() as session:
+            return (
+                session.query(cls).filter_by(workspace_id=workspace_id, uid=uid).first()
+                is not None
+            )
