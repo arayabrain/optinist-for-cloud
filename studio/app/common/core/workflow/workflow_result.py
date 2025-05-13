@@ -225,6 +225,12 @@ class NodeResult:
 
         expt_config.function[self.node_id].success = message.status
 
+        # TODO: Set started_at on the node
+        #   At the moment, there is insufficient data to obtain an accurate started_at,
+        #  so set it to None.
+        #   separate modification is required to record running info for each node.
+        expt_config.function[self.node_id].started_at = None
+
         now = datetime.now().strftime(DATE_FORMAT)
         expt_config.function[self.node_id].finished_at = now
         expt_config.function[self.node_id].message = message.message

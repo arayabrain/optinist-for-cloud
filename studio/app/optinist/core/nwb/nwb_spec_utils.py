@@ -5,6 +5,8 @@ from typing import List, Union
 from filelock import FileLock
 from pynwb.spec import NWBGroupSpec, NWBNamespaceBuilder
 
+from studio.app.common.core.utils.filelock_handler import FileLockUtils
+
 NWB_SPEC_FILE_EXPORT_DIR = os.path.join(os.path.dirname(__file__), "specs")
 
 
@@ -29,11 +31,10 @@ def export_spec_files(
         f"{ns_name}.extensions.yaml"  # This path must be specified in basename.
     )
 
-    lock_path = ns_path + ".lock"
-
     # Note:
     # Considering calls from multi-process exclusive processing
     # is performed (using FileLock)
+    lock_path = FileLockUtils.get_lockfile_path(ns_path)
     with FileLock(lock_path, timeout=10):
         flle_update_elapsed_time = (
             (time.time() - os.path.getmtime(ns_path)) if os.path.exists(ns_path) else 0

@@ -11,7 +11,6 @@ from studio.app.common.core.experiment.experiment import ExptConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.mode import MODE
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
 from studio.app.common.core.workspace.workspace_dependencies import (
@@ -85,7 +84,7 @@ async def delete_experiment(
         with db.begin():
             ExptDataWriter(workspace_id, unique_id).delete_data()
 
-            if not MODE.IS_STANDALONE:
+            if WorkspaceService.is_data_usage_available():
                 WorkspaceService.delete_workspace_experiment(
                     db, workspace_id, unique_id
                 )
