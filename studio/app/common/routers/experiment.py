@@ -4,6 +4,7 @@ from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from studio.app.common.core.experiment.experiment import ExptConfig
@@ -81,18 +82,27 @@ async def delete_experiment(
     workspace_id: str, unique_id: str, db: Session = Depends(get_db)
 ):
     try:
-        ExptDataWriter(
-            workspace_id,
-            unique_id,
-        ).delete_data()
-        if not MODE.IS_STANDALONE:
-            WorkspaceService.delete_workspace_experiment(db, workspace_id, unique_id)
+        with db.begin():
+            ExptDataWriter(workspace_id, unique_id).delete_data()
+
+            if not MODE.IS_STANDALONE:
+                WorkspaceService.delete_workspace_experiment(
+                    db, workspace_id, unique_id
+                )
+
         return True
-    except Exception as e:
-        logger.error(e, exc_info=True)
+
+    except SQLAlchemyError as db_err:
+        logger.error("Database error: %s", db_err, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="can not delete record.",
+            detail="Database error while deleting record.",
+        )
+    except Exception as e:
+        logger.error("Deletion failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete experiment and its associated data.",
         )
 
 
