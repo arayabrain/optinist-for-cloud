@@ -188,3 +188,14 @@ class WorkspaceService:
             logger.info(f"Deleted workspace data at: {workspace_dir}")
         except Exception as e:
             logger.error(f"Failed to delete {workspace_dir}: {e}")
+
+        # Delete INPUT_DIR contents
+        input_dir = join_filepath([DIRPATH.INPUT_DIR, str(workspace_id)])
+        if os.path.exists(input_dir):
+            try:
+                shutil.rmtree(input_dir)
+                logger.info(f"Deleted input data at: {input_dir}")
+            except Exception as e:
+                logger.error(f"Failed to delete {input_dir}: {e}")
+        else:
+            logger.warning(f"'{input_dir}' does not exist, skipping INPUT_DIR deletion")
