@@ -85,6 +85,7 @@ async def delete_experiment(
 
         if WorkspaceService.is_data_usage_available():
             WorkspaceService.delete_workspace_experiment(db, workspace_id, unique_id)
+
         return True
 
     except SQLAlchemyError as db_err:
