@@ -81,14 +81,10 @@ async def delete_experiment(
     workspace_id: str, unique_id: str, db: Session = Depends(get_db)
 ):
     try:
-        with db.begin():
-            ExptDataWriter(workspace_id, unique_id).delete_data()
+        ExptDataWriter(workspace_id, unique_id).delete_data()
 
-            if WorkspaceService.is_data_usage_available():
-                WorkspaceService.delete_workspace_experiment(
-                    db, workspace_id, unique_id
-                )
-
+        if WorkspaceService.is_data_usage_available():
+            WorkspaceService.delete_workspace_experiment(db, workspace_id, unique_id)
         return True
 
     except SQLAlchemyError as db_err:
