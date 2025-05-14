@@ -407,26 +407,18 @@ describe("ExperimentTable", () => {
       </Provider>,
     )
 
-    // Wait for the table to render
-    await waitFor(() => {
-      expect(screen.queryByText(/No Rows\.\.\./i)).not.toBeInTheDocument()
-    })
+    // Find the delete button in the first row
+    const deleteButton = screen.getAllByTestId("delete-button")[0]
 
-    // Select the first experiment row by clicking its checkbox
-    const rowCheckboxes = await screen.findAllByRole("checkbox")
-    const firstRowCheckbox = rowCheckboxes[1] // 0 is "select all", 1 is the first row
-    fireEvent.click(firstRowCheckbox)
+    // Click the delete button
+    fireEvent.click(deleteButton)
 
-    // Click the delete-selected button
-    const deleteSelectedButton = await screen.findByTestId(
-      "delete-selected-button",
+    // Wait for the dialog to appear
+    const dialog = await waitFor(() =>
+      screen.getByRole("dialog", { name: /delete record\?/i }),
     )
-    expect(deleteSelectedButton).toBeEnabled()
-    fireEvent.click(deleteSelectedButton)
 
-    // Confirm that the dialog appears
-    const dialogText = await screen.findByText(/Do you want to delete/i)
-    expect(dialogText).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
 
     // Click the Cancel button
     const cancelButton = screen.getByText(/cancel/i)
@@ -434,9 +426,10 @@ describe("ExperimentTable", () => {
 
     // Assert the dialog has closed
     await waitFor(() => {
-      expect(
-        screen.queryByText(/Do you want to delete/i),
-      ).not.toBeInTheDocument()
+      const closedDialog = screen.queryByRole("dialog", {
+        name: /delete record\?/i,
+      })
+      expect(closedDialog).not.toBeInTheDocument()
     })
   })
 
