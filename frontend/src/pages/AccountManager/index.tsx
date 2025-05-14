@@ -808,6 +808,7 @@ const AccountManager = () => {
         titleSubmit="Delete Account"
         description={`Do you want to delete ID:${openDel?.id} Name:${openDel?.name}? `}
         loading={loading}
+        iconType="warning"
       />
       <ConfirmDialog
         open={!!userWaitingProxy}
