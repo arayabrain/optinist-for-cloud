@@ -77,29 +77,30 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    workspace_ids = []
+    user_uid = None
+
     try:
+        # Step 1: Fetch workspaces
         workspaces = db.query(Workspace).filter(Workspace.user_id == user_id).all()
         workspace_ids = [ws.id for ws in workspaces]
 
+        # Step 2: Delete workspace experiments (DB-level)
         for workspace_id in workspace_ids:
             WorkspaceService.delete_workspace_experiment_by_workspace_id(
                 db, workspace_id
             )
 
+        # Step 3: Clean up workspace DB records
         WorkspaceService.delete_workspace_data_by_user_id(db, user_id)
 
+        # Step 4: Delete user from DB
         user_uid = await crud_users.delete_user(
             db, user_id, organization_id=current_admin.organization.id
         )
 
+        # Step 5: Commit DB changes
         db.commit()
-
-        for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-
-        firebase_auth.delete_user(user_uid)
-
-        return True
 
     except SQLAlchemyError as db_err:
         db.rollback()
@@ -108,6 +109,7 @@ async def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user from database.",
         )
+
     except Exception as e:
         db.rollback()
         logger.error("Error during user deletion: %s", e, exc_info=True)
@@ -115,3 +117,18 @@ async def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user.",
         )
+
+    # Step 6: Do irreversible/external cleanup after DB commit
+    try:
+        for workspace_id in workspace_ids:
+            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
+
+        firebase_auth.delete_user(user_uid)
+
+    except Exception as e:
+        logger.error(
+            "Error during external cleanup after user deletion: %s", e, exc_info=True
+        )
+        # Optional: enqueue retry / notification
+
+    return True

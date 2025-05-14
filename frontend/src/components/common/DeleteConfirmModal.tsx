@@ -90,7 +90,12 @@ const DeleteConfirmModal: FC<DeleteConfirmModalProps> = ({
           <Button onClick={onCancel} variant={"outlined"}>
             CANCEL
           </Button>
-          <Button onClick={onConfirm} color={"error"} variant="contained">
+          <Button
+            onClick={onConfirm}
+            color={"error"}
+            variant="contained"
+            disabled={textDelete !== "DELETE"}
+          >
             {titleSubmit}
           </Button>
         </DialogActions>

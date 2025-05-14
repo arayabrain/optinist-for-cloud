@@ -48,7 +48,11 @@ async def delete_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    workspace_ids = []
+    user_uid = None
+
     try:
+        # Step 1: Collect workspace IDs
         workspace_ids = [
             ws.id
             for ws in db.query(Workspace)
@@ -56,25 +60,22 @@ async def delete_me(
             .all()
         ]
 
+        # Step 2: Delete related experiments in DB
         for workspace_id in workspace_ids:
             WorkspaceService.delete_workspace_experiment_by_workspace_id(
                 db, workspace_id
             )
 
+        # Step 3: Delete DB references (but not files yet)
         WorkspaceService.delete_workspace_data_by_user_id(db, current_user.id)
 
+        # Step 4: Delete user from DB (returns UID for Firebase)
         user_uid = await crud_users.delete_user(
             db, current_user.id, organization_id=current_user.organization.id
         )
 
+        # Step 5: Commit all DB operations
         db.commit()
-
-        for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-
-        firebase_auth.delete_user(user_uid)
-
-        return True
 
     except SQLAlchemyError as db_err:
         db.rollback()
@@ -85,8 +86,26 @@ async def delete_me(
         )
     except Exception as e:
         db.rollback()
-        logger.error("Error during user self-deletion: %s", e, exc_info=True)
+        logger.error("Unexpected error during user self-deletion: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting your account.",
         )
+
+    # Step 6: Perform external deletions AFTER commit
+    try:
+        for workspace_id in workspace_ids:
+            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
+
+        firebase_auth.delete_user(user_uid)
+
+    except Exception as cleanup_err:
+        logger.error(
+            "Post-commit cleanup failed for user %s: %s",
+            current_user.id,
+            cleanup_err,
+            exc_info=True,
+        )
+        pass  # Don't raise: DB changes were successful
+
+    return True

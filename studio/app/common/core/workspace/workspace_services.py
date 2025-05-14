@@ -163,52 +163,65 @@ class WorkspaceService:
     def delete_workspace_data(cls, workspace_id: int, db: Session):
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
 
+        # Step 1: Define all relevant paths
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
-        if not os.path.exists(workspace_dir):
-            logger.error(f"'{workspace_dir}' does not exist")
-            return
-
-        for experiment_id in os.listdir(workspace_dir):
-            experiment_path = join_filepath([workspace_dir, experiment_id])
-            if not os.path.isdir(experiment_path):
-                continue
-
-            yaml_path = join_filepath([experiment_path, "experiment.yaml"])
-            status = load_experiment_success_status(yaml_path)
-
-            if status == "running":
-                logger.info(
-                    f"Skipping delete of experiment '{experiment_id}' (status: running)"
-                )
-                raise Exception(
-                    f"Experiment '{experiment_id}' is still running. Cannot delete."
-                )
-
-            try:
-                if ExperimentRecord.exists(workspace_id, uid=str(experiment_id)):
-                    WorkspaceService.delete_workspace_experiment(
-                        db=db, workspace_id=workspace_id, unique_id=experiment_id
-                    )
-
-                shutil.rmtree(experiment_path)
-                logger.info(f"Deleted experiment data at: {experiment_path}")
-            except Exception as e:
-                logger.error(f"Failed to delete {experiment_path}: {e}")
-
-        # Delete the workspace directory itself
-        try:
-            shutil.rmtree(workspace_dir)
-            logger.info(f"Deleted workspace data at: {workspace_dir}")
-        except Exception as e:
-            logger.error(f"Failed to delete {workspace_dir}: {e}")
-
-        # Delete INPUT_DIR contents
         input_dir = join_filepath([DIRPATH.INPUT_DIR, str(workspace_id)])
+
+        # Step 2: Delete experiment folders under workspace
+        if os.path.exists(workspace_dir):
+            for experiment_id in os.listdir(workspace_dir):
+                experiment_path = join_filepath([workspace_dir, experiment_id])
+                if not os.path.isdir(experiment_path):
+                    continue
+
+                try:
+                    yaml_path = join_filepath([experiment_path, "experiment.yaml"])
+                    status = load_experiment_success_status(yaml_path)
+
+                    if status == "running":
+                        logger.warning(
+                            f"Skipping deletion of running experiment '{experiment_id}'"
+                        )
+                        continue  # skip without raising
+
+                    if ExperimentRecord.exists(workspace_id, uid=str(experiment_id)):
+                        WorkspaceService.delete_workspace_experiment(
+                            db=db, workspace_id=workspace_id, unique_id=experiment_id
+                        )
+
+                    shutil.rmtree(experiment_path)
+                    logger.info(f"Deleted experiment data at: {experiment_path}")
+
+                except Exception as e:
+                    logger.error(
+                        f"Failed to delete experiment '{experiment_id}': {e}",
+                        exc_info=True,
+                    )
+        else:
+            logger.warning(f"Workspace directory '{workspace_dir}' does not exist")
+
+        # Step 3: Delete the workspace directory itself
+        if os.path.exists(workspace_dir):
+            try:
+                shutil.rmtree(workspace_dir)
+                logger.info(f"Deleted workspace directory: {workspace_dir}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to delete workspace directory '{workspace_dir}': {e}",
+                    exc_info=True,
+                )
+        else:
+            logger.warning(f"'{workspace_dir}' already deleted or never existed")
+
+        # Step 4: Delete input directory
         if os.path.exists(input_dir):
             try:
                 shutil.rmtree(input_dir)
                 logger.info(f"Deleted input data at: {input_dir}")
             except Exception as e:
-                logger.error(f"Failed to delete {input_dir}: {e}")
+                logger.error(
+                    f"Failed to delete input directory '{input_dir}': {e}",
+                    exc_info=True,
+                )
         else:
-            logger.warning(f"'{input_dir}' does not exist, skipping INPUT_DIR deletion")
+            logger.warning(f"'{input_dir}' does not exist, skipping")

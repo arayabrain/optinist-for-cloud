@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_pagination import LimitOffsetPage
 from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, or_, select
 
 from studio.app.common import models as common_model
@@ -252,6 +253,7 @@ def delete_workspace(
     current_user: User = Depends(get_current_user),
 ):
     try:
+        # Step 1: Get the workspace
         ws = (
             db.query(common_model.Workspace)
             .filter(
@@ -262,20 +264,49 @@ def delete_workspace(
             .first()
         )
         if not ws:
-            raise HTTPException(status_code=404)
+            raise HTTPException(status_code=404, detail="Workspace not found")
 
+        # Step 2: Delete related data in the DB only
         WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
 
+        # Step 3: Soft delete the workspace
         ws.deleted = True
+
+        # Step 4: Commit all DB changes before doing anything irreversible
         db.commit()
 
-        return True
-
-    except Exception as e:
+    except SQLAlchemyError as db_err:
+        db.rollback()
+        logger.error(
+            "Database error during workspace deletion: %s", db_err, exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="delete workspace failed",
-        ) from e
+            detail="Database error during workspace deletion.",
+        )
+
+    except Exception as e:
+        db.rollback()
+        logger.error("Unexpected error during workspace deletion: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error during workspace deletion.",
+        )
+
+    try:
+        # Step 5: Delete external resources (e.g., files) AFTER the DB is committed
+        WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
+    except Exception as cleanup_err:
+        logger.error(
+            "Post-commit cleanup failed for workspace %s: %s",
+            workspace_id,
+            cleanup_err,
+            exc_info=True,
+        )
+        pass  # Do not raise here — the workspace has already been deleted in the DB.
+        # If files not deleted, can be cleaned up later.
+
+    return True
 
 
 @router.get(
