@@ -253,7 +253,9 @@ def delete_workspace(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        # Step 1: Get the workspace
+        # Delete experiment from database
+        WorkspaceService.delete_experiment_records_by_workspace_id(db, workspace_id)
+
         ws = (
             db.query(common_model.Workspace)
             .filter(
@@ -266,11 +268,15 @@ def delete_workspace(
         if not ws:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
-        # Step 2: Soft delete the workspace
+        # Soft delete the workspace
         ws.deleted = True
 
-        # Step 3: Commit all DB changes before doing anything irreversible
+        # Commit all DB changes before doing anything irreversible
         db.commit()
+
+        WorkspaceService.delete_workspace_experiment_files(
+            workspace_id=workspace_id, db=db
+        )
 
     except SQLAlchemyError as db_err:
         db.rollback()
@@ -289,19 +295,6 @@ def delete_workspace(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error during workspace deletion.",
         )
-
-    try:
-        # Step 4: Delete external resources (e.g., files) AFTER the DB is committed
-        WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-    except Exception as cleanup_err:
-        logger.error(
-            "Post-commit cleanup failed for workspace %s: %s",
-            workspace_id,
-            cleanup_err,
-            exc_info=True,
-        )
-        pass  # Do not raise here — the workspace has already been deleted in the DB.
-        # If files not deleted, can be cleaned up later.
 
     return True
 

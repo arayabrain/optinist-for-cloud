@@ -77,58 +77,87 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
-    workspace_ids = []
-    user_uid = None
-
     try:
-        # Step 1: Fetch workspaces
-        workspaces = db.query(Workspace).filter(Workspace.user_id == user_id).all()
+        workspaces = (
+            db.query(Workspace)
+            .filter(
+                Workspace.user_id == user_id,
+                Workspace.deleted.is_(False),
+            )
+            .all()
+        )
         workspace_ids = [ws.id for ws in workspaces]
 
-        # Step 2: Delete workspace experiments (DB-level)
         for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_experiment_by_workspace_id(
-                db, workspace_id
+            try:
+                # Delete experiment from database
+                WorkspaceService.delete_experiment_records_by_workspace_id(
+                    db, workspace_id
+                )
+
+                ws = (
+                    db.query(Workspace)
+                    .filter(
+                        Workspace.id == workspace_id,
+                        Workspace.user_id == user_id,
+                        Workspace.deleted.is_(False),
+                    )
+                    .first()
+                )
+
+                if not ws:
+                    raise HTTPException(
+                        status_code=404, detail=f"Workspace {workspace_id} not found"
+                    )
+
+                ws.deleted = True
+
+                db.add(ws)
+                db.commit()
+
+                WorkspaceService.delete_workspace_experiment_files(
+                    workspace_id=workspace_id, db=db
+                )
+
+            except Exception as e:
+                db.rollback()
+                logger.error(
+                    "Error deleting or updating workspace %s: %s",
+                    workspace_id,
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to delete or update workspace {workspace_id}.",
+                )
+
+        # Delete user and Firebase account
+        try:
+            user_uid = await crud_users.delete_user(
+                db=db, user_id=user_id, organization_id=current_admin.organization.id
+            )
+            firebase_auth.delete_user(user_uid)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error("Error deleting user %s: %s", user_id, e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete user.",
             )
 
-        # Step 3: Clean up workspace DB records
-        WorkspaceService.delete_workspace_data_by_user_id(db, user_id)
-
-        # Step 4: Delete user from DB
-        user_uid = await crud_users.delete_user(
-            db, user_id, organization_id=current_admin.organization.id
-        )
-
-        # Step 5: Commit DB changes
-        db.commit()
+        return True
 
     except SQLAlchemyError as db_err:
-        db.rollback()
-        logger.error("Database error during user deletion: %s", db_err, exc_info=True)
+        logger.error("Database error: %s", db_err, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete user from database.",
+            detail="Database error while deleting user.",
         )
-
     except Exception as e:
-        db.rollback()
-        logger.error("Error during user deletion: %s", e, exc_info=True)
+        logger.error("Error deleting user: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete user.",
         )
-
-    # Step 6: Do irreversible/external cleanup after DB commit
-    try:
-        for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-
-        firebase_auth.delete_user(user_uid)
-
-    except Exception as e:
-        logger.error(
-            "Error during external cleanup after user deletion: %s", e, exc_info=True
-        )
-        # Optional: enqueue retry / notification
-
-    return True

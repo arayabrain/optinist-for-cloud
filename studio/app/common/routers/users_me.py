@@ -52,60 +52,97 @@ async def delete_me(
     user_uid = None
 
     try:
-        # Step 1: Collect workspace IDs
-        workspace_ids = [
-            ws.id
-            for ws in db.query(Workspace)
-            .filter(Workspace.user_id == current_user.id)
-            .all()
-        ]
-
-        # Step 2: Delete related experiments in DB
-        for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_experiment_by_workspace_id(
-                db, workspace_id
+        workspaces = (
+            db.query(Workspace)
+            .filter(
+                Workspace.user_id == current_user.id,
+                Workspace.deleted.is_(False),
             )
-
-        # Step 3: Delete DB references (but not files yet)
-        WorkspaceService.delete_workspace_data_by_user_id(db, current_user.id)
-
-        # Step 4: Delete user from DB (returns UID for Firebase)
-        user_uid = await crud_users.delete_user(
-            db, current_user.id, organization_id=current_user.organization.id
+            .all()
         )
+        workspace_ids = [ws.id for ws in workspaces]
 
-        # Step 5: Commit all DB operations
-        db.commit()
+        for workspace_id in workspace_ids:
+            try:
+                # Delete experiment from database
+                WorkspaceService.delete_experiment_records_by_workspace_id(
+                    db, workspace_id
+                )
+
+                # Soft Delete Workspace
+                ws = (
+                    db.query(Workspace)
+                    .filter(
+                        Workspace.id == workspace_id,
+                        Workspace.user_id == current_user.id,
+                        Workspace.deleted.is_(False),
+                    )
+                    .first()
+                )
+
+                if not ws:
+                    raise HTTPException(
+                        status_code=404, detail=f"Workspace {workspace_id} not found"
+                    )
+
+                ws.deleted = True
+                db.add(ws)
+                db.commit()
+
+                WorkspaceService.delete_experiment_records_by_workspace_id(
+                    db, workspace_id
+                )
+                WorkspaceService.delete_workspace_experiment_files(
+                    workspace_id=workspace_id, db=db
+                )
+
+            except Exception as e:
+                db.rollback()
+                logger.error(
+                    "Failed to soft-delete workspace %s: %s",
+                    workspace_id,
+                    e,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to delete or update workspace {workspace_id}.",
+                )
+
+        try:
+            user_uid = await crud_users.delete_user(
+                db=db,
+                user_id=current_user.id,
+                organization_id=current_user.organization.id,
+            )
+            db.commit()
+            firebase_auth.delete_user(user_uid)
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                "Failed to delete user %s: %s", current_user.id, e, exc_info=True
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete your user account.",
+            )
 
     except SQLAlchemyError as db_err:
         db.rollback()
-        logger.error("DB error during user self-deletion: %s", db_err, exc_info=True)
+        logger.error(
+            "SQLAlchemy error during user self-deletion: %s", db_err, exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not delete your account from the database.",
+            detail="Database error during account deletion.",
         )
+
     except Exception as e:
         db.rollback()
         logger.error("Unexpected error during user self-deletion: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while deleting your account.",
+            detail="An unexpected error occurred while deleting your account.",
         )
-
-    # Step 6: Perform external deletions AFTER commit
-    try:
-        for workspace_id in workspace_ids:
-            WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-
-        firebase_auth.delete_user(user_uid)
-
-    except Exception as cleanup_err:
-        logger.error(
-            "Post-commit cleanup failed for user %s: %s",
-            current_user.id,
-            cleanup_err,
-            exc_info=True,
-        )
-        pass  # Don't raise: DB changes were successful
 
     return True
