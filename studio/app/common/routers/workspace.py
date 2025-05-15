@@ -266,13 +266,10 @@ def delete_workspace(
         if not ws:
             raise HTTPException(status_code=404, detail="Workspace not found")
 
-        # Step 2: Delete related data in the DB only
-        WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
-
-        # Step 3: Soft delete the workspace
+        # Step 2: Soft delete the workspace
         ws.deleted = True
 
-        # Step 4: Commit all DB changes before doing anything irreversible
+        # Step 3: Commit all DB changes before doing anything irreversible
         db.commit()
 
     except SQLAlchemyError as db_err:
@@ -294,7 +291,7 @@ def delete_workspace(
         )
 
     try:
-        # Step 5: Delete external resources (e.g., files) AFTER the DB is committed
+        # Step 4: Delete external resources (e.g., files) AFTER the DB is committed
         WorkspaceService.delete_workspace_data(workspace_id=workspace_id, db=db)
     except Exception as cleanup_err:
         logger.error(
