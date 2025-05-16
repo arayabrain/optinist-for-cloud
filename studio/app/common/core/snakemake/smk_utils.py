@@ -7,9 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Dict
 
-import yaml
-
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.workflow.workflow import NodeType, NodeTypeUtil
@@ -140,16 +139,12 @@ class SmkUtils:
                     [DIRPATH.OUTPUT_DIR, workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
                 )
 
-                # Check if file exists
-                if os.path.exists(config_path):
-                    with open(config_path, "r") as f:
-                        config = yaml.safe_load(f)
-
-                    if config and "nwb_template" in config:
-                        template = config["nwb_template"]
-                        rule_config.nwbfile = template
+                config = ConfigReader.read(config_path)
+                if "nwb_template" in config:
+                    template = config["nwb_template"]
+                    rule_config.nwbfile = template
                 else:
-                    logger.error(f"Config file does not exist: {config_path}")
+                    logger.error(f"NWB template not found in config: {config_path}")
 
         return rule_config
 
