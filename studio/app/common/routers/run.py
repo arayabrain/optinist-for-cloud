@@ -148,9 +148,11 @@ async def apply_filter(
         WorkflowNodeDataFilter(
             workspace_id=workspace_id, unique_id=uid, node_id=node_id
         ).filter_node_data(params)
+
         background_tasks.add_task(
             WorkspaceService.update_experiment_data_usage, workspace_id, uid
         )
+
         return True
     except Exception as e:
         logger.error(e, exc_info=True)
