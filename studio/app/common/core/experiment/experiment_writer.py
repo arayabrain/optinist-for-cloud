@@ -14,11 +14,14 @@ from studio.app.common.core.experiment.experiment_builder import ExptConfigBuild
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.config_handler import ConfigWriter
+from studio.app.common.core.utils.file_reader import ExperimentReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import NodeRunStatus, WorkflowRunStatus
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
+
+logger = AppLogger.get_logger()
 
 
 class ExptConfigWriter:
@@ -128,11 +131,30 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     def delete_data(self) -> bool:
-        result = True
-
-        shutil.rmtree(
-            join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
+        experiment_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
         )
+
+        try:
+            yaml_path = join_filepath([experiment_path, "experiment.yaml"])
+            status = ExperimentReader.load_experiment_success_status(yaml_path)
+
+            if status == "running":
+                logger.warning(
+                    f"Skipping deletion of running experiment '{self.unique_id}'"
+                )
+
+            shutil.rmtree(experiment_path)
+            logger.info(f"Deleted experiment data at: {experiment_path}")
+
+            result = True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to delete experiment '{self.unique_id}': {e}",
+                exc_info=True,
+            )
+            result = False
 
         return result
 

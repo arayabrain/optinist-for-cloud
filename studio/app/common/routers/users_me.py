@@ -63,51 +63,11 @@ async def delete_me(
         workspace_ids = [ws.id for ws in workspaces]
 
         for workspace_id in workspace_ids:
-            try:
-                # Delete experiment from database
-                WorkspaceService.delete_experiment_records_by_workspace_id(
-                    db, workspace_id
-                )
-
-                # Soft Delete Workspace
-                ws = (
-                    db.query(Workspace)
-                    .filter(
-                        Workspace.id == workspace_id,
-                        Workspace.user_id == current_user.id,
-                        Workspace.deleted.is_(False),
-                    )
-                    .first()
-                )
-
-                if not ws:
-                    raise HTTPException(
-                        status_code=404, detail=f"Workspace {workspace_id} not found"
-                    )
-
-                ws.deleted = True
-                db.add(ws)
-                db.commit()
-
-                WorkspaceService.delete_experiment_records_by_workspace_id(
-                    db, workspace_id
-                )
-                WorkspaceService.delete_workspace_experiment_files(
-                    workspace_id=workspace_id, db=db
-                )
-
-            except Exception as e:
-                db.rollback()
-                logger.error(
-                    "Failed to soft-delete workspace %s: %s",
-                    workspace_id,
-                    e,
-                    exc_info=True,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to delete or update workspace {workspace_id}.",
-                )
+            WorkspaceService.process_workspace_deletion(
+                db=db,
+                workspace_id=workspace_id,
+                user_id=current_user.id,
+            )
 
         try:
             user_uid = await crud_users.delete_user(

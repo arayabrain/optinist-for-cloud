@@ -2,12 +2,15 @@ import os
 import shutil
 from pathlib import Path
 
-import yaml
+from fastapi import HTTPException, status
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Session, delete, update
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
-from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
+from studio.app.common.core.experiment.experiment_writer import (
+    ExptConfigWriter,
+    ExptDataWriter,
+)
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.utils.file_reader import get_folder_size
@@ -18,18 +21,6 @@ from studio.app.common.models.workspace import Workspace
 from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
-
-
-def load_experiment_success_status(yaml_path: str) -> str:
-    if not os.path.exists(yaml_path):
-        return "not_found"
-
-    try:
-        with open(yaml_path, "r") as file:
-            data = yaml.safe_load(file)
-            return data.get("success", "unknown")
-    except yaml.YAMLError:
-        return "error"
 
 
 class WorkspaceService:
@@ -114,6 +105,7 @@ class WorkspaceService:
                 ExperimentRecord.uid == unique_id,
             )
         )
+        db.commit()
 
     @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
@@ -146,7 +138,10 @@ class WorkspaceService:
             db.bulk_save_objects(exp_records)
 
     @classmethod
-    def delete_workspace_experiment_files(cls, workspace_id: int, db: Session):
+    def delete_workspace_experiment_files(
+        cls,
+        workspace_id: int,
+    ):
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
 
         # Step 1: Define all relevant paths
@@ -156,13 +151,7 @@ class WorkspaceService:
         # Step 2: Delete experiment folders under workspace
         if os.path.exists(workspace_dir):
             for experiment_id in os.listdir(workspace_dir):
-                experiment_path = join_filepath([workspace_dir, experiment_id])
-                if not os.path.isdir(experiment_path):
-                    continue
-
-                WorkspaceService.delete_experiement_files(
-                    experiment_path=experiment_path, experiment_id=experiment_id
-                )
+                ExptDataWriter(str(workspace_id), experiment_id).delete_data()
         else:
             logger.warning(f"Workspace directory '{workspace_dir}' does not exist")
 
@@ -177,30 +166,9 @@ class WorkspaceService:
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
         if os.path.exists(workspace_dir):
             for experiment_id in os.listdir(workspace_dir):
-                if ExperimentRecord.exists(workspace_id, uid=str(experiment_id)):
-                    WorkspaceService.delete_workspace_experiment(
-                        db=db, workspace_id=workspace_id, unique_id=experiment_id
-                    )
-
-    @classmethod
-    def delete_experiement_files(cls, experiment_path: str, experiment_id: str):
-        try:
-            yaml_path = join_filepath([experiment_path, "experiment.yaml"])
-            status = load_experiment_success_status(yaml_path)
-
-            if status == "running":
-                logger.warning(
-                    f"Skipping deletion of running experiment '{experiment_id}'"
+                WorkspaceService.delete_workspace_experiment(
+                    db=db, workspace_id=workspace_id, unique_id=experiment_id
                 )
-
-            shutil.rmtree(experiment_path)
-            logger.info(f"Deleted experiment data at: {experiment_path}")
-
-        except Exception as e:
-            logger.error(
-                f"Failed to delete experiment '{experiment_id}': {e}",
-                exc_info=True,
-            )
 
     @classmethod
     def delete_workspace_files(cls, directory: str):
@@ -214,4 +182,45 @@ class WorkspaceService:
             logger.error(
                 f"Failed to delete directory '{directory}': {e}",
                 exc_info=True,
+            )
+
+    @classmethod
+    def process_workspace_deletion(cls, db: Session, workspace_id: str, user_id: str):
+        try:
+            # Delete experiment from database
+            WorkspaceService.delete_experiment_records_by_workspace_id(db, workspace_id)
+            # Soft Delete Workspace
+            ws = (
+                db.query(Workspace)
+                .filter(
+                    Workspace.id == workspace_id,
+                    Workspace.user_id == user_id,
+                    Workspace.deleted.is_(False),
+                )
+                .first()
+            )
+
+            if not ws:
+                raise HTTPException(status_code=404, detail="Workspace not found")
+
+            # Soft delete the workspace
+            ws.deleted = True
+
+            WorkspaceService.delete_workspace_experiment_files(
+                workspace_id=workspace_id
+            )
+
+            # Commit all DB changes before doing anything irreversible
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                "Error deleting or updating workspace %s: %s",
+                workspace_id,
+                e,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete or update workspace {workspace_id}.",
             )

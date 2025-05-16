@@ -1,24 +1,21 @@
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi_pagination import LimitOffsetPage
 from fastapi_pagination.ext.sqlmodel import paginate
 from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, or_, select
 
 from studio.app.common import models as common_model
 from studio.app.common.core.auth.auth_dependencies import get_current_user
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.utils.file_reader import ExperimentReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
-from studio.app.common.core.workspace.workspace_services import (
-    WorkspaceService,
-    load_experiment_success_status,
-)
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.base import SortOptions
 from studio.app.common.schemas.users import User
@@ -83,7 +80,7 @@ def search_workspaces(
                     if not os.path.isdir(experiment_path):
                         continue
                     yaml_path = join_filepath([experiment_path, "experiment.yaml"])
-                    status = load_experiment_success_status(yaml_path)
+                    status = ExperimentReader.load_experiment_success_status(yaml_path)
                     if status == "running":
                         can_delete = False
                         break
@@ -252,49 +249,9 @@ def delete_workspace(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        # Delete experiment from database
-        WorkspaceService.delete_experiment_records_by_workspace_id(db, workspace_id)
-
-        ws = (
-            db.query(common_model.Workspace)
-            .filter(
-                common_model.Workspace.id == workspace_id,
-                common_model.Workspace.user_id == current_user.id,
-                common_model.Workspace.deleted.is_(False),
-            )
-            .first()
-        )
-        if not ws:
-            raise HTTPException(status_code=404, detail="Workspace not found")
-
-        # Soft delete the workspace
-        ws.deleted = True
-
-        # Commit all DB changes before doing anything irreversible
-        db.commit()
-
-        WorkspaceService.delete_workspace_experiment_files(
-            workspace_id=workspace_id, db=db
-        )
-
-    except SQLAlchemyError as db_err:
-        db.rollback()
-        logger.error(
-            "Database error during workspace deletion: %s", db_err, exc_info=True
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Database error during workspace deletion.",
-        )
-
-    except Exception as e:
-        db.rollback()
-        logger.error("Unexpected error during workspace deletion: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unexpected error during workspace deletion.",
-        )
+    WorkspaceService.process_workspace_deletion(
+        db=db, workspace_id=workspace_id, user_id=current_user.id
+    )
 
     return True
 
