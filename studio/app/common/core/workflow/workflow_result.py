@@ -166,10 +166,10 @@ class WorkflowResult:
         """
         is_running = len(nodeIdList) != len(messages.keys())
 
-        logger.debug(
-            "check wornflow running status "
-            f"[{self.workspace_id}/{self.unique_id}] [is_running: {is_running}]"
-        )
+        # logger.debug(
+        #     "check wornflow running status "
+        #     f"[{self.workspace_id}/{self.unique_id}] [is_running: {is_running}]"
+        # )
 
         return is_running
 
@@ -242,8 +242,9 @@ class NodeResult(BaseNodeResult):
             self.algo_name = os.path.splitext(os.path.basename(pickle_filepath))[0]
             try:
                 self.info = PickleReader.read(pickle_filepath)
-            except EOFError:
+            except Exception as e:
                 self.info = None  # indicates error
+                logger.error(e, exc_info=True)
         else:
             self.algo_name = None
             self.info = None
@@ -263,6 +264,12 @@ class NodeResult(BaseNodeResult):
             expt_config.function[self.node_id].outputPaths = message.outputPaths
 
         expt_config.function[self.node_id].success = message.status
+
+        # TODO: Set started_at on the node
+        #   At the moment, there is insufficient data to obtain an accurate started_at,
+        #  so set it to None.
+        #   separate modification is required to record running info for each node.
+        expt_config.function[self.node_id].started_at = None
 
         now = datetime.now().strftime(DATE_FORMAT)
         expt_config.function[self.node_id].finished_at = now
@@ -424,9 +431,12 @@ class PostProcessResult(BaseNodeResult):
 
 
 class WorkflowMonitor:
-    PROCESS_SNAKEMAKE_CMDLINE = "python .*/\\.snakemake/scripts/"
+    PROCESS_SEARCH_NAMES = ["python", "conda"]
+    PROCESS_SNAKEMAKE_CMDLINE = "\\b(?:python)\\b.*/\\.snakemake/scripts/"
     PROCESS_SNAKEMAKE_WAIT_TIMEOUT = 7200  # sec
-    PROCESS_CONDA_CMDLINE = "conda env create .*/\\.snakemake/conda/"
+    PROCESS_CONDA_CMDLINE = (
+        "\\b(?:conda)\\b.*\\b(?:env)\\b.*\\b(?:create)\\b.*/\\.snakemake/conda/"
+    )
     PROCESS_CONDA_WAIT_TIMEOUT = 3600  # sec
 
     def __init__(self, workspace_id: str, unique_id: str):
@@ -444,9 +454,12 @@ class WorkflowMonitor:
     def search_process(self) -> WorkflowProcessInfo:
         pid_data = Runner.read_pid_file(self.workspace_id, self.unique_id)
         if pid_data is None:
-            logger.warning(
-                f"No workflow pid file found. [{self.workspace_id}/{self.unique_id}]"
-            )
+            # ATTENTION:
+            # It should be a warning, but since it matches frequently,
+            # it is temporarily set to debug.
+            # logger.debug(
+            #     f"No workflow pid file found. [{self.workspace_id}/{self.unique_id}]"
+            # )
 
             # Refer experiment_data instead of pid_data
             expt_config = ExptConfigReader.read(self.expt_filepath)
@@ -460,6 +473,7 @@ class WorkflowMonitor:
             # Set dummy value to proceed to the next step.
             pid_data = WorkflowPIDFileData(
                 last_pid=999999,
+                func_name="__dummy_wrapper",
                 last_script_file="__dummy_wrapper_function.py",
                 create_time=expt_started_time.timestamp(),
             )
@@ -475,7 +489,7 @@ class WorkflowMonitor:
             logger.info(f"Found workflow process. {process}")
 
             # validate process name
-            process_cmdline = " ".join(process.cmdline())
+            process_cmdline = " ".join(process.cmdline()).replace("\\", "/")
             if not re.search(self.PROCESS_SNAKEMAKE_CMDLINE, process_cmdline):
                 logger.warning(
                     "Found another process with same PID:"
@@ -488,14 +502,27 @@ class WorkflowMonitor:
         # If the target process does not exist,
         # check for the existence of the `conda env create` command process.
         except NoSuchProcess:
-            logger.warning(f"No workflow process found. {pid_data}")
+            # ATTENTION:
+            # It should be a warning, but since it matches frequently,
+            # it is temporarily set to debug.
+            # logger.debug(f"No workflow process found. {pid_data}")
 
             # Search for the existence of a conda command process ("conda env create")
             conda_process = None
-            for proc in process_iter(["pid", "name", "cmdline"]):
+            for proc in process_iter(["pid", "name"]):
                 try:
-                    cmdline = proc.info.get("cmdline")
+                    # Targeting specific programs for backlog (for performance)
+                    proc_name = proc.info.get("name")
+                    if not any(v in proc_name for v in self.PROCESS_SEARCH_NAMES):
+                        continue
+
+                    # Get cmdline info
+                    # Note:
+                    #   Since "cmdline" is not specified in `process_iter`
+                    #   (for performance), the cmdline is obtained using "proc.as_dict".
+                    cmdline = proc.as_dict(attrs=["cmdline"]).get("cmdline")
                     cmdline = " ".join(cmdline) if cmdline else ""
+                    cmdline = cmdline.replace("\\", "/")
 
                     if re.search(self.PROCESS_CONDA_CMDLINE, cmdline):
                         conda_ps_create_elapsed = int(time.time() - proc.create_time())
@@ -536,7 +563,7 @@ class WorkflowMonitor:
             # Check elapsed time for process startup
             # *Retry for a certain period of time even if process not found
             if pid_data.elapsed_time_float < self.PROCESS_SNAKEMAKE_WAIT_TIMEOUT:
-                logger.debug(f"Set dummy workflow process tentatively. [{pid_data}]")
+                # logger.debug(f"Set dummy workflow process tentatively. [{pid_data}]")
                 process_data = WorkflowProcessInfo(process=None, pid_data=pid_data)
             else:
                 logger.warning(f"No workflow process found at all. [{pid_data}]")

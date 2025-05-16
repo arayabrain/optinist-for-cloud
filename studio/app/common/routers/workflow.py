@@ -2,7 +2,6 @@ import os
 import shutil
 from dataclasses import asdict
 
-import yaml
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
@@ -25,7 +24,7 @@ from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
 )
-from studio.app.common.schemas.workflow import WorkflowConfig, WorkflowWithResults
+from studio.app.common.schemas.workflow import WorkflowWithResults
 from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/workflow", tags=["workflow"])
@@ -166,13 +165,10 @@ async def download_workspace_config(workspace_id: str, unique_id: str):
 @router.post("/import")
 async def import_workflow_config(file: UploadFile = File(...)):
     try:
-        contents = yaml.safe_load(await file.read())
-        if contents is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid yaml file"
-            )
-        return WorkflowConfig(**contents)
+        contents = WorkflowConfigReader.read(await file.read())
+        return contents
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Parsing yaml failed: {str(e)}",
@@ -180,24 +176,30 @@ async def import_workflow_config(file: UploadFile = File(...)):
 
 
 @router.get(
-    "/sample_data/{workspace_id}",
+    "/sample_data/{workspace_id}/{category}",
     dependencies=[Depends(is_workspace_available)],
 )
-async def copy_sample_data(
+async def import_sample_data(
     workspace_id: str,
+    category: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     sample_data_dir_name = "sample_data"
     folders = ["input", "output"]
 
     for folder in folders:
-        sample_data_dir = join_filepath(
-            [DIRPATH.ROOT_DIR, sample_data_dir_name, folder]
+        import_data_dir = join_filepath(
+            [DIRPATH.ROOT_DIR, sample_data_dir_name, category, folder]
         )
+        if not os.path.exists(import_data_dir):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="import data not found"
+            )
+
         user_dir = join_filepath([DIRPATH.DATA_DIR, folder, workspace_id])
 
         create_directory(user_dir)
-        shutil.copytree(sample_data_dir, user_dir, dirs_exist_ok=True)
+        shutil.copytree(import_data_dir, user_dir, dirs_exist_ok=True)
 
     # Operate remote storage data.
     if RemoteStorageController.is_available():
@@ -205,7 +207,7 @@ async def copy_sample_data(
 
         # Get list of sample data names.
         sample_data_output_dir = join_filepath(
-            [DIRPATH.ROOT_DIR, sample_data_dir_name, "output"]
+            [DIRPATH.ROOT_DIR, sample_data_dir_name, category, "output"]
         )
         sample_data_subdirs = sorted(glob(f"{sample_data_output_dir}/*"))
 

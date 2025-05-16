@@ -1,7 +1,7 @@
 import { EXPERIMENTS_STATUS } from "store/slice/Experiments/ExperimentsType"
 import { RootState } from "store/store"
 
-const selectExperiments = (state: RootState) => state.experiments
+export const selectExperiments = (state: RootState) => state.experiments
 
 export const selectExperimentsStatusIsUninitialized = (state: RootState) =>
   selectExperiments(state).status === "uninitialized"
@@ -44,6 +44,9 @@ export const selectExperiment = (uid: string) => (state: RootState) =>
 
 export const selectExperimentStartedAt = (uid: string) => (state: RootState) =>
   selectExperiment(uid)(state).startedAt
+
+export const selectExperimentDataUsage = (uid: string) => (state: RootState) =>
+  selectExperiment(uid)(state).data_usage
 
 export const selectExperimentFinishedAt = (uid: string) => (state: RootState) =>
   selectExperiment(uid)(state).finishedAt

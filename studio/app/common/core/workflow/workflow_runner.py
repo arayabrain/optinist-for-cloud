@@ -3,6 +3,7 @@ from dataclasses import asdict
 from typing import Dict, List
 
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
+from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.snakemake.smk import FlowConfig, ForceRun, Rule, SmkParam
 from studio.app.common.core.snakemake.snakemake_executor import (
     delete_dependencies,
@@ -27,7 +28,6 @@ from studio.app.common.core.workflow.workflow import (
     RunItem,
 )
 from studio.app.common.core.workflow.workflow_params import get_typecheck_params
-from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.common.core.workflow.workflow_writer import WorkflowConfigWriter
 
 
@@ -43,8 +43,8 @@ class WorkflowRunner:
         self.workspace_id = workspace_id
         self.unique_id = unique_id
         self.runItem = runItem
-        self.nodeDict = WorkflowConfigReader.read_nodeDict(self.runItem.nodeDict)
-        self.edgeDict = WorkflowConfigReader.read_edgeDict(self.runItem.edgeDict)
+        self.nodeDict = self.runItem.nodeDict
+        self.edgeDict = self.runItem.edgeDict
 
         WorkflowConfigWriter(
             self.workspace_id,
@@ -60,6 +60,8 @@ class WorkflowRunner:
             nwbfile=get_typecheck_params(self.runItem.nwbParam, "nwb"),
             snakemake=get_typecheck_params(self.runItem.snakemakeParam, "snakemake"),
         ).write()
+
+        Runner.clear_pid_file(self.workspace_id, self.unique_id)
 
     @staticmethod
     def create_workflow_unique_id() -> str:
@@ -137,7 +139,7 @@ class WorkflowRunner:
             self.workspace_id, self.unique_id, asdict(flow_config)
         )
 
-    def rulefile(self):
+    def rulefile(self) -> Dict[str, Rule]:
         endNodeList = self.get_endNodeList()
 
         nwbfile = get_typecheck_params(self.runItem.nwbParam, "nwb")

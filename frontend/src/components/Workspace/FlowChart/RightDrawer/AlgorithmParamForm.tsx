@@ -3,6 +3,8 @@ import { useSelector, useDispatch } from "react-redux"
 
 import { createParamFormItemComponent } from "components/common/ParamFormItemCreator"
 import { SectionTitle } from "components/common/ParamSection"
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import { ParamFormContext } from "components/Workspace/FlowChart/RightDrawer/ParamFormContents"
 import { getAlgoParams } from "store/slice/AlgorithmNode/AlgorithmNodeActions"
 import {
@@ -26,14 +28,30 @@ export const AlgorithmParamForm = memo(function AlgorithmParamForm() {
     selectAlgorithmParamsKeyList(nodeId),
     arrayEqualityFn,
   )
+
   useEffect(() => {
     if (!algoParamIsLoaded) {
       dispatch(getAlgoParams({ nodeId, algoName }))
     }
   }, [dispatch, nodeId, algoName, algoParamIsLoaded])
+
   return (
     <div style={{ padding: 24 }}>
-      <SectionTitle>{algoName}</SectionTitle>
+      <div style={{ display: "flex" }}>
+        <SectionTitle>{algoName}</SectionTitle>
+        <ExternalLinkButton
+          url={getDocumentationUrl(algoName)}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+          }}
+          iconStyle={{
+            fontSize: "16px",
+          }}
+        />
+      </div>
       {paramKeyList.map((paramKey) => (
         <ParamItem key={paramKey} paramKey={paramKey} />
       ))}

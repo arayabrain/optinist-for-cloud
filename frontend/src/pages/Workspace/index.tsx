@@ -38,6 +38,7 @@ import Loading from "components/common/Loading"
 import PaginationCustom from "components/common/PaginationCustom"
 import PopupShare from "components/Workspace/PopupShare"
 import { selectCurrentUser } from "store/slice/User/UserSelector"
+import { resetVisualizeLayout } from "store/slice/VisualizeItem/VisualizeItemSlice"
 import {
   delWorkspace,
   getListUserShareWorkSpaces,
@@ -53,6 +54,7 @@ import {
 import { ItemsWorkspace } from "store/slice/Workspace/WorkspaceType"
 import { isMine } from "store/slice/Workspace/WorkspaceUtils"
 import { AppDispatch } from "store/store"
+import { convertBytes } from "utils"
 
 type PopupType = {
   open: boolean
@@ -164,6 +166,13 @@ const columns = (
         {moment(params.value).format("YYYY/MM/DD hh:mm")}
       </span>
     ),
+  },
+  {
+    headerName: "Data size",
+    field: "data_usage",
+    renderCell: (params: GridRenderCellParams<GridValidRowModel>) => {
+      return convertBytes(params.value)
+    },
   },
   {
     field: "workflow",
@@ -373,6 +382,7 @@ const Workspaces = () => {
   }
 
   const handleNavWorkflow = (id: number) => {
+    dispatch(resetVisualizeLayout())
     navigate(`/console/workspaces/${id}`)
   }
 
@@ -556,6 +566,7 @@ const Workspaces = () => {
         }
         iconType="warning"
         confirmLabel="delete"
+        confirmButtonColor="error"
       />
       <PopupNew
         open={open.new}
