@@ -86,6 +86,8 @@ pytest-asyncio = "^0.24.0"
 aioboto3 = "^13.1.1"
 matplotlib = "3.7.*"
 concurrent-log-handler = "^0.9.25"
+numpydoc = "*"
+yapf = "*"
 
 [tool.poetry.group.dev]
 optional = true
