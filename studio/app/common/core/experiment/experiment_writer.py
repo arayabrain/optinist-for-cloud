@@ -142,7 +142,7 @@ class ExptDataWriter:
             yaml_path = join_filepath([experiment_path, "experiment.yaml"])
             status = load_experiment_success_status(yaml_path)
 
-            if status == "running":
+            if status == WorkflowRunStatus.RUNNING.value:
                 logger.warning(
                     f"Skipping deletion of running experiment '{self.unique_id}'"
                 )

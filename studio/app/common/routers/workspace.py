@@ -10,6 +10,7 @@ from studio.app.common import models as common_model
 from studio.app.common.core.auth.auth_dependencies import get_current_user
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.workflow.workflow import WorkflowRunStatus
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -83,7 +84,7 @@ def search_workspaces(
                         continue
                     yaml_path = join_filepath([experiment_path, "experiment.yaml"])
                     status = load_experiment_success_status(yaml_path)
-                    if status == "running":
+                    if status == WorkflowRunStatus.RUNNING.value:
                         can_delete = False
                         break
 
