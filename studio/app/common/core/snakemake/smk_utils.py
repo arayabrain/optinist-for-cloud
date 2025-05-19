@@ -4,8 +4,6 @@ import platform
 import subprocess
 from typing import Dict
 
-import yaml
-
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
