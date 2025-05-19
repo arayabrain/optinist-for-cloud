@@ -14,7 +14,6 @@ from studio.app.common.core.experiment.experiment_builder import ExptConfigBuild
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.config_handler import ConfigWriter
-from studio.app.common.core.utils.file_reader import ExperimentReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import NodeRunStatus, WorkflowRunStatus
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
@@ -131,13 +130,17 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     def delete_data(self) -> bool:
+        from studio.app.common.core.workspace.workspace_services import (
+            load_experiment_success_status,
+        )
+
         experiment_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
         )
 
         try:
             yaml_path = join_filepath([experiment_path, "experiment.yaml"])
-            status = ExperimentReader.load_experiment_success_status(yaml_path)
+            status = load_experiment_success_status(yaml_path)
 
             if status == "running":
                 logger.warning(

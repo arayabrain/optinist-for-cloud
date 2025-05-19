@@ -2,6 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
+import yaml
 from fastapi import HTTPException, status
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Session, delete, update
@@ -21,6 +22,18 @@ from studio.app.common.models.workspace import Workspace
 from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
+
+
+def load_experiment_success_status(yaml_path: str) -> str:
+    if not os.path.exists(yaml_path):
+        return "not_found"
+
+    try:
+        with open(yaml_path, "r") as file:
+            data = yaml.safe_load(file)
+            return data.get("success", "unknown")
+    except yaml.YAMLError:
+        return "error"
 
 
 class WorkspaceService:

@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from io import BufferedReader
 from pathlib import Path
 
-import yaml
 from typing_extensions import Optional
 
 from studio.app.common.schemas.outputs import (
@@ -96,20 +95,6 @@ class LineReader(ContentUnitReader):
 
     def parse(self, content: bytes) -> dict:
         return {"raw": content}
-
-
-class ExperimentReader:
-    @staticmethod
-    def load_experiment_success_status(yaml_path: str) -> str:
-        if not os.path.exists(yaml_path):
-            return "not_found"
-
-        try:
-            with open(yaml_path, "r") as file:
-                data = yaml.safe_load(file)
-                return data.get("success", "unknown")
-        except yaml.YAMLError:
-            return "error"
 
 
 class PaginatedFileReader:

@@ -9,13 +9,15 @@ from sqlmodel import Session, or_, select
 from studio.app.common import models as common_model
 from studio.app.common.core.auth.auth_dependencies import get_current_user
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.utils.file_reader import ExperimentReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
-from studio.app.common.core.workspace.workspace_services import WorkspaceService
+from studio.app.common.core.workspace.workspace_services import (
+    WorkspaceService,
+    load_experiment_success_status,
+)
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.base import SortOptions
 from studio.app.common.schemas.users import User
@@ -80,7 +82,7 @@ def search_workspaces(
                     if not os.path.isdir(experiment_path):
                         continue
                     yaml_path = join_filepath([experiment_path, "experiment.yaml"])
-                    status = ExperimentReader.load_experiment_success_status(yaml_path)
+                    status = load_experiment_success_status(yaml_path)
                     if status == "running":
                         can_delete = False
                         break
