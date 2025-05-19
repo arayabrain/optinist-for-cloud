@@ -159,7 +159,6 @@ class WorkspaceService:
 
         # Step 1: Define all relevant paths
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
-        input_dir = join_filepath([DIRPATH.INPUT_DIR, str(workspace_id)])
 
         # Step 2: Delete experiment folders under workspace
         if os.path.exists(workspace_dir):
@@ -169,10 +168,12 @@ class WorkspaceService:
             logger.warning(f"Workspace directory '{workspace_dir}' does not exist")
 
         # Step 3: Delete the workspace directory itself
-        WorkspaceService.delete_workspace_files(workspace_dir)
+        WorkspaceService.delete_workspace_files(workspace_id=str(workspace_id))
 
         # Step 4: Delete input directory
-        WorkspaceService.delete_workspace_files(input_dir)
+        WorkspaceService.delete_workspace_files(
+            workspace_id=str(workspace_id), is_input_dir=True
+        )
 
     @classmethod
     def delete_experiment_records_by_workspace_id(cls, db: Session, workspace_id: int):
@@ -184,7 +185,11 @@ class WorkspaceService:
                 )
 
     @classmethod
-    def delete_workspace_files(cls, directory: str):
+    def delete_workspace_files(cls, workspace_id: str, is_input_dir: bool = False):
+        if is_input_dir:
+            directory = join_filepath([DIRPATH.INPUT_DIR, workspace_id])
+        else:
+            directory = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
         try:
             if os.path.exists(directory):
                 shutil.rmtree(directory)
