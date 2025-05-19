@@ -150,6 +150,9 @@ class SmkUtils:
 
     @staticmethod
     def replace_nwbfile_with_reference(config):
+        """Convert NWB template to reference in the config
+        In-built YAML reference not used as requires changing yaml read/write function
+        """
         config_copy = copy.deepcopy(config)
         nwb_template = config_copy.get("nwb_template", {})
 
