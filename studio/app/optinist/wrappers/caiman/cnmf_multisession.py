@@ -178,7 +178,7 @@ def caiman_cnmf_multisession(
         kargs["image_mask"] = spatial_filtered.T[i].T.toarray().reshape(dims)
         roi_list.append(kargs)
 
-    nwbfile[NWBDATASET.ROI] = {function_id: roi_list}
+    nwbfile[NWBDATASET.ROI] = {function_id: {"roi_list": roi_list}}
     nwbfile[NWBDATASET.POSTPROCESS] = {function_id: {"all_roi_img": cell_ims}}
 
     # iscellを追加

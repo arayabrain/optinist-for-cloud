@@ -426,7 +426,7 @@ def set_nwbconfig(nwbfile, config):
     if NWBDATASET.ROI in config:
         for function_key in config[NWBDATASET.ROI]:
             nwbfile = NWBCreater.roi(
-                nwbfile, function_key, config[NWBDATASET.ROI][function_key]
+                nwbfile, function_key, config[NWBDATASET.ROI][function_key]["roi_list"]
             )
 
     if NWBDATASET.COLUMN in config:
