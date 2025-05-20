@@ -132,6 +132,10 @@ async def test_RemoteStorageController_crud_bucket():
 
 @pytest.mark.asyncio
 async def test_RemoteStorageController_operate_input_data():
+    if not RemoteStorageController.is_available():
+        print("RemoteStorageController is available, skip this test.")
+        return
+
     input_file_name = "mouse2p_short_image.tiff"
 
     # upload input data
