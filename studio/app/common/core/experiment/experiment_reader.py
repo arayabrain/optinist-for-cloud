@@ -1,16 +1,17 @@
-from typing import Dict
-
-import yaml
+from typing import Dict, Union
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
+from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import NodeRunStatus, OutputPath
+from studio.app.dir_path import DIRPATH
 
 
 class ExptConfigReader:
     @classmethod
-    def read(cls, filepath) -> ExptConfig:
-        with open(filepath, "r") as f:
-            config = yaml.safe_load(f)
+    def read(cls, file: Union[str, bytes]) -> ExptConfig:
+        config = ConfigReader.read(file)
+        assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
         return ExptConfig(
             workspace_id=config["workspace_id"],
@@ -21,13 +22,28 @@ class ExptConfigReader:
             success=config.get("success", NodeRunStatus.RUNNING.value),
             hasNWB=config["hasNWB"],
             function=cls.read_function(config["function"]),
+            procs=cls.read_function(config.get("procs")),
             nwb=config.get("nwb"),
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
         )
 
+    @staticmethod
+    def read_raw(workspace_id: str, unique_id: str) -> dict:
+        config = ConfigReader.read(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+            )
+        )
+        return config
+
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:
+        # Assuming the case where an empty value is specified, check here.
+        # (For backward compatibility with config yaml)
+        if not config:
+            return {}
+
         return {
             key: ExptFunction(
                 unique_id=value["unique_id"],

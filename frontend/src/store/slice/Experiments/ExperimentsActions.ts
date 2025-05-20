@@ -6,6 +6,7 @@ import {
   deleteExperimentByUidApi,
   deleteExperimentByListApi,
   copyExperimentByListApi,
+  syncRemoteExperimentApi,
 } from "api/experiments/Experiments"
 import { EXPERIMENTS_SLICE_NAME } from "store/slice/Experiments/ExperimentsType"
 import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
@@ -80,5 +81,23 @@ export const copyExperimentByList = createAsyncThunk<
     }
   } else {
     return thunkAPI.rejectWithValue("workspace id does not exist.")
+  }
+})
+
+export const syncRemoteExperiment = createAsyncThunk<
+  boolean,
+  string,
+  ThunkApiConfig
+>(`${EXPERIMENTS_SLICE_NAME}/syncRemoteExperiment`, async (uid, thunkAPI) => {
+  const workspaceId = selectCurrentWorkspaceId(thunkAPI.getState())
+  if (workspaceId) {
+    try {
+      const response = await syncRemoteExperimentApi(workspaceId, uid)
+      return response
+    } catch (e) {
+      return thunkAPI.rejectWithValue(e)
+    }
+  } else {
+    return thunkAPI.rejectWithValue("sync remote storage experiment failed.")
   }
 })

@@ -81,8 +81,13 @@ filelock = "*"
 ruamel-yaml = "^0.18.5"
 pymatreader = "^0.0.32"
 xmltodict = "*"
+boto3 = "^1.34.122"
+pytest-asyncio = "^0.24.0"
+aioboto3 = "^13.1.1"
 matplotlib = "3.7.*"
 concurrent-log-handler = "^0.9.25"
+numpydoc = "*"
+yapf = "*"
 
 [tool.poetry.group.dev]
 optional = true
@@ -127,7 +132,10 @@ profile = "black"
 [tool.pytest.ini_options]
 pythonpath = "."
 testpaths = "/app/studio/tests"
-env = ["OPTINIST_DIR=/app/studio/test_data"]
+env = [
+  "OPTINIST_DIR=/app/studio/test_data",
+  "IS_TEST=True",
+]
 filterwarnings = [
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning",

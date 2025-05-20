@@ -1,13 +1,19 @@
 import os
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
-from typing import Dict
+from typing import Dict, List
 
 from snakemake import snakemake
 
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.snakemake.smk import SmkParam
+from studio.app.common.core.snakemake.smk import ForceRun, SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteSyncAction,
+    RemoteSyncLockFileUtil,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.filepath_creater import get_pickle_file, join_filepath
 from studio.app.common.core.workflow.workflow import Edge, Node
 from studio.app.common.core.workspace.workspace_services import WorkspaceService
@@ -66,7 +72,27 @@ def _snakemake_execute_process(
         logger.error("snakemake_execute failed..")
 
     WorkspaceService.update_experiment_data_usage(workspace_id, unique_id)
+
     smk_logger.clean_up()
+
+    # result error handling
+    if not result:
+        # Operate remote storage.
+        if RemoteStorageController.is_available():
+            # force delete sync lock file
+            RemoteSyncLockFileUtil.delete_sync_lock_file(workspace_id, unique_id)
+
+            remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                workspace_id, unique_id
+            )
+
+            # force update sync status file
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_error(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
 
     return result
 
@@ -112,3 +138,30 @@ def delete_dependencies(
         for edge in edgeDict.values():
             if node_id == edge.source:
                 queue.append(edge.target)
+
+
+def delete_procs_dependencies(
+    workspace_id: str,
+    unique_id: str,
+    forceRunList: List[ForceRun],
+):
+    """
+    Delete procs (ExptConfig.procs) dependencies
+    """
+
+    for proc in forceRunList:
+        # delete pickle
+        pickle_filepath = join_filepath(
+            [
+                DIRPATH.OUTPUT_DIR,
+                get_pickle_file(
+                    workspace_id=workspace_id,
+                    unique_id=unique_id,
+                    node_id=proc.nodeId,
+                    algo_name=proc.name,
+                ),
+            ]
+        )
+
+        if os.path.exists(pickle_filepath):
+            os.remove(pickle_filepath)

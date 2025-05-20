@@ -19,6 +19,7 @@ import {
   selectExperimentFunctionName,
   selectExperimentFunctionNodeIdList,
   selectExperimentFunctionStatus,
+  selectExperimentIsRemoteSynced,
 } from "store/slice/Experiments/ExperimentsSelectors"
 import { arrayEqualityFn } from "utils/EqualityUtils"
 
@@ -31,7 +32,7 @@ export const CollapsibleTable = memo(function CollapsibleTable({
 }: CollapsibleTableProps) {
   return (
     <TableRow>
-      <TableCell sx={{ paddingBottom: 0, paddingTop: 0 }} colSpan={11}>
+      <TableCell sx={{ paddingBottom: 0, paddingTop: 0 }} colSpan={12}>
         <Collapse in={open} timeout="auto" unmountOnExit>
           <Box margin={1}>
             <Typography variant="h6" gutterBottom component="div">
@@ -88,6 +89,7 @@ const TableRowOfFunction = memo(function TableRowOfFunction({
   const status = useSelector(selectExperimentFunctionStatus(uid, nodeId))
   const hasNWB = useSelector(selectExperimentFunctionHasNWB(uid, nodeId))
   const message = useSelector(selectExperimentFunctionMessage(uid, nodeId))
+  const isRemoteSynced = useSelector(selectExperimentIsRemoteSynced(uid))
 
   return (
     <TableRow key={nodeId}>
@@ -99,7 +101,12 @@ const TableRowOfFunction = memo(function TableRowOfFunction({
         <ExperimentStatusIcon status={status} message={message} />
       </TableCell>
       <TableCell>
-        <NWBDownloadButton name={name} nodeId={nodeId} hasNWB={hasNWB} />
+        <NWBDownloadButton
+          name={name}
+          nodeId={nodeId}
+          hasNWB={hasNWB}
+          isRemoteSynced={isRemoteSynced}
+        />
       </TableCell>
     </TableRow>
   )

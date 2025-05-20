@@ -19,6 +19,7 @@ import DeleteIcon from "@mui/icons-material/Delete"
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown"
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp"
 import ReplayIcon from "@mui/icons-material/Replay"
+import { Tooltip } from "@mui/material"
 import Alert from "@mui/material/Alert"
 import AlertTitle from "@mui/material/AlertTitle"
 import Box from "@mui/material/Box"
@@ -46,6 +47,7 @@ import {
   SnakemakeDownloadButton,
   WorkflowDownloadButton,
 } from "components/Workspace/Experiment/Button/DownloadButton"
+import { RemoteSyncButton } from "components/Workspace/Experiment/Button/RemoteSyncButton"
 import { ReproduceButton } from "components/Workspace/Experiment/Button/ReproduceButton"
 import { CollapsibleTable } from "components/Workspace/Experiment/CollapsibleTable"
 import { ExperimentStatusIcon } from "components/Workspace/Experiment/ExperimentStatusIcon"
@@ -66,6 +68,7 @@ import {
   selectExperimentList,
   selectExperimentHasNWB,
   selectExperimentDataUsage,
+  selectExperimentIsRemoteSynced,
 } from "store/slice/Experiments/ExperimentsSelectors"
 import { ExperimentSortKeys } from "store/slice/Experiments/ExperimentsType"
 import {
@@ -470,7 +473,7 @@ const HeadItem = memo(function HeadItem({
             direction={order}
             onClick={sortHandler("data_usage")}
           >
-            Data usage
+            Data size
           </TableSortLabel>
         </TableCell>
         <TableCell>Success</TableCell>
@@ -478,6 +481,7 @@ const HeadItem = memo(function HeadItem({
         <TableCell>Workflow</TableCell>
         <TableCell>Snakemake</TableCell>
         <TableCell>NWB</TableCell>
+        <TableCell>Sync</TableCell>
         {isOwner && <TableCell>Delete</TableCell>}
       </TableRow>
     </TableHead>
@@ -509,6 +513,8 @@ const RowItem = memo(function RowItem({
   const [valueEdit, setValueEdit] = useState(name)
   const dispatch = useDispatch<AppDispatch>()
   const { enqueueSnackbar } = useSnackbar()
+  const newLocal = useSelector(selectExperimentIsRemoteSynced(uid))
+  const isRemoteSynced = newLocal
 
   const onBlurEdit = (event: FocusEvent) => {
     event.preventDefault()
@@ -594,9 +600,18 @@ const RowItem = memo(function RowItem({
           )}
         </TableCell>
         <TableCell>{uid}</TableCell>
-        <TableCell sx={{ width: 160, position: "relative" }} onClick={onEdit}>
+        <TableCell
+          sx={{ width: 160, position: "relative" }}
+          onClick={isRemoteSynced ? onEdit : undefined}
+        >
           {!isEdit ? (
-            valueEdit
+            isRemoteSynced ? (
+              valueEdit
+            ) : (
+              <Tooltip title="Data is unsynchronized">
+                <Typography sx={{ color: "gray" }}>{valueEdit}</Typography>
+              </Tooltip>
+            )
           ) : (
             <>
               <Input
@@ -625,7 +640,14 @@ const RowItem = memo(function RowItem({
           <SnakemakeDownloadButton />
         </TableCell>
         <TableCell>
-          <NWBDownloadButton name={uid} hasNWB={hasNWB} />
+          <NWBDownloadButton
+            name={uid}
+            hasNWB={hasNWB}
+            isRemoteSynced={isRemoteSynced}
+          />
+        </TableCell>
+        <TableCell>
+          <RemoteSyncButton />
         </TableCell>
         {isOwner && (
           <TableCell>

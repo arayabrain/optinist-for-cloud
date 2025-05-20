@@ -8,15 +8,24 @@ from datetime import datetime
 from typing import Dict
 
 import numpy as np
-import yaml
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
 from studio.app.common.core.experiment.experiment_builder import ExptConfigBuilder
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageDeleter,
+    RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
+)
 from studio.app.common.core.utils.config_handler import ConfigWriter
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.workflow.workflow import NodeRunStatus, WorkflowRunStatus
+from studio.app.common.core.workflow.workflow import (
+    NodeRunStatus,
+    ProcessType,
+    WorkflowRunStatus,
+)
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
@@ -38,14 +47,6 @@ class ExptConfigWriter:
         self.snakemake = snakemake
         self.builder = ExptConfigBuilder()
 
-    @staticmethod
-    def write_raw(workspace_id: str, unique_id: str, config: dict) -> None:
-        ConfigWriter.write(
-            dirname=join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id]),
-            filename=DIRPATH.EXPERIMENT_YML,
-            config=config,
-        )
-
     def write(self) -> None:
         expt_filepath = join_filepath(
             [
@@ -63,10 +64,19 @@ class ExptConfigWriter:
             self.create_config()
 
         self.build_function_from_nodeDict()
+        self.build_procs()
 
         # Write EXPERIMENT_YML
         self.write_raw(
             self.workspace_id, self.unique_id, config=asdict(self.builder.build())
+        )
+
+    @staticmethod
+    def write_raw(workspace_id: str, unique_id: str, config: dict) -> None:
+        ConfigWriter.write(
+            dirname=join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id]),
+            filename=DIRPATH.EXPERIMENT_YML,
+            config=config,
         )
 
     def create_config(self) -> ExptConfig:
@@ -118,27 +128,88 @@ class ExptConfigWriter:
 
         return self.builder.set_function(func_dict).build()
 
+    def build_procs(self) -> ExptConfig:
+        target_procs = [ProcessType.POST_PROCESS]
+        func_dict: Dict[str, ExptFunction] = {}
+
+        for proc in target_procs:
+            func_dict[proc.id] = ExptFunction(
+                unique_id=proc.id, name=proc.label, hasNWB=False, success="running"
+            )
+
+        return self.builder.set_procs(func_dict).build()
+
 
 class ExptDataWriter:
     def __init__(
         self,
+        remote_bucket_name: str,
         workspace_id: str,
         unique_id: str,
     ):
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
 
-    def delete_data(self) -> bool:
+    async def delete_data(self) -> bool:
         result = True
 
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
+            # delete remote data
+            async with RemoteStorageDeleter(
+                self.remote_bucket_name, self.workspace_id, self.unique_id
+            ) as remote_storage_controller:
+                result = await remote_storage_controller.delete_experiment(
+                    self.workspace_id, self.unique_id
+                )
+
+        # delete local data
         shutil.rmtree(
             join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
         )
 
         return result
 
-    def rename(self, new_name: str) -> ExptConfig:
-        filepath = join_filepath(
+    async def rename(self, new_name: str) -> ExptConfig:
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
+        # validate params
+        new_name = "" if new_name is None else new_name  # filter None
+
+        # Note: "r+" option for file-open is not used here
+        #   because it requires file pointer control.
+
+        # Read config
+        config = ExptConfigReader.read_raw(self.workspace_id, self.unique_id)
+        config["name"] = new_name
+
+        # Update & Write config
+        ExptConfigWriter.write_raw(self.workspace_id, self.unique_id, config)
+
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # upload latest EXPERIMENT_YML
+            async with RemoteStorageWriter(
+                self.remote_bucket_name, self.workspace_id, self.unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
+                )
+
+        config_path = join_filepath(
             [
                 DIRPATH.OUTPUT_DIR,
                 self.workspace_id,
@@ -147,30 +218,7 @@ class ExptDataWriter:
             ]
         )
 
-        # validate params
-        new_name = "" if new_name is None else new_name  # filter None
-
-        # Note: "r+" option is not used here because it requires file pointer control.
-        with open(filepath, "r") as f:
-            config = yaml.safe_load(f)
-            config["name"] = new_name
-
-        with open(filepath, "w") as f:
-            yaml.dump(config, f, sort_keys=False)
-
-        return ExptConfig(
-            workspace_id=config["workspace_id"],
-            unique_id=config["unique_id"],
-            name=config["name"],
-            started_at=config.get("started_at"),
-            finished_at=config.get("finished_at"),
-            success=config.get("success", WorkflowRunStatus.RUNNING.value),
-            hasNWB=config["hasNWB"],
-            function=ExptConfigReader.read_function(config["function"]),
-            nwb=config.get("nwb"),
-            snakemake=config.get("snakemake"),
-            data_usage=config.get("data_usage"),
-        )
+        return ExptConfigReader.read(config_path)
 
     def copy_data(self, new_unique_id: str) -> bool:
         logger = AppLogger.get_logger()
@@ -188,7 +236,9 @@ class ExptDataWriter:
             shutil.copytree(output_dir, new_output_dir)
 
             # Update experiment configuration and unique IDs
-            if not self.__copy_data_update_experiment_config_name(new_output_dir):
+            if not self.__copy_data_update_experiment_config_name(
+                self.workspace_id, new_unique_id
+            ):
                 logger.error("Failed to update experiment.yml after copying.")
                 return False
 
@@ -345,23 +395,20 @@ class ExptDataWriter:
         else:
             return obj
 
-    def __copy_data_update_experiment_config_name(self, output_dir: str) -> bool:
+    def __copy_data_update_experiment_config_name(
+        self, workspace_id: str, unique_id: str
+    ) -> bool:
         logger = AppLogger.get_logger()
-        config_path = join_filepath([output_dir, DIRPATH.EXPERIMENT_YML])
 
         try:
-            with open(config_path, "r") as file:
-                config = yaml.safe_load(file)
-
-            if not config:
-                logger.error(f"Invalid YAML at {config_path}")
-                return False
-
+            # Read config
+            config = ExptConfigReader.read_raw(workspace_id, unique_id)
             config["name"] = f"{config.get('name', 'experiment')}_copy"
-            with open(config_path, "w") as file:
-                yaml.dump(config, file, sort_keys=False)
 
-            logger.info(f"Updated experiment.yml: {config_path}")
+            # Update & Write config
+            ExptConfigWriter.write_raw(workspace_id, unique_id, config)
+
+            logger.info(f"Updated experiment.yml: {workspace_id}/{unique_id}")
             return True
 
         except Exception as e:

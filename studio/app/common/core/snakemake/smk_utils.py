@@ -5,9 +5,10 @@ import subprocess
 from typing import Dict
 
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
-from studio.app.common.core.workflow.workflow import NodeType, NodeTypeUtil
+from studio.app.common.core.workflow.workflow import NodeType, NodeTypeUtil, ProcessType
 from studio.app.const import FILETYPE
 from studio.app.dir_path import DIRPATH
 from studio.app.wrappers import wrapper_dict
@@ -50,7 +51,14 @@ class SmkUtils:
     @classmethod
     def conda(cls, details):
         """Gets conda env path and handles special case of CaImAn on Apple Silicon"""
+
+        # skip conda for input node
         if NodeTypeUtil.check_nodetype_from_filetype(details["type"]) == NodeType.DATA:
+            return None
+        # skip conda for process-event
+        elif details["type"] in [
+            ProcessType.POST_PROCESS.type,
+        ]:
             return None
 
         wrapper = cls.dict2leaf(wrapper_dict, details["path"].split("/"))
@@ -70,6 +78,34 @@ class SmkUtils:
             return cls.get_conda_env_filepath(conda_name)
 
         return None
+
+    @classmethod
+    def get_datatypes_inputs(
+        cls, workspace_id: str, unique_id: str, apply_basename: bool = False
+    ) -> list:
+        smk_config_yml_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.SNAKEMAKE_CONFIG_YML]
+        )
+        smk_config = ConfigReader.read(smk_config_yml_path)
+
+        input_paths = []
+
+        for node in smk_config["rules"].values():
+            if NodeTypeUtil.check_nodetype_from_filetype(node["type"]) == NodeType.DATA:
+                if node["type"] in [FILETYPE.IMAGE]:
+                    if apply_basename:
+                        tmp_input_paths = [os.path.basename(x) for x in node["input"]]
+                    else:
+                        tmp_input_paths = node["input"]
+                    input_paths.extend(tmp_input_paths)
+                else:
+                    if apply_basename:
+                        tmp_input_path = os.path.basename(node["input"])
+                    else:
+                        tmp_input_path = node["input"]
+                    input_paths.append(tmp_input_path)
+
+        return input_paths
 
     @staticmethod
     def is_apple_silicon():

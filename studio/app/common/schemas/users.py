@@ -34,10 +34,15 @@ class User(BaseModel):
     organization: Organization
     role_id: Optional[int]
     data_usage: Optional[int]
+    attributes: Optional[dict]
 
     @property
     def is_admin(self) -> bool:
         return self.role_id == UserRole.admin
+
+    @property
+    def remote_bucket_name(self) -> str:
+        return self.attributes.get("remote_bucket_name")
 
     class Config:
         orm_mode = True

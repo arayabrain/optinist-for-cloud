@@ -23,6 +23,12 @@ class FlowConfig:
     last_output: list
 
 
+class NormalRun(BaseModel):
+    id: str
+    type: str
+    label: str
+
+
 class ForceRun(BaseModel):
     nodeId: str
     name: str

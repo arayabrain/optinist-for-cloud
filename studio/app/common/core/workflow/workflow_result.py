@@ -2,6 +2,7 @@ import os
 import re
 import signal
 import time
+from abc import ABCMeta, abstractmethod
 from dataclasses import asdict
 from datetime import datetime
 from glob import glob
@@ -15,9 +16,18 @@ from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageWriter,
+)
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader
-from studio.app.common.core.workflow.workflow import Message, NodeRunStatus, OutputPath
+from studio.app.common.core.workflow.workflow import (
+    Message,
+    NodeRunStatus,
+    OutputPath,
+    ProcessType,
+)
 from studio.app.common.dataclass import BaseData
 from studio.app.common.schemas.workflow import (
     WorkflowErrorInfo,
@@ -31,7 +41,8 @@ logger = AppLogger.get_logger()
 
 
 class WorkflowResult:
-    def __init__(self, workspace_id: str, unique_id: str):
+    def __init__(self, remote_bucket_name: str, workspace_id: str, unique_id: str):
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
         self.workflow_dirpath = join_filepath(
@@ -46,7 +57,7 @@ class WorkflowResult:
         )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
-    def observe(self, nodeIdList: List[str]) -> Dict:
+    async def observe(self, nodeIdList: List[str]) -> Dict:
         """
         Perform the following operations for the specified workflow
           - Check and update the workflow execution status
@@ -62,7 +73,7 @@ class WorkflowResult:
         )
 
         # observe node list
-        results = self.__observe_node_list(nodeIdList, workflow_error)
+        results = await self.__observe_node_list(nodeIdList, workflow_error)
 
         # check workflow status
         is_workflow_status_running = self.__is_workflow_status_running(
@@ -82,11 +93,11 @@ class WorkflowResult:
                 )
 
             # re-run observe node list (reflects workflow error)
-            results = self.__observe_node_list(nodeIdList, workflow_error)
+            results = await self.__observe_node_list(nodeIdList, workflow_error)
 
         return results
 
-    def __observe_node_list(
+    async def __observe_node_list(
         self, nodeIdList: List[str], workflow_error: WorkflowErrorInfo
     ) -> Dict[str, Message]:
         results: Dict[str, Message] = {}
@@ -115,15 +126,30 @@ class WorkflowResult:
 
                 # process node pickle files
                 for node_pickle_path in node_pickle_files:
-                    node_result = NodeResult(
-                        self.workspace_id,
-                        self.unique_id,
-                        node_id,
-                        node_pickle_path,
-                    )
-                    results[node_id] = node_result.observe()
+                    # process for procs
+                    if node_id == ProcessType.POST_PROCESS.id:
+                        post_process_result = PostProcessResult(
+                            self.remote_bucket_name,
+                            self.workspace_id,
+                            self.unique_id,
+                            node_id,
+                            node_pickle_path,
+                        )
+                        results[node_id] = await post_process_result.observe()
 
-                    self.__check_has_nwb(node_id)
+                        self.__check_has_nwb(node_id)
+
+                    # process for nodes
+                    else:
+                        node_result = NodeResult(
+                            self.workspace_id,
+                            self.unique_id,
+                            node_id,
+                            node_pickle_path,
+                        )
+                        results[node_id] = node_result.observe()
+
+                        self.__check_has_nwb(node_id)
 
         # check workflow nwb
         self.__check_has_nwb()
@@ -171,7 +197,21 @@ class WorkflowResult:
                 )
 
 
-class NodeResult:
+class BaseNodeResult(metaclass=ABCMeta):
+    @abstractmethod
+    def observe(self) -> Message:
+        pass
+
+    @abstractmethod
+    def success(self) -> Message:
+        pass
+
+    @abstractmethod
+    def error(self) -> Message:
+        pass
+
+
+class NodeResult(BaseNodeResult):
     def __init__(
         self,
         workspace_id: str,
@@ -225,10 +265,17 @@ class NodeResult:
 
         expt_config.function[self.node_id].success = message.status
 
+        # TODO: Set started_at on the node
+        #   At the moment, there is insufficient data to obtain an accurate started_at,
+        #  so set it to None.
+        #   separate modification is required to record running info for each node.
+        expt_config.function[self.node_id].started_at = None
+
         now = datetime.now().strftime(DATE_FORMAT)
         expt_config.function[self.node_id].finished_at = now
         expt_config.function[self.node_id].message = message.message
 
+        # check all function processed status
         statuses = list(map(lambda x: x.success, expt_config.function.values()))
 
         if NodeRunStatus.RUNNING.value not in statuses:
@@ -271,6 +318,116 @@ class NodeResult:
                     output_paths[k] = v.output_path
 
         return output_paths
+
+
+class PostProcessResult(BaseNodeResult):
+    def __init__(
+        self,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        node_id: str,
+        pickle_filepath: str,
+        workflow_error: dict = None,
+    ):
+        self.remote_bucket_name = remote_bucket_name
+        self.workspace_id = workspace_id
+        self.unique_id = unique_id
+        self.workflow_dirpath = join_filepath(
+            [
+                DIRPATH.OUTPUT_DIR,
+                self.workspace_id,
+                self.unique_id,
+            ]
+        )
+        self.node_id = node_id
+        self.node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
+        self.expt_filepath = join_filepath(
+            [self.workflow_dirpath, DIRPATH.EXPERIMENT_YML]
+        )
+        self.workflow_has_error = (
+            workflow_error["has_error"] if workflow_error else False
+        )
+        self.workflow_error_log = (
+            workflow_error["error_log"] if workflow_error else None
+        )
+
+        if not self.workflow_has_error:
+            pickle_filepath = pickle_filepath.replace("\\", "/")
+            self.algo_name = os.path.splitext(os.path.basename(pickle_filepath))[0]
+            try:
+                self.info = PickleReader.read(pickle_filepath)
+            except EOFError:
+                self.info = None  # indicates error
+        else:
+            self.algo_name = None
+            self.info = None
+
+    async def observe(self) -> Message:
+        expt_config = ExptConfigReader.read(self.expt_filepath)
+
+        # case) error throughout workflow
+        if self.workflow_has_error:
+            message = self.error(self.workflow_error_log)
+        # case) error in node
+        elif PickleReader.check_is_error_node_pickle(self.info):
+            message = self.error()
+        # case) success in node
+        else:
+            message = self.success()
+
+        expt_config.procs[self.node_id].success = message.status
+
+        now = datetime.now().strftime(DATE_FORMAT)
+        expt_config.procs[self.node_id].finished_at = now
+        expt_config.procs[self.node_id].message = message.message
+
+        # check all function processed status
+        statuses = list(map(lambda x: x.success, expt_config.procs.values()))
+
+        if NodeRunStatus.RUNNING.value not in statuses:
+            expt_config.finished_at = now
+            if NodeRunStatus.ERROR.value in statuses:
+                expt_config.success = NodeRunStatus.ERROR.value
+            else:
+                expt_config.success = NodeRunStatus.SUCCESS.value
+
+        # Update EXPERIMENT_YML
+        ExptConfigWriter.write_raw(
+            self.workspace_id, self.unique_id, asdict(expt_config)
+        )
+
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # upload latest EXPERIMENT_YML
+            async with RemoteStorageWriter(
+                self.remote_bucket_name, expt_config.workspace_id, expt_config.unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    expt_config.workspace_id,
+                    expt_config.unique_id,
+                    [DIRPATH.EXPERIMENT_YML],
+                )
+
+        return message
+
+    def success(self) -> Message:
+        return Message(
+            status=NodeRunStatus.SUCCESS.value,
+            message=f"{self.algo_name} success",
+            outputPaths=[],
+        )
+
+    def error(self, message: str = None) -> Message:
+        if message is None:
+            if self.info is None:
+                message = "Invalid node result info: None"
+            else:
+                message = (
+                    "\n".join(self.info) if isinstance(self.info, list) else self.info
+                )
+
+        return Message(status=NodeRunStatus.ERROR.value, message=message)
 
 
 class WorkflowMonitor:
