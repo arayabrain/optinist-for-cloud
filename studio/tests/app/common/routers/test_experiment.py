@@ -31,7 +31,7 @@ def test_delete(client):
     os.makedirs(dirpath, exist_ok=True)
 
     # Add dummy experiment.yaml
-    with open(os.path.join(dirpath, "experiment.yaml"), "w") as f:
+    with open(os.path.join(dirpath, DIRPATH.EXPERIMENT_YML), "w") as f:
         f.write("name: Dummy Experiment\nsuccess: success")
 
     assert os.path.exists(dirpath)
@@ -47,7 +47,7 @@ def test_delete_list(client):
         os.makedirs(dirpath, exist_ok=True)
 
         # Add dummy experiment.yaml
-        with open(os.path.join(dirpath, "experiment.yaml"), "w") as f:
+        with open(os.path.join(dirpath, DIRPATH.EXPERIMENT_YML), "w") as f:
             f.write("name: Dummy Experiment\nsuccess: success")
 
         assert os.path.exists(dirpath)
