@@ -130,18 +130,17 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     def delete_data(self) -> bool:
-        from studio.app.common.core.workspace.workspace_services import (
-            load_experiment_success_status,
-        )
 
         experiment_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
         )
 
         try:
-            status = load_experiment_success_status(self.workspace_id, self.unique_id)
+            status = ExptConfigReader.load_experiment_success_status(
+                self.workspace_id, self.unique_id
+            )
 
-            if status == WorkflowRunStatus.RUNNING.value:
+            if status == WorkflowRunStatus.RUNNING.value or status is None:
                 logger.warning(
                     f"Skipping deletion of running experiment '{self.unique_id}'"
                 )

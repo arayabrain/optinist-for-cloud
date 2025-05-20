@@ -2,7 +2,6 @@ import os
 import shutil
 from pathlib import Path
 
-import yaml
 from fastapi import HTTPException, status
 from sqlalchemy.exc import NoResultFound
 from sqlmodel import Session, delete, update
@@ -22,14 +21,6 @@ from studio.app.common.models.workspace import Workspace
 from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
-
-
-def load_experiment_success_status(workspace_id: str, unique_id: str) -> str:
-    try:
-        data = ExptConfigReader.read_raw(workspace_id=workspace_id, unique_id=unique_id)
-        return data.get("success", "unknown")
-    except yaml.YAMLError:
-        return "error"
 
 
 class WorkspaceService:
@@ -151,6 +142,7 @@ class WorkspaceService:
         cls,
         workspace_id: int,
     ):
+        hasDeleteDataArr = []
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
 
         # Step 1: Define all relevant paths
@@ -159,7 +151,9 @@ class WorkspaceService:
         # Step 2: Delete experiment folders under workspace
         if os.path.exists(workspace_dir):
             for experiment_id in os.listdir(workspace_dir):
-                hasDeleteDataArr = []
+                # Skip hidden files and directories
+                if experiment_id.startswith("."):
+                    continue
                 hasDeleteDataArr.append(
                     ExptDataWriter(str(workspace_id), experiment_id).delete_data()
                 )
@@ -211,7 +205,6 @@ class WorkspaceService:
     @classmethod
     def process_workspace_deletion(cls, db: Session, workspace_id: str, user_id: str):
         try:
-
             # Soft Delete Workspace
             ws = (
                 db.query(Workspace)
