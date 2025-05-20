@@ -130,7 +130,6 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     def delete_data(self) -> bool:
-
         experiment_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
         )
@@ -138,7 +137,7 @@ class ExptDataWriter:
         try:
             status = ExptConfigReader.load_experiment_success_status(
                 self.workspace_id, self.unique_id
-            )
+            ).value
 
             if status == WorkflowRunStatus.RUNNING.value or status is None:
                 logger.warning(

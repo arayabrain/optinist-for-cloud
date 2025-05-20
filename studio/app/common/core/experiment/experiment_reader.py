@@ -93,6 +93,6 @@ class ExptConfigReader:
                 value = data.get(WorkflowRunStatus.SUCCESS.value)
                 if value is None:
                     return None
-                return WorkflowRunStatus(value).value
+                return WorkflowRunStatus(value)
         except (yaml.YAMLError, ValueError):
             return None
