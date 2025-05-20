@@ -4,6 +4,7 @@ from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from sqlmodel import Session
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptExtConfig
@@ -23,6 +24,8 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
+from studio.app.common.db.database import get_db
 from studio.app.common.schemas.experiment import CopyItem, DeleteItem, RenameItem
 from studio.app.dir_path import DIRPATH
 
@@ -140,6 +143,7 @@ async def rename_experiment(
 async def delete_experiment(
     workspace_id: str,
     unique_id: str,
+    db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
@@ -148,6 +152,10 @@ async def delete_experiment(
             workspace_id,
             unique_id,
         ).delete_data()
+
+        if WorkspaceService.is_data_usage_available():
+            WorkspaceService.delete_workspace_experiment(db, workspace_id, unique_id)
+
         return True
     except RemoteStorageLockError as e:
         logger.error(e)

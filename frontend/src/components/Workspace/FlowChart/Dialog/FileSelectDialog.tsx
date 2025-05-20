@@ -39,10 +39,7 @@ import {
   selectFilesTreeNodes,
 } from "store/slice/FilesTree/FilesTreeSelectors"
 import { TreeNodeType } from "store/slice/FilesTree/FilesTreeType"
-import {
-  getNodeByPath,
-  isDirNodeByPath,
-} from "store/slice/FilesTree/FilesTreeUtils"
+import { getNodeByPath } from "store/slice/FilesTree/FilesTreeUtils"
 import { updateShape } from "store/slice/FileUploader/FileUploaderActions"
 import { selectPipelineLatestUid } from "store/slice/Pipeline/PipelineSelectors"
 import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
@@ -182,18 +179,6 @@ const FileTreeView = memo(function FileTreeView({
     }
   }, [tree, initialized, selectedFilePath, setSelectedFilePath])
 
-  const onNodeSelectHandler = (
-    event: SyntheticEvent,
-    nodeIds: Array<string> | string,
-  ) => {
-    if (!multiSelect && tree != null) {
-      // multiSelectがfalseの場合、ディレクトリは選択しない
-      const path = nodeIds as string
-      if (!isDirNodeByPath(path, tree)) {
-        setSelectedFilePath(path)
-      }
-    }
-  }
   // multiSelectでチェックボックスを使用する時用のハンドラ
   const onCheckFile = (path: string) => {
     if (Array.isArray(selectedFilePath)) {
@@ -243,11 +228,7 @@ const FileTreeView = memo(function FileTreeView({
           <Divider />
         </>
       ) : null}
-      <TreeView
-        disableSelection={multiSelect}
-        multiSelect={multiSelect}
-        onNodeSelect={onNodeSelectHandler}
-      >
+      <TreeView disableSelection={multiSelect} multiSelect={multiSelect}>
         {tree?.map((node) => (
           <TreeNode
             fileType={fileType}
@@ -305,6 +286,7 @@ const TreeNode = memo(function TreeNode({
         label={
           multiSelect && node.nodes.filter((node) => !node.isDir).length > 0 ? (
             <TreeItemLabel
+              multiSelect={multiSelect}
               isDir={node.isDir}
               fileType={fileType}
               shape={node.shape}
@@ -345,24 +327,42 @@ const TreeNode = memo(function TreeNode({
         icon={<InsertDriveFileOutlinedIcon fontSize="small" />}
         nodeId={node.path}
         label={
-          multiSelect ? (
-            <TreeItemLabel
-              isDir={node.isDir}
-              fileType={fileType}
-              shape={node.shape}
-              label={node.name}
-              checkboxProps={{
-                checked:
-                  Array.isArray(selectedFilePath) &&
-                  selectedFilePath.includes(node.path),
-                onChange: () => onCheckFile(node.path),
-              }}
-              setSelectedFilePath={setSelectedFilePath}
-              selectedFilePath={selectedFilePath}
-            />
-          ) : (
-            node.name
-          )
+          <TreeItemLabel
+            multiSelect={multiSelect}
+            isDir={node.isDir}
+            fileType={fileType}
+            shape={node.shape}
+            label={node.name}
+            checkboxProps={{
+              checked: multiSelect
+                ? Array.isArray(selectedFilePath) &&
+                  selectedFilePath.includes(node.path)
+                : selectedFilePath === node.path,
+              onChange: (e) => {
+                e.stopPropagation()
+
+                if (multiSelect) {
+                  if (Array.isArray(selectedFilePath)) {
+                    if (selectedFilePath.includes(node.path)) {
+                      setSelectedFilePath(
+                        selectedFilePath.filter((f) => f !== node.path),
+                      )
+                    } else {
+                      setSelectedFilePath([...selectedFilePath, node.path])
+                    }
+                  }
+                } else {
+                  if (selectedFilePath === node.path) {
+                    setSelectedFilePath("")
+                  } else {
+                    setSelectedFilePath(node.path)
+                  }
+                }
+              },
+            }}
+            setSelectedFilePath={setSelectedFilePath}
+            selectedFilePath={selectedFilePath}
+          />
         }
       />
     )
@@ -377,6 +377,7 @@ interface TreeItemLabelProps {
   isDir?: boolean
   setSelectedFilePath: (path: string[] | string) => void
   selectedFilePath: string[] | string
+  multiSelect: boolean
 }
 
 export const TreeItemLabel = memo(function TreeItemLabel({
@@ -387,6 +388,7 @@ export const TreeItemLabel = memo(function TreeItemLabel({
   checkboxProps,
   setSelectedFilePath,
   selectedFilePath,
+  multiSelect,
 }: TreeItemLabelProps) {
   const dispatch = useDispatch<AppDispatch>()
   const workspaceId = useSelector(selectCurrentWorkspaceId)
@@ -433,7 +435,12 @@ export const TreeItemLabel = memo(function TreeItemLabel({
         cursor: "default",
       }}
     >
-      <Box height={24} display="flex" alignItems="center">
+      <Box
+        height={24}
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+      >
         <Tooltip
           title={<span style={{ fontSize: 14 }}>{label}</span>}
           placement={"left-start"}
@@ -471,39 +478,56 @@ export const TreeItemLabel = memo(function TreeItemLabel({
             </Box>
           </>
         ) : null}
-        <Box>
-          <Checkbox
-            {...checkboxProps}
-            disableRipple
-            size="small"
-            sx={{
-              marginRight: "4px",
-              padding: "2px",
-              minWidth: 24,
-            }}
-          />
-        </Box>
-        {!isDir ? (
+        <Box display={"flex"} alignItems={"center"}>
+          {multiSelect ? (
+            <Box>
+              <Checkbox
+                {...checkboxProps}
+                size="small"
+                disableRipple
+                sx={{
+                  marginRight: "4px",
+                  padding: "2px",
+                  minWidth: 24,
+                }}
+              />
+            </Box>
+          ) : (
+            <Box>
+              <Checkbox
+                {...checkboxProps}
+                size="small"
+                disableRipple
+                sx={{
+                  marginRight: "4px",
+                  padding: "2px",
+                  minWidth: 24,
+                }}
+              />
+            </Box>
+          )}
+
+          {!isDir && multiSelect ? (
+            <IconButton
+              sx={{ minWidth: 24 }}
+              onClick={(event) => onUpdate(event, label)}
+            >
+              <AutorenewIcon />
+            </IconButton>
+          ) : null}
           <IconButton
             sx={{ minWidth: 24 }}
-            onClick={(event) => onUpdate(event, label)}
+            color="error"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenDeleteConfirmDialog(event)
+            }}
+            disabled={checkboxProps.checked}
+            data-testid="DeleteIconBtn"
           >
-            <AutorenewIcon />
+            <DeleteIcon />
           </IconButton>
-        ) : (
-          <Box width={24} marginRight={2} />
-        )}
-        <IconButton
-          sx={{ minWidth: 24 }}
-          color="error"
-          onClick={(event) => {
-            onOpenDeleteConfirmDialog(event)
-          }}
-          disabled={checkboxProps.checked}
-          data-testid="DeleteIconBtn"
-        >
-          <DeleteIcon />
-        </IconButton>
+        </Box>
       </Box>
       <ConfirmDialog
         open={deleteConfirmDialogOpen}

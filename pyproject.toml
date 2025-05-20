@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "optinist"
 description = "Calcium Imaging Pipeline Tool"
-version = "1.3.0"
+version = "2.1.0"
 license = "GPL-3.0"
 authors = ["OIST <email@example.com>"]
 readme = "README.md"
@@ -13,14 +13,14 @@ classifiers = [
   "Intended Audience :: Education",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering",
-  "Programming Language :: Python :: 3.7",
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: MacOS :: MacOS X",
 ]
-packages = [{ include = "studio" }]
+packages = [{ include = "studio" }, { include = "frontend" }, { include = "sample_data" }]
 
 include = [
   "frontend/build/*",
@@ -33,21 +33,27 @@ include = [
   "studio/app/*/wrappers/**/*.yaml",
   "studio/app/Snakefile",
   "studio/config/*.yaml",
-  "sample_data/input/*",
-  "sample_data/output/**/*.yaml",
+  "sample_data/**/input/*",
+  "sample_data/**/output/**/*.yaml",
 ]
 exclude = [
+  "conda.env.*",
   "studio/tests/*",
   "studio/test_data/*",
-  "conda.env.*",
   "studio/app/optinist/microscopes/libs.zip",
+  "frontend/node_modules/*",
+  "frontend/public/*",
+  "frontend/src/*",
+  "frontend/*.*",
+  "sample_data/*.*",
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8.1"
+python = "^3.9"
 fastapi = "0.104.*"
 uvicorn = "0.24.*"
-numpy = { version = ">=1.23, <1.27" }
+numpy = "1.24.3"
+pandas = "1.5.3"
 aiofiles = "*"
 tqdm = "*"
 pyyaml = "*"
@@ -55,12 +61,13 @@ imageio = "*"
 tifffile = "*"
 python-multipart = "*"
 future = "*"
-pynwb = "2.2.0"
+pynwb = "2.8.3"
 psutil = "*"
 nbstripout = "*"
 snakemake = { version = ">=7.24, <7.31" }
 jinja2 = "3.1.*"
-httpx = "*"
+httpx = "0.21.0"
+starlette = "0.27.0"
 firebase_admin = "*"
 pyrebase4 = "4.7.1"
 pydantic = { version = "1.10.13", extras = ["email", "dotenv"] }
@@ -78,6 +85,9 @@ boto3 = "^1.34.122"
 pytest-asyncio = "^0.24.0"
 aioboto3 = "^13.1.1"
 matplotlib = "3.7.*"
+concurrent-log-handler = "^0.9.25"
+numpydoc = "*"
+yapf = "*"
 
 [tool.poetry.group.dev]
 optional = true
@@ -85,7 +95,7 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "23.11"
 flake8 = "6.1.*"
-isort = "*"
+isort = "5.*"
 pre-commit = "*"
 codespell = "*"
 
@@ -121,8 +131,11 @@ profile = "black"
 
 [tool.pytest.ini_options]
 pythonpath = "."
-testpaths = "studio/tests"
-env = ["OPTINIST_DIR=studio/test_data"]
+testpaths = "/app/studio/tests"
+env = [
+  "OPTINIST_DIR=/app/studio/test_data",
+  "IS_TEST=True",
+]
 filterwarnings = [
     "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
     "ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning",

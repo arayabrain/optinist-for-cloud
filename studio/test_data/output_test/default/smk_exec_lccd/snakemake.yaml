@@ -1,7 +1,7 @@
 rules:
   input_0:
     input:
-    - test.tif
+    - 1/test.tif
     return_arg: input_0
     params: {}
     output: default/smk_exec_lccd/input_0/data_endoscope.pkl
@@ -73,9 +73,10 @@ rules:
     return_arg:
       fluorescence: neural_data
     params:
-      standard_mean: true
-      standard_std: true
-      transpose: true
+      I/O:
+        standard_mean: true
+        standard_std: true
+        transpose: true
       PCA:
         n_components: 2
         copy: true

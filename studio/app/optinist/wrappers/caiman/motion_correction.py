@@ -1,15 +1,12 @@
 import os
-import shutil
 
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.utils.filepath_creater import (
-    create_directory,
-    join_filepath,
-)
 from studio.app.common.dataclass import ImageData
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.dataclass import RoiData
+from studio.app.optinist.wrappers.caiman.caiman_utils import CaimanUtils
+from studio.app.optinist.wrappers.optinist.utils import recursive_flatten_params
 
 logger = AppLogger.get_logger()
 
@@ -24,16 +21,37 @@ def caiman_mc(
     from caiman.source_extraction.cnmf.params import CNMFParams
 
     function_id = ExptOutputPathIds(output_dir).function_id
+    unique_id = ExptOutputPathIds(output_dir).unique_id
     logger.info(f"start caiman motion_correction: {function_id}")
+
+    flattened_params = {}
+    recursive_flatten_params(params, flattened_params)
+    params = flattened_params
+
+    # Specify a unique CAIMAN_TEMPDIR
+    # *To avoid collisions of temporary files (memmap files)
+    mc_unique_id = f"{unique_id}_{function_id}"
+    CaimanUtils.set_caimam_byid_tempdir(mc_unique_id)
 
     opts = CNMFParams()
 
     if params is not None:
         opts.change_params(params_dict=params)
 
-    c, dview, n_processes = setup_cluster(
-        backend="local", n_processes=None, single_thread=True
-    )
+    # TODO: Add parameters for node
+    n_processes = 1
+    dview = None
+    # This process launches another process to run the CNMF algorithm,
+    # so this node use at least 2 core.
+    if n_processes == 1:
+        c, dview, n_processes = setup_cluster(
+            backend="single", n_processes=n_processes, single_thread=True
+        )
+    else:
+        c, dview, n_processes = setup_cluster(
+            backend="multiprocessing", n_processes=n_processes
+        )
+    logger.info(f"n_processes: {n_processes}")
 
     mc = MotionCorrect(image.path, dview=dview, **opts.get_group("motion"))
 
@@ -41,16 +59,19 @@ def caiman_mc(
     border_to_0 = 0 if mc.border_nan == "copy" else mc.border_to_0
 
     # memory mapping
-    fname_new = save_memmap(
+    mmap_file_new = save_memmap(
         mc.mmap_file, base_name=function_id, order="C", border_to_0=border_to_0
     )
-
     stop_server(dview=dview)
 
     # now load the file
-    Yr, dims, T = load_memmap(fname_new)
+    Yr, dims, T = load_memmap(mmap_file_new)
 
     images = np.array(Yr.T.reshape((T,) + dims, order="F"))
+
+    # Release variables associated with memmap files when they are no longer needed.
+    # *Avoid lock errors when cleaning memmap files.
+    del Yr, dims, T
 
     meanImg, rois = __process_images(images)
 
@@ -78,7 +99,19 @@ def caiman_mc(
     }
 
     # Clean up temporary files
-    __handle_mmap_cleanup(mc, fname_new, output_dir)
+    try:
+        __handle_mmap_cleanup(mc, mmap_file_new)
+    except Exception as e:
+        logger.error("caiman_mc: Failed to cleanup memmap files.")
+        logger.error(e)
+
+    # Clean up unique CAIMAN_TEMPDIR
+    try:
+        CaimanUtils.cleanup_caiman_byid_tempdir(mc_unique_id)
+    except Exception as e:
+        logger.error("caiman_mc: Failed to cleanup tempdir.")
+        logger.error(e)
+
     return info
 
 
@@ -95,7 +128,7 @@ def __process_images(images):
         .transpose(2, 0, 1)
     )
 
-    rois = rois.astype(np.float)
+    rois = rois.astype(np.float32)
     for i, _ in enumerate(rois):
         rois[i] *= i + 1
 
@@ -105,24 +138,16 @@ def __process_images(images):
     return meanImg, rois
 
 
-def __handle_mmap_cleanup(mc, fname_new, output_dir):
-    mmap_output_dir = join_filepath([output_dir, "mmap"])
-    create_directory(mmap_output_dir)
+def __handle_mmap_cleanup(mc, mmap_file_new):
+    # Explicitly gc before deleting memmap file
+    # *Avoid lock errors when cleaning memmap files.
+    import gc
+
+    gc.collect()
 
     for mmap_file in mc.mmap_file:
-        dest_file = os.path.join(mmap_output_dir, os.path.basename(mmap_file))
-        __move_file_safely(mmap_file, dest_file)
+        if os.path.isfile(mmap_file):
+            os.remove(mmap_file)
 
-    dest_fname_new = os.path.join(mmap_output_dir, os.path.basename(fname_new))
-    __move_file_safely(fname_new, dest_fname_new)
-
-
-def __move_file_safely(src: str, dest: str) -> None:
-    if os.path.exists(dest):
-        # Remove the existing file
-        if os.path.isfile(dest):
-            os.remove(dest)
-        elif os.path.isdir(dest):
-            shutil.rmtree(dest)
-
-    shutil.move(src, dest)
+    if os.path.isfile(mmap_file_new):
+        os.remove(mmap_file_new)

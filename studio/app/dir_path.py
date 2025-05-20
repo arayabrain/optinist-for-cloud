@@ -1,9 +1,15 @@
 import os
+import platform
 from enum import Enum
 
 from dotenv import load_dotenv
 
-_DEFAULT_DIR = "/tmp/studio"
+_TEMP_DIR = (
+    os.environ.get("TEMP", os.environ.get("TMP", "C:\\temp"))
+    if platform.system() == "Windows"
+    else "/tmp"
+)
+_DEFAULT_DIR = f"{_TEMP_DIR}/studio"
 _ENV_DIR = os.environ.get("OPTINIST_DIR")
 
 
@@ -28,9 +34,15 @@ class DIRPATH:
     if os.path.isfile(f"{CONFIG_DIR}/.env"):
         load_dotenv(f"{CONFIG_DIR}/.env")
 
+    LOCKFILE_DIR = f"{_DEFAULT_DIR}/locks"
+    if not os.path.exists(LOCKFILE_DIR):
+        os.makedirs(LOCKFILE_DIR)
+    assert os.path.exists(LOCKFILE_DIR)
+
     CONDAENV_DIR = (
         f"{os.path.dirname(os.path.dirname(os.path.dirname(__file__)))}/conda"
     )
+    SNAKEMAKE_CONDA_ENV_DIR = f"{ROOT_DIR}/.snakemake/conda"
 
     SNAKEMAKE_FILEPATH = f"{APP_DIR}/Snakefile"
     EXPERIMENT_YML = "experiment.yaml"
@@ -42,6 +54,8 @@ class DIRPATH:
 
     MICROSCOPE_LIB_DIR = f"{APP_DIR}/optinist/microscopes/libs"
     MICROSCOPE_LIB_ZIP = f"{APP_DIR}/optinist/microscopes/libs.zip"
+
+    LOG_FILE_PATH = f"{DATA_DIR}/logs/studio.log"
 
 
 class CORE_PARAM_PATH(Enum):

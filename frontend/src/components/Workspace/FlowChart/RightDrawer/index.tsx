@@ -10,6 +10,7 @@ import { styled } from "@mui/material/styles"
 import Toolbar from "@mui/material/Toolbar"
 import Typography from "@mui/material/Typography"
 
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import { NWBSettingContents } from "components/Workspace/FlowChart/RightDrawer/NWBSettingContents"
 import { ParamFormContents } from "components/Workspace/FlowChart/RightDrawer/ParamFormContents"
 import { SnakemakeSettingContents } from "components/Workspace/FlowChart/RightDrawer/SnakemakeSettingContents"
@@ -41,6 +42,23 @@ const RightDrawer: FC = () => {
         return "none"
     }
   })
+  const readTheDocsUrl = "https://optinist.readthedocs.io/en/latest"
+  const useRightDrawerSettings = () => {
+    const mode = useSelector((state: RootState) => selectRightDrawerMode(state))
+
+    const titleLink =
+      mode === RIGHT_DRAWER_MODE.NWB
+        ? `${readTheDocsUrl}/gui_guide/workflow.html#nwb-settings`
+        : mode === RIGHT_DRAWER_MODE.SNAKEMAKE
+          ? `${readTheDocsUrl}/gui_guide/workflow.html#snakemake-settings`
+          : ""
+
+    const showLaunch =
+      mode === RIGHT_DRAWER_MODE.NWB || mode === RIGHT_DRAWER_MODE.SNAKEMAKE
+
+    return { titleLink, showLaunch }
+  }
+  const { titleLink, showLaunch } = useRightDrawerSettings()
   return (
     <StyledDrawer open={open} anchor="right" variant="persistent">
       <Toolbar />
@@ -49,6 +67,13 @@ const RightDrawer: FC = () => {
           <ChevronRightIcon />
         </IconButton>
         <Typography variant="h6">{title}</Typography>
+        {showLaunch && (
+          <ExternalLinkButton
+            url={titleLink}
+            linkStyle={{ marginLeft: "5px", marginRight: "10px" }}
+            iconStyle={{ fontSize: "16px" }}
+          />
+        )}
       </Box>
       <Divider />
       <MainContents>

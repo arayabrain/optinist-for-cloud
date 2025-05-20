@@ -16,6 +16,7 @@ import {
   isHistogramItem,
   isLineItem,
   isPolarItem,
+  isRoiItem,
 } from "store/slice/VisualizeItem/VisualizeItemUtils"
 import { RootState } from "store/store"
 
@@ -28,6 +29,14 @@ export const selectVisualizeImageItemIdList = (state: RootState) =>
     .filter((itemId) => {
       const item = selectVisualizeItemById(itemId)(state)
       return isImageItem(item) && !item.isWorkflowDialog
+    })
+
+export const selectVisualizeImageAndRoiItemIdList = (state: RootState) =>
+  Object.keys(state.visualaizeItem.items)
+    .map(Number)
+    .filter((itemId) => {
+      const item = selectVisualizeItemById(itemId)(state)
+      return !item.isWorkflowDialog && (isImageItem(item) || isRoiItem(item))
     })
 
 export const selectVisualizeItems = (state: RootState) =>
@@ -96,7 +105,8 @@ export const selectVisualizeDataNodeId =
   }
 
 export const selectVisualizeDataFilePath =
-  (itemId: number) => (state: RootState) => {
+  (itemId: number | null) => (state: RootState) => {
+    if (!itemId && itemId !== 0) return ""
     const item = selectVisualizeItemById(itemId)(state)
     if (isDisplayDataItem(item)) {
       return item.filePath
@@ -392,8 +402,11 @@ export const selectTimeSeriesItemRefRoiUniqueList =
     if (isTimeSeriesItem(item)) {
       if (item.refImageItemId != null) {
         const imageItem = selectVisualizeItems(state)[item.refImageItemId]
-        if (isImageItem(imageItem) && imageItem.roiItem?.filePath != null) {
-          return selectRoiUniqueList(imageItem.roiItem.filePath)(state)
+        if (isImageItem(imageItem) && imageItem.roiItem?.filePath) {
+          return selectRoiUniqueList(imageItem.roiItem?.filePath)(state)
+        }
+        if (isRoiItem(imageItem) && imageItem.filePath) {
+          return selectRoiUniqueList(imageItem.filePath)(state)
         }
       }
       return null
@@ -608,6 +621,9 @@ export const selectImageItemRangeUnit =
       throw new Error("invalid VisualaizeItemType")
     }
   }
+
+export const selectClickedRoi = (itemId: number) => (state: RootState) =>
+  state.visualaizeItem.clickedRois[itemId] || null
 
 export const selectImageItemShowRoiLabels =
   (itemId: number) => (state: RootState) => {

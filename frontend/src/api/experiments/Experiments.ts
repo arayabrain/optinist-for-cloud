@@ -37,6 +37,7 @@ export type ExperimentDTO = {
   hasNWB: boolean
   is_remote_synced?: boolean
   nwb: NWBType
+  data_usage: number
 }
 
 export async function getExperimentsApi(

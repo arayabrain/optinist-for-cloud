@@ -29,7 +29,9 @@ async def test_WorkflowResult_get():
     )
 
     # first, write pid_file
-    Runner.write_pid_file(output_dirpath, "xxxx_dummy_func_script.py")
+    Runner.write_pid_file(
+        output_dirpath, "xxxx_dummy_func", "xxxx_dummy_func_script.py"
+    )
 
     output = await WorkflowResult(
         remote_bucket_name, workspace_id=workspace_id, unique_id=unique_id

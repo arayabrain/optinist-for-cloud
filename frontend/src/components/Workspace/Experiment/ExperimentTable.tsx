@@ -67,6 +67,7 @@ import {
   selectExperimentsErrorMessage,
   selectExperimentList,
   selectExperimentHasNWB,
+  selectExperimentDataUsage,
   selectExperimentIsRemoteSynced,
 } from "store/slice/Experiments/ExperimentsSelectors"
 import { ExperimentSortKeys } from "store/slice/Experiments/ExperimentsType"
@@ -80,6 +81,7 @@ import {
   selectIsWorkspaceOwner,
 } from "store/slice/Workspace/WorkspaceSelector"
 import { AppDispatch, RootState } from "store/store"
+import { convertBytes } from "utils"
 
 export const ExperimentUidContext = createContext<string>("")
 
@@ -89,8 +91,10 @@ export const ExperimentTable: FC = () => {
   const isError = useSelector(selectExperimentsStatusIsError)
   const dispatch = useDispatch<AppDispatch>()
   useEffect(() => {
-    if (isUninitialized) {
-      dispatch(getExperiments())
+    if (!isUninitialized) return
+    const timeout = setTimeout(() => dispatch(getExperiments()), 1000)
+    return () => {
+      clearTimeout(timeout)
     }
   }, [dispatch, isUninitialized])
 
@@ -297,6 +301,7 @@ const TableImple = memo(function TableImple() {
         }
         iconType="warning"
         confirmLabel="delete"
+        confirmButtonColor="error"
       />
       <ConfirmDialog
         open={openCopy}
@@ -462,6 +467,15 @@ const HeadItem = memo(function HeadItem({
             Name
           </TableSortLabel>
         </TableCell>
+        <TableCell>
+          <TableSortLabel
+            active={sortTarget === "data_usage"}
+            direction={order}
+            onClick={sortHandler("data_usage")}
+          >
+            Data size
+          </TableSortLabel>
+        </TableCell>
         <TableCell>Success</TableCell>
         <TableCell>Reproduce</TableCell>
         <TableCell>Workflow</TableCell>
@@ -489,6 +503,7 @@ const RowItem = memo(function RowItem({
   const uid = useContext(ExperimentUidContext)
   const startedAt = useSelector(selectExperimentStartedAt(uid))
   const finishedAt = useSelector(selectExperimentFinishedAt(uid))
+  const dataUsage = useSelector(selectExperimentDataUsage(uid))
   const status = useSelector(selectExperimentStatus(uid))
   const name = useSelector(selectExperimentName(uid))
   const hasNWB = useSelector(selectExperimentHasNWB(uid))
@@ -611,6 +626,7 @@ const RowItem = memo(function RowItem({
             </>
           )}
         </TableCell>
+        <TableCell>{convertBytes(dataUsage)}</TableCell>
         <TableCell>
           <ExperimentStatusIcon status={status} />
         </TableCell>

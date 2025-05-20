@@ -33,6 +33,7 @@ class User(BaseModel):
     email: EmailStr
     organization: Organization
     role_id: Optional[int]
+    data_usage: Optional[int]
     attributes: Optional[dict]
 
     @property

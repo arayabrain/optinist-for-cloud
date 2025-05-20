@@ -1,5 +1,8 @@
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_finder import find_param_filepath
+
+logger = AppLogger.get_logger()
 
 
 def get_typecheck_params(message_params, name):
@@ -10,7 +13,11 @@ def get_typecheck_params(message_params, name):
 
 
 def check_types(params, default_params):
+    faq_url = "https://github.com/oist/optinist/wiki/FAQ"
     for key in params.keys():
+        if key not in default_params:
+            logger.error(f"Invalid Workflow yaml param: [{key}]. See {faq_url}")
+            raise KeyError("Workflow yaml error, see FAQ")
         if isinstance(params[key], dict):
             params[key] = check_types(params[key], default_params[key])
         else:

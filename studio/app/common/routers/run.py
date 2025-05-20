@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
@@ -7,7 +7,13 @@ from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageLockError,
 )
-from studio.app.common.core.workflow.workflow import Message, NodeItem, RunItem
+from studio.app.common.core.workflow.workflow import (
+    DataFilterParam,
+    Message,
+    NodeItem,
+    RunItem,
+)
+from studio.app.common.core.workflow.workflow_filter import WorkflowNodeDataFilter
 from studio.app.common.core.workflow.workflow_result import (
     WorkflowMonitor,
     WorkflowResult,
@@ -17,6 +23,7 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 
 router = APIRouter(prefix="/run", tags=["run"])
 
@@ -44,9 +51,19 @@ async def run(
 
         return unique_id
 
+    except KeyError as e:
+        logger.error(e, exc_info=True)
+        # Pass through the specific error message for KeyErrors
+        raise HTTPException(
+            # Changed to 422 since it's a client configuration issue
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e).strip('"'),  # Remove quotes from the KeyError message
+        )
+
     except RemoteStorageLockError as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+
     except Exception as e:
         logger.error(e, exc_info=True)
         raise HTTPException(
@@ -81,11 +98,21 @@ async def run_id(
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
     except Exception as e:
-        logger.error(e, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to run workflow.",
-        )
+        # Check if this is a KeyError with a specific workflow yaml error message
+        if isinstance(e, KeyError) and "Workflow yaml error" in str(e):
+            logger.error(f"YAML validation error: {e}", exc_info=True)
+            # Return 422 for YAML validation errors
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Workflow yaml error, see FAQ",
+            )
+        else:
+            # Keep original error handling for other errors
+            logger.error(e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to run workflow.",
+            )
 
 
 @router.post(
@@ -97,16 +124,23 @@ async def run_result(
     workspace_id: str,
     uid: str,
     nodeDict: NodeItem,
+    background_tasks: BackgroundTasks,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        return await WorkflowResult(remote_bucket_name, workspace_id, uid).observe(
+        res = await WorkflowResult(remote_bucket_name, workspace_id, uid).observe(
             nodeDict.pendingNodeIdList
         )
+        if res:
+            background_tasks.add_task(
+                WorkspaceService.update_experiment_data_usage, workspace_id, uid
+            )
+        return res
 
     except RemoteStorageLockError as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+
     except Exception as e:
         logger.error(e, exc_info=True)
         raise HTTPException(
@@ -131,4 +165,30 @@ async def cancel_run(workspace_id: str, uid: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cencel workflow.",
+        )
+
+
+@router.post("/filter/{workspace_id}/{uid}/{node_id}", response_model=bool)
+async def apply_filter(
+    workspace_id: str,
+    uid: str,
+    node_id: str,
+    background_tasks: BackgroundTasks,
+    params: Optional[DataFilterParam] = None,
+):
+    try:
+        WorkflowNodeDataFilter(
+            workspace_id=workspace_id, unique_id=uid, node_id=node_id
+        ).filter_node_data(params)
+
+        background_tasks.add_task(
+            WorkspaceService.update_experiment_data_usage, workspace_id, uid
+        )
+
+        return True
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to filter data.",
         )

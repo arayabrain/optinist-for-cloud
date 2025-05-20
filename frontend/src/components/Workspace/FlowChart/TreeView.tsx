@@ -5,12 +5,15 @@ import { useSelector, useDispatch } from "react-redux"
 import AddIcon from "@mui/icons-material/Add"
 import ChevronRightIcon from "@mui/icons-material/ChevronRight"
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore"
-import { styled, Typography } from "@mui/material"
+import { styled, Typography, Tooltip } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 import { treeItemClasses } from "@mui/x-tree-view"
 import { TreeItem } from "@mui/x-tree-view/TreeItem"
 import { TreeView } from "@mui/x-tree-view/TreeView"
 
+import { getDocumentationUrl } from "components/utils/DocsAlgoUrlUtils"
+import { CondaNoticeButton } from "components/Workspace/FlowChart/Buttons/CondaNoticeButton"
+import ExternalLinkButton from "components/Workspace/FlowChart/Buttons/ExternalLinkButton"
 import {
   DND_ITEM_TYPE_SET,
   TreeItemCollectedProps,
@@ -227,7 +230,7 @@ const InputNodeComponent = memo(function InputNodeComponent({
   )
 })
 
-interface AlgoNodeComponentBaseProps {
+export interface AlgoNodeComponentBaseProps {
   name: string
   onAddAlgoNode: (
     nodeName: string,
@@ -260,8 +263,8 @@ const AlgoNodeComponentRecursive = memo(function AlgoNodeComponentRecursive({
           <AlgoNodeComponentRecursive
             name={name}
             node={node}
-            key={i.toFixed()}
             onAddAlgoNode={onAddAlgoNode}
+            key={i.toFixed()}
           />
         ))}
       </TreeItem>
@@ -286,6 +289,7 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
       [onAddAlgoNode, name, node],
     ),
   )
+
   return (
     <LeafItem
       ref={dragRef}
@@ -295,10 +299,36 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
       onFocusCapture={(e) => e.stopPropagation()}
       nodeId={name}
       label={
-        <AddButton
-          name={name}
-          onClick={() => onAddAlgoNode(name, node.functionPath)}
-        />
+        <>
+          <div
+            style={{
+              display: "flex", // Place Items on single line.
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {node.condaEnvExists ? (
+              <AddButton
+                name={name}
+                showParameterUrl={true}
+                onClick={() => onAddAlgoNode(name, node.functionPath)}
+              />
+            ) : (
+              <CondaNoticeButton
+                name={name}
+                showParameterUrl={true}
+                node={node}
+                onSkipClick={(_event, reason) => {
+                  // Cancel operation from other than Skip (Cancel) button does nothing.
+                  // *In the cancel button click, the reason is undefined..
+                  if (reason !== undefined) {
+                    return
+                  }
+                  onAddAlgoNode(name, node.functionPath)
+                }}
+              />
+            )}
+          </div>
+        </>
       }
     />
   )
@@ -306,10 +336,15 @@ const AlgoNodeComponent = memo(function AlgoNodeComponent({
 
 interface AddButtonProps {
   name: string
+  showParameterUrl?: boolean
   onClick: () => void
 }
 
-const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
+const AddButton = memo(function AddButton({
+  name,
+  showParameterUrl = false,
+  onClick,
+}: AddButtonProps) {
   return (
     <>
       <IconButton
@@ -320,17 +355,46 @@ const AddButton = memo(function AddButton({ name, onClick }: AddButtonProps) {
       >
         <AddIcon />
       </IconButton>
-      <Typography
-        variant="inherit"
-        style={{
-          textOverflow: "ellipsis",
-          overflow: "visible",
-          width: "8rem",
-          display: "inline-block",
+      <Tooltip
+        title={name}
+        placement="top"
+        PopperProps={{
+          modifiers: [
+            {
+              name: "offset",
+              options: {
+                offset: [0, -15], // [horizontal, vertical] - decrease the number to move closer
+              },
+            },
+          ],
         }}
       >
-        {name}
-      </Typography>
+        <Typography
+          variant="inherit"
+          style={{
+            display: "inline-block",
+          }}
+        >
+          {name}
+        </Typography>
+      </Tooltip>
+      {showParameterUrl && (
+        <ExternalLinkButton
+          url={getDocumentationUrl(name)}
+          linkStyle={{
+            textDecoration: "underline",
+            color: "inherit",
+            cursor: "pointer",
+            marginLeft: "5px",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          iconStyle={{
+            fontSize: "12px",
+            color: "#808080",
+          }}
+        />
+      )}
     </>
   )
 })
