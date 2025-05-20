@@ -62,6 +62,10 @@ class User(Base, TimestampMixin, table=True):
         back_populates="user", link_model=WorkspacesShareUser
     )
 
+    @property
+    def remote_bucket_name(self) -> str:
+        return self.attributes.get("remote_bucket_name")
+
 
 class Role(Base, table=True):
     __tablename__ = "roles"

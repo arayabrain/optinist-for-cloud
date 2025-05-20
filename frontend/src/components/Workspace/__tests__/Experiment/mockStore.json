@@ -14,7 +14,8 @@
           }
         },
         "startedAt": "2023-09-17",
-        "hasNWB": true
+        "hasNWB": true,
+        "is_remote_synced": true
       },
       "2": {
         "uid": "2",
@@ -28,7 +29,8 @@
           }
         },
         "startedAt": "2023-09-17",
-        "hasNWB": true
+        "hasNWB": true,
+        "is_remote_synced": true
       }
     }
   },

@@ -4,7 +4,8 @@ WORKDIR /app
 
 # install default packages
 RUN apt-get --allow-releaseinfo-change update && \
-    apt-get install --no-install-recommends -y sudo procps iproute2 iputils-ping telnet wget curl unzip less vim
+    apt-get install --no-install-recommends -y sudo procps iproute2 iputils-ping telnet wget curl unzip less vim \
+        default-mysql-client
 
 # install conda & packages
 RUN apt-get install --no-install-recommends -y gcc g++ libgl1 libgl1-mesa-dev libopencv-dev && \
@@ -18,6 +19,16 @@ RUN mkdir -p /opt/miniforge && \
     conda config --set channel_priority flexible && \
     conda clean -y --all
 ENV PATH $PATH:/opt/miniforge/bin
+
+# install aws packages
+RUN cd /tmp && \
+    wget https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip && \
+    unzip awscli-exe-linux-x86_64.zip && \
+    sh ./aws/install
+
+# cleaning apt
+RUN apt-get purge wget -y && \
+    apt-get autoremove -y && apt-get clean
 
 # setup user profile
 RUN echo 'alias ll="ls -la --color=auto"' >> /root/.bashrc && \
@@ -39,3 +50,7 @@ COPY frontend/build /app/frontend/build
 COPY studio /app/studio
 COPY sample_data /app/sample_data
 COPY main.py alembic.ini ./
+
+# Copy the cloud-startup.sh script
+COPY cloud-startup.sh ./
+RUN chmod +x cloud-startup.sh

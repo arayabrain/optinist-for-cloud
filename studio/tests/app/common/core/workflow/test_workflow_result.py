@@ -1,11 +1,14 @@
 import os
 import shutil
 
+import pytest
+
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.workflow.workflow import Message
 from studio.app.common.core.workflow.workflow_result import NodeResult, WorkflowResult
 from studio.app.dir_path import DIRPATH
 
+remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
 workspace_id = "default"
 unique_id = "result_test"
 node_id_list = ["func1", "func2"]
@@ -17,7 +20,8 @@ pickle_path = (
 )
 
 
-def test_WorkflowResult_get():
+@pytest.mark.asyncio
+async def test_WorkflowResult_get():
     shutil.copytree(
         workflow_dirpath,
         output_dirpath,
@@ -29,9 +33,9 @@ def test_WorkflowResult_get():
         output_dirpath, "xxxx_dummy_func", "xxxx_dummy_func_script.py"
     )
 
-    output = WorkflowResult(workspace_id=workspace_id, unique_id=unique_id).observe(
-        node_id_list
-    )
+    output = await WorkflowResult(
+        remote_bucket_name, workspace_id=workspace_id, unique_id=unique_id
+    ).observe(node_id_list)
 
     assert isinstance(output, dict)
     assert len(output) == 1

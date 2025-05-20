@@ -34,7 +34,12 @@ describe("NWBDownloadButton", () => {
     render(
       <Provider store={store}>
         <ExperimentUidContext.Provider value="exp1">
-          <NWBDownloadButton name="testName" nodeId="node1" hasNWB={true} />
+          <NWBDownloadButton
+            name="testName"
+            nodeId="node1"
+            hasNWB={true}
+            isRemoteSynced={true}
+          />
         </ExperimentUidContext.Provider>
       </Provider>,
     )

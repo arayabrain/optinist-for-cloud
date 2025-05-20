@@ -22,6 +22,7 @@ class ExptConfigReader:
             success=config.get("success", NodeRunStatus.RUNNING.value),
             hasNWB=config["hasNWB"],
             function=cls.read_function(config["function"]),
+            procs=cls.read_function(config.get("procs")),
             nwb=config.get("nwb"),
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
@@ -38,6 +39,11 @@ class ExptConfigReader:
 
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:
+        # Assuming the case where an empty value is specified, check here.
+        # (For backward compatibility with config yaml)
+        if not config:
+            return {}
+
         return {
             key: ExptFunction(
                 unique_id=value["unique_id"],

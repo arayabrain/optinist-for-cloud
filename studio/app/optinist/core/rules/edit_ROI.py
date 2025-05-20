@@ -3,6 +3,7 @@
 # This file is executed by snakemake and cause the following lint errors
 # - E402: sys.path.append is required to import optinist modules
 # - F821: do not import snakemake
+import asyncio
 import sys
 from os.path import abspath, dirname
 
@@ -19,7 +20,7 @@ def main():
         from studio.app.optinist.core.edit_ROI import EditROI
 
         config = snakemake.config
-        EditROI(file_path=config["file_path"]).commit()
+        asyncio.run(EditROI(file_path=config["file_path"]).commit())
 
     except Exception as e:
         logger.error(AppLogger.format_exc_traceback(e))
