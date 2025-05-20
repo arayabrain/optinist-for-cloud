@@ -24,14 +24,10 @@ from studio.app.dir_path import DIRPATH
 logger = AppLogger.get_logger()
 
 
-def load_experiment_success_status(yaml_path: str) -> str:
-    if not os.path.exists(yaml_path):
-        return "not_found"
-
+def load_experiment_success_status(workspace_id: str, unique_id: str) -> str:
     try:
-        with open(yaml_path, "r") as file:
-            data = yaml.safe_load(file)
-            return data.get("success", "unknown")
+        data = ExptConfigReader.read_raw(workspace_id=workspace_id, unique_id=unique_id)
+        return data.get("success", "unknown")
     except yaml.YAMLError:
         return "error"
 
@@ -151,7 +147,7 @@ class WorkspaceService:
             db.bulk_save_objects(exp_records)
 
     @classmethod
-    def delete_workspace_experiment_files(
+    def delete_workspace_storage_files(
         cls,
         workspace_id: int,
     ):
@@ -163,17 +159,27 @@ class WorkspaceService:
         # Step 2: Delete experiment folders under workspace
         if os.path.exists(workspace_dir):
             for experiment_id in os.listdir(workspace_dir):
-                ExptDataWriter(str(workspace_id), experiment_id).delete_data()
+                hasDeleteDataArr = []
+                hasDeleteDataArr.append(
+                    ExptDataWriter(str(workspace_id), experiment_id).delete_data()
+                )
         else:
             logger.warning(f"Workspace directory '{workspace_dir}' does not exist")
 
-        # Step 3: Delete the workspace directory itself
-        WorkspaceService.delete_workspace_files(workspace_id=str(workspace_id))
+        if all(hasDeleteDataArr):
+            # Step 3: Delete the workspace directory itself
+            WorkspaceService.delete_workspace_files(workspace_id=str(workspace_id))
 
-        # Step 4: Delete input directory
-        WorkspaceService.delete_workspace_files(
-            workspace_id=str(workspace_id), is_input_dir=True
-        )
+            # Step 4: Delete input directory
+            WorkspaceService.delete_workspace_files(
+                workspace_id=str(workspace_id), is_input_dir=True
+            )
+        else:
+            # Throw Exception if data was not deleted
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete workspace '{workspace_id}'",
+            )
 
     @classmethod
     def delete_experiment_records_by_workspace_id(cls, db: Session, workspace_id: int):
@@ -205,8 +211,7 @@ class WorkspaceService:
     @classmethod
     def process_workspace_deletion(cls, db: Session, workspace_id: str, user_id: str):
         try:
-            # Delete experiment from database
-            WorkspaceService.delete_experiment_records_by_workspace_id(db, workspace_id)
+
             # Soft Delete Workspace
             ws = (
                 db.query(Workspace)
@@ -221,12 +226,12 @@ class WorkspaceService:
             if not ws:
                 raise HTTPException(status_code=404, detail="Workspace not found")
 
+            # Delete experiment from database
+            cls.delete_experiment_records_by_workspace_id(db, workspace_id)
+            cls.delete_workspace_storage_files(workspace_id=workspace_id)
+
             # Soft delete the workspace
             ws.deleted = True
-
-            WorkspaceService.delete_workspace_experiment_files(
-                workspace_id=workspace_id
-            )
 
             # Commit all DB changes before doing anything irreversible
             db.commit()

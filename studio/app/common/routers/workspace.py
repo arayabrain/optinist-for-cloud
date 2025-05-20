@@ -82,8 +82,7 @@ def search_workspaces(
                     experiment_path = join_filepath([workspace_dir, experiment_id])
                     if not os.path.isdir(experiment_path):
                         continue
-                    yaml_path = join_filepath([experiment_path, DIRPATH.EXPERIMENT_YML])
-                    status = load_experiment_success_status(yaml_path)
+                    status = load_experiment_success_status(str(ws.id), experiment_id)
                     if status == WorkflowRunStatus.RUNNING.value:
                         can_delete = False
                         break

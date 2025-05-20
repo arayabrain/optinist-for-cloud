@@ -139,8 +139,7 @@ class ExptDataWriter:
         )
 
         try:
-            yaml_path = join_filepath([experiment_path, DIRPATH.EXPERIMENT_YML])
-            status = load_experiment_success_status(yaml_path)
+            status = load_experiment_success_status(self.workspace_id, self.unique_id)
 
             if status == WorkflowRunStatus.RUNNING.value:
                 logger.warning(
