@@ -108,6 +108,15 @@ class WorkspaceService:
         db.commit()
 
     @classmethod
+    def delete_experiment_by_workspace_id(cls, db: Session, workspace_id: str):
+        # Delete experiment from database
+        db.execute(
+            delete(ExperimentRecord).where(
+                ExperimentRecord.workspace_id == workspace_id
+            )
+        )
+
+    @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
         folder = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
         if not os.path.exists(folder):
@@ -145,10 +154,9 @@ class WorkspaceService:
         hasDeleteDataArr = []
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
 
-        # Step 1: Define all relevant paths
         workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
 
-        # Step 2: Delete experiment folders under workspace
+        # Delete experiment folders under workspace
         if os.path.exists(workspace_dir):
             for experiment_id in os.listdir(workspace_dir):
                 # Skip hidden files and directories
@@ -161,10 +169,10 @@ class WorkspaceService:
             logger.warning(f"Workspace directory '{workspace_dir}' does not exist")
 
         if all(hasDeleteDataArr):
-            # Step 3: Delete the workspace directory itself
+            # Delete the workspace directory itself
             WorkspaceService.delete_workspace_files(workspace_id=str(workspace_id))
 
-            # Step 4: Delete input directory
+            # Delete input directory
             WorkspaceService.delete_workspace_files(
                 workspace_id=str(workspace_id), is_input_dir=True
             )
@@ -174,15 +182,6 @@ class WorkspaceService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to delete workspace '{workspace_id}'",
             )
-
-    @classmethod
-    def delete_experiment_records_by_workspace_id(cls, db: Session, workspace_id: int):
-        workspace_dir = join_filepath([DIRPATH.OUTPUT_DIR, str(workspace_id)])
-        if os.path.exists(workspace_dir):
-            for experiment_id in os.listdir(workspace_dir):
-                WorkspaceService.delete_workspace_experiment(
-                    db=db, workspace_id=workspace_id, unique_id=experiment_id
-                )
 
     @classmethod
     def delete_workspace_files(cls, workspace_id: str, is_input_dir: bool = False):
@@ -205,7 +204,7 @@ class WorkspaceService:
     @classmethod
     def process_workspace_deletion(cls, db: Session, workspace_id: str, user_id: str):
         try:
-            # Soft Delete Workspace
+            # Search for workspace
             ws = (
                 db.query(Workspace)
                 .filter(
@@ -220,7 +219,7 @@ class WorkspaceService:
                 raise HTTPException(status_code=404, detail="Workspace not found")
 
             # Delete experiment from database
-            cls.delete_experiment_records_by_workspace_id(db, workspace_id)
+            cls.delete_experiment_by_workspace_id(db, workspace_id)
             cls.delete_workspace_storage_files(workspace_id=workspace_id)
 
             # Soft delete the workspace

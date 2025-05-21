@@ -137,9 +137,9 @@ class ExptDataWriter:
         try:
             status = ExptConfigReader.load_experiment_success_status(
                 self.workspace_id, self.unique_id
-            ).value
+            )
 
-            if status == WorkflowRunStatus.RUNNING.value or status is None:
+            if status == WorkflowRunStatus.RUNNING or status is None:
                 logger.warning(
                     f"Skipping deletion of running experiment '{self.unique_id}'"
                 )
