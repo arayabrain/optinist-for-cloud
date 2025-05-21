@@ -135,10 +135,12 @@ class ExptDataWriter:
         )
 
         try:
+            # Check the expt is running or if don't have status it will return None
             status = ExptConfigReader.load_experiment_success_status(
                 self.workspace_id, self.unique_id
             )
-
+            # If the experiment is running or has no status, skip deletion
+            # no status means the experiemnt yaml is not created yet
             if status == WorkflowRunStatus.RUNNING or status is None:
                 logger.warning(
                     f"Skipping deletion of running experiment '{self.unique_id}'"
