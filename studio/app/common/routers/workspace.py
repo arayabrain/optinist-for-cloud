@@ -85,7 +85,7 @@ def search_workspaces(
                     )
                     if status is None:
                         pass
-                    if status == WorkflowRunStatus.RUNNING:
+                    elif status == WorkflowRunStatus.RUNNING:
                         can_delete = False
                         break
 
