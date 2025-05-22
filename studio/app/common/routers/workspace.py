@@ -83,6 +83,8 @@ def search_workspaces(
                     status = ExptConfigReader.load_experiment_success_status(
                         str(ws.id), experiment_id
                     )
+                    if status is None:
+                        pass
                     if status == WorkflowRunStatus.RUNNING:
                         can_delete = False
                         break

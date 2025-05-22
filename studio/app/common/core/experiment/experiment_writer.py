@@ -141,11 +141,14 @@ class ExptDataWriter:
             )
             # If the experiment is running or has no status, skip deletion
             # no status means the experiemnt yaml is not created yet
-            if status == WorkflowRunStatus.RUNNING or status is None:
-                logger.warning(
-                    f"Skipping deletion of running experiment '{self.unique_id}'"
-                )
-                return False
+            if status is not None:
+                pass
+            else:
+                if status == WorkflowRunStatus.RUNNING:
+                    logger.warning(
+                        f"Skipping deletion of running experiment '{self.unique_id}'"
+                    )
+                    return False
 
             shutil.rmtree(experiment_path)
             logger.info(f"Deleted experiment data at: {experiment_path}")

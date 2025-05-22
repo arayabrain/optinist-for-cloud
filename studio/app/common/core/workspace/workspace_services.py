@@ -108,13 +108,18 @@ class WorkspaceService:
         db.commit()
 
     @classmethod
-    def delete_experiment_by_workspace_id(cls, db: Session, workspace_id: str):
+    def delete_experiment_by_workspace_id(
+        cls, db: Session, workspace_id: str, do_commit: bool = False
+    ):
         # Delete experiment from database
         db.execute(
             delete(ExperimentRecord).where(
                 ExperimentRecord.workspace_id == workspace_id
             )
         )
+
+        if do_commit:
+            db.commit()
 
     @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
@@ -220,6 +225,7 @@ class WorkspaceService:
 
             # Delete experiment from database
             cls.delete_experiment_by_workspace_id(db, workspace_id)
+            # Delete workspace storage files
             cls.delete_workspace_storage_files(workspace_id=workspace_id)
 
             # Soft delete the workspace
