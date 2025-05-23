@@ -170,7 +170,8 @@ const Account = () => {
         onClose={handleCloseDeleteComfirmModal}
         open={isDeleteConfirmModalOpen}
         onSubmit={onConfirmDelete}
-        description="Delete account will erase all of your data."
+        description="Delete account will erase all of your data. "
+        iconType="warning"
       />
       <ChangePasswordModal
         onSubmit={onConfirmChangePw}
@@ -213,7 +214,7 @@ const Account = () => {
         <BoxData>{getRole(user?.role_id)}</BoxData>
       </BoxFlex>
       <BoxFlex>
-        <TitleData>Data usage</TitleData>
+        <TitleData>Data size</TitleData>
         <BoxData>{convertBytes(user?.data_usage || 0)}</BoxData>
       </BoxFlex>
       <BoxFlex sx={{ justifyContent: "space-between", mt: 10, maxWidth: 600 }}>

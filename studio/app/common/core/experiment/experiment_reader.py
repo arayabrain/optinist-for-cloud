@@ -1,16 +1,27 @@
-from typing import Dict
+import os
+from typing import Dict, Optional, Union
 
 import yaml
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
-from studio.app.common.core.workflow.workflow import NodeRunStatus, OutputPath
+from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.workflow.workflow import (
+    NodeRunStatus,
+    OutputPath,
+    WorkflowRunStatus,
+)
+from studio.app.dir_path import DIRPATH
+
+logger = AppLogger.get_logger()
 
 
 class ExptConfigReader:
     @classmethod
-    def read(cls, filepath) -> ExptConfig:
-        with open(filepath, "r") as f:
-            config = yaml.safe_load(f)
+    def read(cls, file: Union[str, bytes]) -> ExptConfig:
+        config = ConfigReader.read(file)
+        assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
         return ExptConfig(
             workspace_id=config["workspace_id"],
@@ -25,6 +36,21 @@ class ExptConfigReader:
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
         )
+
+    @staticmethod
+    def read_raw(workspace_id: str, unique_id: str) -> dict:
+        if not os.path.exists(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+            )
+        ):
+            return None
+        config = ConfigReader.read(
+            join_filepath(
+                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+            )
+        )
+        return config
 
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:
@@ -55,4 +81,18 @@ class ExptConfigReader:
                 for key, value in config.items()
             }
         else:
+            return None
+
+    @classmethod
+    def load_experiment_success_status(
+        cls, workspace_id: str, unique_id: str
+    ) -> Optional[WorkflowRunStatus]:
+        try:
+            data = cls.read_raw(workspace_id=workspace_id, unique_id=unique_id)
+            if data is not None:
+                value = data.get(WorkflowRunStatus.SUCCESS.value)
+                if value is None:
+                    return None
+                return WorkflowRunStatus(value)
+        except (yaml.YAMLError, ValueError):
             return None
