@@ -122,7 +122,9 @@ async def delete_experiment_list(
     response_model=bool,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def copy_experiment_list(workspace_id: str, copyItem: CopyItem):
+async def copy_experiment_list(
+    workspace_id: str, copyItem: CopyItem, db: Session = Depends(get_db)
+):
     logger = AppLogger.get_logger()
     logger.info(f"workspace_id: {workspace_id}, copyItem: {copyItem}")
     created_unique_ids = []  # Keep track of successfully created unique IDs
@@ -130,13 +132,29 @@ async def copy_experiment_list(workspace_id: str, copyItem: CopyItem):
         for unique_id in copyItem.uidList:
             logger.info(f"copying item with unique_id of {unique_id}")
             new_unique_id = WorkflowRunner.create_workflow_unique_id()
+            # Check if Multi-user is enabled
+            if WorkspaceService.is_data_usage_available:
+                # Copy the experiment database record
+                WorkspaceService.copy_workspace_experiment(
+                    db=db,
+                    workspace_id=workspace_id,
+                    unique_id=unique_id,
+                    new_unique_id=new_unique_id,
+                )
+            #  Copy the experiment storage
             ExptDataWriter(
                 workspace_id,
                 unique_id,
             ).copy_data(new_unique_id)
             created_unique_ids.append(new_unique_id)  # Record successful copy
+
+            # If all copies are successful, commit the transaction
+            if WorkspaceService.is_data_usage_available:
+                db.commit()
         return True
     except Exception as e:
+        if WorkspaceService.is_data_usage_available:
+            db.rollback()
         logger.error(e, exc_info=True)
         # Clean up partially created data
         for created_unique_id in created_unique_ids:

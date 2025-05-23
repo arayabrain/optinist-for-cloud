@@ -129,6 +129,38 @@ class WorkspaceService:
             db.commit()
 
     @classmethod
+    def copy_workspace_experiment(
+        cls,
+        db: Session,
+        workspace_id: int,
+        unique_id: str,
+        new_unique_id: str,
+        auto_commit: bool = False,
+    ):
+        # Use ORM to fetch the original experiment record
+        exp = (
+            db.query(ExperimentRecord)
+            .filter(
+                ExperimentRecord.workspace_id == workspace_id,
+                ExperimentRecord.uid == unique_id,
+            )
+            .one()
+        )
+
+        # Create a new experiment record instance
+        new_exp = ExperimentRecord(
+            workspace_id=workspace_id,
+            uid=new_unique_id,
+            data_usage=exp.data_usage,
+        )
+
+        # Add and optionally commit
+        db.add(new_exp)
+
+        if auto_commit:
+            db.commit()
+
+    @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
         folder = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
         if not os.path.exists(folder):
