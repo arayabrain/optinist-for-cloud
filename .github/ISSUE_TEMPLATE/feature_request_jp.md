@@ -1,29 +1,17 @@
 ---
-name: 追加機能
-about: 追加機能について
+name: Additional Feature
+about: Issue for Additional Feature
 title: ''
 labels: 'enhancement'
 assignees: ''
 
 ---
 
-**追加機能についての概要**
-追加機能について数行程度で説明する。
+### Overview
+> *Describes an overview of the feature
 
-**重要度**
-この機能の重要度を[低、中、高]に分ける。
-低: この機能は開発要件の最低条件に含まれていない。
-中: この機能は開発要件に含まれているが、早急に対応する必要はない。
-高: この機能を早急に対応しなければ、他の開発に影響を与える。
+### References
+> *Links to design documentation and reference information
 
-**ブランチ名**
-追加機能のbranchを書く。
-
-**期限**
-この機能の完成期限。
-
-**ライブラリ**
-使用する・使用できそうなライブラリなど。
-
-**その他**
-その他コメントなど。
+### Others
+> *Other comments etc.

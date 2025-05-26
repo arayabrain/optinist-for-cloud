@@ -1,9 +1,15 @@
 import os
+import platform
 from enum import Enum
 
 from dotenv import load_dotenv
 
-_DEFAULT_DIR = "/tmp/studio"
+_TEMP_DIR = (
+    os.environ.get("TEMP", os.environ.get("TMP", "C:\\temp"))
+    if platform.system() == "Windows"
+    else "/tmp"
+)
+_DEFAULT_DIR = f"{_TEMP_DIR}/studio"
 _ENV_DIR = os.environ.get("OPTINIST_DIR")
 
 
@@ -27,6 +33,11 @@ class DIRPATH:
     CONFIG_DIR = f"{STUDIO_DIR}/config"
     if os.path.isfile(f"{CONFIG_DIR}/.env"):
         load_dotenv(f"{CONFIG_DIR}/.env")
+
+    LOCKFILE_DIR = f"{_DEFAULT_DIR}/locks"
+    if not os.path.exists(LOCKFILE_DIR):
+        os.makedirs(LOCKFILE_DIR)
+    assert os.path.exists(LOCKFILE_DIR)
 
     CONDAENV_DIR = (
         f"{os.path.dirname(os.path.dirname(os.path.dirname(__file__)))}/conda"

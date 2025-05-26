@@ -5,23 +5,20 @@ import os
 import time
 import traceback
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 
 from filelock import FileLock
 
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
-from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
-from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import Rule
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.file_reader import JsonReader
+from studio.app.common.core.utils.filelock_handler import FileLockUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
 from studio.app.common.schemas.workflow import WorkflowPIDFileData
-from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
 from studio.app.optinist.core.nwb.nwb import NWBDATASET
 from studio.app.optinist.core.nwb.nwb_creater import (
@@ -54,8 +51,6 @@ class Runner:
             for key in list(input_info):
                 if key not in __rule.return_arg.values():
                     input_info.pop(key)
-
-            cls.__set_func_start_timestamp(os.path.dirname(__rule.output))
 
             # output_info
             output_info = cls.__execute_function(
@@ -151,20 +146,6 @@ class Runner:
         return pid_data
 
     @classmethod
-    def __set_func_start_timestamp(cls, output_dirpath):
-        workflow_dirpath = os.path.dirname(output_dirpath)
-        ids = ExptOutputPathIds(output_dirpath)
-
-        expt_config = ExptConfigReader.read(
-            join_filepath([workflow_dirpath, DIRPATH.EXPERIMENT_YML])
-        )
-        expt_config.function[ids.function_id].started_at = datetime.now().strftime(
-            DATE_FORMAT
-        )
-
-        ExptConfigWriter.write_raw(ids.workspace_id, ids.unique_id, asdict(expt_config))
-
-    @classmethod
     def __save_func_nwb(cls, save_path, name, nwbfile, output_info):
         if "nwbfile" in output_info:
             nwbfile[name] = output_info["nwbfile"]
@@ -182,11 +163,10 @@ class Runner:
         nwbconfig = {}
         for x in all_nwbfile.values():
             nwbconfig = merge_nwbfile(nwbconfig, x)
-        # 同一のnwbfileに対して、複数の関数を実行した場合、h5pyエラーが発生する
-        lock_path = save_path + ".lock"
-        timeout = 30  # ロック取得のタイムアウト時間（秒）
-        with FileLock(lock_path, timeout=timeout):
-            # ロックが取得できたら、ファイルに書き込みを行う
+
+        # Controls locking for simultaneous writing to nwbfile from multiple nodes.
+        lock_path = FileLockUtils.get_lockfile_path(save_path)
+        with FileLock(lock_path, timeout=120):
             if os.path.exists(save_path):
                 overwrite_nwbfile(save_path, nwbconfig)
             else:
