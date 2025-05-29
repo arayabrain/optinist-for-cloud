@@ -92,7 +92,7 @@ class SmkRule:
 
                 # Register input information from the source node
                 return_arg_key = __class__.RETURN_ARG_KEY_DELIMITER.join(
-                    return_name, sourceNode.id
+                    [return_name, sourceNode.id]
                 )  # Generate a unique key
                 return_arg_names[return_arg_key] = arg_name
 
