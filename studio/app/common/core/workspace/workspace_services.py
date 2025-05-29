@@ -207,8 +207,6 @@ class WorkspaceService:
             logger.error(
                 f"Experiment {unique_id} not found in workspace {workspace_id}"
             )
-            if auto_commit:
-                db.rollback()
 
     @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
