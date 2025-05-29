@@ -149,17 +149,14 @@ class WorkspaceService:
                         workspace_id,
                         unique_id,
                         new_unique_id,
+                        auto_commit=True,
                     )
-                    db.commit()
 
                 created_unique_ids.append(new_unique_id)
                 logger.info(f"Copied experiment {unique_id} to {new_unique_id}")
             return True
         except Exception as e:
-            if cls.is_data_usage_available():
-                db.rollback()
             logger.error(e, exc_info=True)
-
             # Clean up partially created data
             for created_unique_id in created_unique_ids:
                 try:
@@ -206,9 +203,12 @@ class WorkspaceService:
             if auto_commit:
                 db.commit()
         except NoResultFound:
+            # If it failes roll back the transaction
             logger.error(
                 f"Experiment {unique_id} not found in workspace {workspace_id}"
             )
+            if auto_commit:
+                db.rollback()
 
     @classmethod
     def sync_workspace_experiment(cls, db: Session, workspace_id: str):
