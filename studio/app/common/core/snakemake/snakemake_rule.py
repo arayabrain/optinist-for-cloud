@@ -88,7 +88,11 @@ class SmkRule:
                 if input_file not in algo_input:
                     algo_input.append(input_file)
 
-                return_arg_names[return_name] = arg_name
+                # Register input information from the source node
+                return_arg_key = (
+                    f"{return_name}:{sourceNode.id}"  # Generate a unique key
+                )
+                return_arg_names[return_arg_key] = arg_name
 
         params = get_typecheck_params(self._node.data.param, self._node.data.label)
         algo_output = get_pickle_file(
