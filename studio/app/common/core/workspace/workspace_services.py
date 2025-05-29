@@ -203,7 +203,7 @@ class WorkspaceService:
             if auto_commit:
                 db.commit()
         except NoResultFound:
-            # If it failes roll back the transaction
+            # If it fails roll back the transaction
             logger.error(
                 f"Experiment {unique_id} not found in workspace {workspace_id}"
             )
