@@ -7,6 +7,7 @@ from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserRole as UserRoleModel
@@ -205,6 +206,30 @@ async def update_password(
 
 async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
     try:
+        # ----------------------------------------
+        # Delete a User workspace contents
+        # ----------------------------------------
+
+        workspaces = (
+            db.query(Workspace)
+            .filter(
+                Workspace.user_id == user_id,
+                Workspace.deleted.is_(False),
+            )
+            .all()
+        )
+        workspace_ids = [ws.id for ws in workspaces]
+
+        # Delete owned workspaces
+        for workspace_id in workspace_ids:
+            WorkspaceService.process_workspace_deletion(
+                db=db, workspace_id=workspace_id, user_id=user_id
+            )
+
+        # ----------------------------------------
+        # Delete a User database record
+        # ----------------------------------------
+
         user_db = (
             db.query(UserModel)
             .filter(
@@ -215,8 +240,24 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
             .first()
         )
         assert user_db is not None, "User not found"
+
         user_db.active = False
-        return user_db.uid
+
+        # ----------------------------------------
+        # Delete a User firebase account
+        # ----------------------------------------
+
+        firebase_auth.delete_user(user_db.uid)
+
+        # The transaction is committed at this point
+        # ATTENTION:
+        #   - If an exception occurs when deleting a Firebase account,
+        #     this commit may not be executed and the account may become undeletable.
+        #   - One possible solution to this issue is to add a status
+        #     when an error occurs (such as "Account suspended").
+        db.commit()
+
+        return True
 
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e))

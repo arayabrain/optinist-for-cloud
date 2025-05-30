@@ -257,7 +257,7 @@ class WorkspaceService:
                 if experiment_id.startswith("."):
                     continue
 
-                deleted = WorkspaceService.delete_workspace_experiment(
+                deleted = cls.delete_workspace_experiment(
                     db, workspace_id, experiment_id, auto_commit=False
                 )
 
@@ -267,12 +267,10 @@ class WorkspaceService:
 
         if all(hasDeleteDataArr):
             # Delete the workspace directory itself
-            WorkspaceService.delete_workspace_files(workspace_id=workspace_id)
+            cls.delete_workspace_files(workspace_id=workspace_id)
 
             # Delete input directory
-            WorkspaceService.delete_workspace_files(
-                workspace_id=workspace_id, is_input_dir=True
-            )
+            cls.delete_workspace_files(workspace_id=workspace_id, is_input_dir=True)
 
             # Soft delete the workspace
             ws.deleted = True
