@@ -243,14 +243,19 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
 
         user_db.active = False
 
-        # The transaction is committed at this point
-        db.commit()
-
         # ----------------------------------------
         # Delete a User firebase account
         # ----------------------------------------
 
         firebase_auth.delete_user(user_db.uid)
+
+        # The transaction is committed at this point
+        # ATTENTION:
+        #   - If an exception occurs when deleting a Firebase account,
+        #     this commit may not be executed and the account may become undeletable.
+        #   - One possible solution to this issue is to add a status
+        #     when an error occurs (such as "Account suspended").
+        db.commit()
 
         return True
 
