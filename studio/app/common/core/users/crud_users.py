@@ -11,6 +11,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageSimpleWriter,
 )
+from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserRole as UserRoleModel
@@ -245,10 +246,30 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
             .first()
         )
         assert user_db is not None, "User not found"
-        user_db.active = False
 
-        # delete application db user
-        firebase_auth.delete_user(user_db.uid)
+        # ----------------------------------------
+        # Delete a User workspace contents
+        # ----------------------------------------
+
+        workspaces = (
+            db.query(Workspace)
+            .filter(
+                Workspace.user_id == user_id,
+                Workspace.deleted.is_(False),
+            )
+            .all()
+        )
+        workspace_ids = [ws.id for ws in workspaces]
+
+        # Delete owned workspaces
+        for workspace_id in workspace_ids:
+            WorkspaceService.process_workspace_deletion(
+                db, user_db.remote_bucket_name, workspace_id, user_id
+            )
+
+        # ----------------------------------------
+        # Delete a User remote storage data
+        # ----------------------------------------
 
         # delete remote_storage bucket
         if RemoteStorageController.is_available():
@@ -257,9 +278,28 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
             ) as remote_storage_controller:
                 await remote_storage_controller.delete_bucket(force_delete=True)
 
+        # ----------------------------------------
+        # Delete a User database record
+        # ----------------------------------------
+
+        user_db.active = False
+
+        # ----------------------------------------
+        # Delete a User firebase account
+        # ----------------------------------------
+
+        firebase_auth.delete_user(user_db.uid)
+
+        # The transaction is committed at this point
+        # ATTENTION:
+        #   - If an exception occurs when deleting a Firebase account,
+        #     this commit may not be executed and the account may become undeletable.
+        #   - One possible solution to this issue is to add a status
+        #     when an error occurs (such as "Account suspended").
         db.commit()
 
         return True
+
     except AssertionError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

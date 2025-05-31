@@ -30,6 +30,8 @@ from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
 
+logger = AppLogger.get_logger()
+
 
 class ExptConfigWriter:
     def __init__(
@@ -152,28 +154,56 @@ class ExptDataWriter:
         self.unique_id = unique_id
 
     async def delete_data(self) -> bool:
-        result = True
+        experiment_path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
+        )
 
-        # Operate remote storage data.
-        if RemoteStorageController.is_available():
-            # Check for remote-sync-lock-file
-            # - If lock file exists, an exception is raised (raise_error=True)
-            RemoteSyncLockFileUtil.check_sync_lock_file(
-                self.workspace_id, self.unique_id, raise_error=True
+        result = False
+
+        try:
+            # Check the expt is running or if don't have status it will return None
+            status = ExptConfigReader.load_experiment_success_status(
+                self.workspace_id, self.unique_id
             )
+            # If the experiment is running or has no status, skip deletion
+            # no status means the experiemnt yaml is not created yet
+            if status is None:
+                pass
+            elif status == WorkflowRunStatus.RUNNING:
+                logger.warning(
+                    f"Skipping deletion of running experiment '{self.unique_id}'"
+                )
+                return False
 
-            # delete remote data
-            async with RemoteStorageDeleter(
-                self.remote_bucket_name, self.workspace_id, self.unique_id
-            ) as remote_storage_controller:
-                result = await remote_storage_controller.delete_experiment(
-                    self.workspace_id, self.unique_id
+            # Operate remote storage data.
+            if RemoteStorageController.is_available():
+                # Check for remote-sync-lock-file
+                # - If lock file exists, an exception is raised (raise_error=True)
+                RemoteSyncLockFileUtil.check_sync_lock_file(
+                    self.workspace_id, self.unique_id, raise_error=True
                 )
 
-        # delete local data
-        shutil.rmtree(
-            join_filepath([DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id])
-        )
+                # delete remote data
+                async with RemoteStorageDeleter(
+                    self.remote_bucket_name, self.workspace_id, self.unique_id
+                ) as remote_storage_controller:
+                    result = await remote_storage_controller.delete_experiment(
+                        self.workspace_id, self.unique_id
+                    )
+
+            # delete local data
+            shutil.rmtree(experiment_path)
+
+            logger.info(f"Deleted experiment data at: {experiment_path}")
+
+            result = True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to delete experiment '{self.unique_id}': {e}",
+                exc_info=True,
+            )
+            result = False
 
         return result
 
@@ -220,7 +250,7 @@ class ExptDataWriter:
 
         return ExptConfigReader.read(config_path)
 
-    def copy_data(self, new_unique_id: str) -> bool:
+    async def copy_data(self, new_unique_id: str) -> bool:
         logger = AppLogger.get_logger()
 
         try:

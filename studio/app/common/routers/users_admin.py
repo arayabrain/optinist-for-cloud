@@ -3,6 +3,7 @@ from fastapi_pagination import LimitOffsetPage
 from sqlmodel import Session
 
 from studio.app.common.core.auth.auth_dependencies import get_admin_user
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.users import crud_users
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.base import SortOptions
@@ -14,6 +15,7 @@ from studio.app.common.schemas.users import (
 )
 
 router = APIRouter(prefix="/admin/users", tags=["users/admin"])
+logger = AppLogger.get_logger()
 
 
 @router.get("", response_model=LimitOffsetPage[User])
