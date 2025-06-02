@@ -10,7 +10,7 @@ from studio.app.common.core.experiment.experiment import ExptConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -18,7 +18,6 @@ from studio.app.common.core.workspace.workspace_dependencies import (
 from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.experiment import CopyItem, DeleteItem, RenameItem
-from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
@@ -139,9 +138,7 @@ async def copy_experiment_list(
     dependencies=[Depends(is_workspace_available)],
 )
 async def download_config_experiment(workspace_id: str, unique_id: str):
-    config_filepath = join_filepath(
-        [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.SNAKEMAKE_CONFIG_YML]
-    )
+    config_filepath = SmkConfigReader.get_config_yaml_path(workspace_id, unique_id)
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath)
     else:

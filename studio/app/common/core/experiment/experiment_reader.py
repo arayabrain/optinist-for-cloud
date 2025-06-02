@@ -42,7 +42,7 @@ class ExptConfigReader:
         config = ConfigReader.read(filepath)
         assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
 
-        return cls._create_workflow_config(config)
+        return cls._create_experiments_config(config)
 
     @classmethod
     def read_from_path(cls, filepath: str) -> ExptConfig:
@@ -60,7 +60,7 @@ class ExptConfigReader:
         return config
 
     @classmethod
-    def _create_workflow_config(cls, config: dict) -> ExptConfig:
+    def _create_experiments_config(cls, config: dict) -> ExptConfig:
         return ExptConfig(
             workspace_id=config["workspace_id"],
             unique_id=config["unique_id"],

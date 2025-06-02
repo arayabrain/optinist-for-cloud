@@ -8,6 +8,7 @@ from snakemake import snakemake
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
+from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.utils.filepath_creater import get_pickle_file, join_filepath
 from studio.app.common.core.workflow.workflow import Edge, Node
 from studio.app.dir_path import DIRPATH
@@ -50,14 +51,7 @@ def _snakemake_execute_process(
         use_conda=params.use_conda,
         conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
         workdir=smk_workdir,
-        configfiles=[
-            join_filepath(
-                [
-                    smk_workdir,
-                    DIRPATH.SNAKEMAKE_CONFIG_YML,
-                ]
-            )
-        ],
+        configfiles=[SmkConfigReader.get_config_yaml_path(workspace_id, unique_id)],
         log_handler=[smk_logger.log_handler],
     )
 
