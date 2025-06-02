@@ -31,9 +31,7 @@ class WorkflowNodeDataFilter:
         self.workflow_dirpath = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id]
         )
-        self.workflow_config = WorkflowConfigReader.read(
-            join_filepath([self.workflow_dirpath, DIRPATH.WORKFLOW_YML])
-        )
+        self.workflow_config = WorkflowConfigReader.read(workspace_id, unique_id)
         self.node_dirpath = join_filepath([self.workflow_dirpath, node_id])
 
         # current output data path

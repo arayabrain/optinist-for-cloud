@@ -42,19 +42,7 @@ class ExptConfigReader:
         config = ConfigReader.read(filepath)
         assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
 
-        return ExptConfig(
-            workspace_id=config["workspace_id"],
-            unique_id=config["unique_id"],
-            name=config["name"],
-            started_at=config["started_at"],
-            finished_at=config.get("finished_at"),
-            success=config.get("success", NodeRunStatus.RUNNING.value),
-            hasNWB=config["hasNWB"],
-            function=cls.read_function(config["function"]),
-            nwb=config.get("nwb"),
-            snakemake=config.get("snakemake"),
-            data_usage=config.get("data_usage"),
-        )
+        return cls._create_workflow_config(config)
 
     @classmethod
     def read_from_path(cls, filepath: str) -> ExptConfig:
@@ -70,6 +58,22 @@ class ExptConfigReader:
         config = ConfigReader.read(config_path)
 
         return config
+
+    @classmethod
+    def _create_workflow_config(cls, config: dict) -> ExptConfig:
+        return ExptConfig(
+            workspace_id=config["workspace_id"],
+            unique_id=config["unique_id"],
+            name=config["name"],
+            started_at=config["started_at"],
+            finished_at=config.get("finished_at"),
+            success=config.get("success", NodeRunStatus.RUNNING.value),
+            hasNWB=config["hasNWB"],
+            function=cls.read_function(config["function"]),
+            nwb=config.get("nwb"),
+            snakemake=config.get("snakemake"),
+            data_usage=config.get("data_usage"),
+        )
 
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:

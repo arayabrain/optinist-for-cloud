@@ -89,14 +89,8 @@ class ExptConfigWriter:
     def build_function_from_nodeDict(self) -> ExptConfig:
         func_dict: Dict[str, ExptFunction] = {}
         node_dict = WorkflowConfigReader.read(
-            join_filepath(
-                [
-                    DIRPATH.OUTPUT_DIR,
-                    self.workspace_id,
-                    self.unique_id,
-                    DIRPATH.WORKFLOW_YML,
-                ]
-            )
+            self.workspace_id,
+            self.unique_id,
         ).nodeDict
 
         for node in node_dict.values():

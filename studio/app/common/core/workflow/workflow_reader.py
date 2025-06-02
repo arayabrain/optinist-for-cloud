@@ -1,6 +1,9 @@
+import os
 from typing import Dict
 
+from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.workflow.workflow import (
     Edge,
     Node,
@@ -9,15 +12,36 @@ from studio.app.common.core.workflow.workflow import (
     Style,
 )
 from studio.app.common.schemas.workflow import WorkflowConfig
+from studio.app.dir_path import DIRPATH
 
 
 class WorkflowConfigReader:
     @classmethod
-    def read(cls, file: str) -> WorkflowConfig:
-        config = ConfigReader.read(file)
-        assert config, f"Invalid config yaml file: [{file}] [{config}]"
+    def get_config_yaml_path(cls, workspace_id: str, unique_id: str) -> str:
+        path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
+        )
+        return path
+
+    @classmethod
+    def get_config_yaml_wild_path(cls, workspace_id: str) -> str:
+        path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.WORKFLOW_YML]
+        )
+        return path
+
+    @classmethod
+    def read(cls, workspace_id: str, unique_id: str) -> WorkflowConfig:
+        filepath = cls.get_config_yaml_path(workspace_id, unique_id)
+        config = ConfigReader.read(filepath)
+        assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
 
         return cls._create_workflow_config(config)
+
+    @classmethod
+    def read_from_path(cls, filepath: str) -> WorkflowConfig:
+        ids = ExptOutputPathIds(os.path.dirname(filepath))
+        return cls.read(ids.workspace_id, ids.unique_id)
 
     @classmethod
     def read_from_bytes(cls, content: bytes) -> WorkflowConfig:

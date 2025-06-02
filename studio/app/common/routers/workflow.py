@@ -36,15 +36,7 @@ async def fetch_last_experiment(workspace_id: str):
             unique_id = last_expt_config.unique_id
 
             # fetch workflow
-            workflow_config_path = join_filepath(
-                [
-                    DIRPATH.OUTPUT_DIR,
-                    workspace_id,
-                    unique_id,
-                    DIRPATH.WORKFLOW_YML,
-                ]
-            )
-            workflow_config = WorkflowConfigReader.read(workflow_config_path)
+            workflow_config = WorkflowConfigReader.read(workspace_id, unique_id)
             return WorkflowWithResults(
                 **asdict(last_expt_config), **asdict(workflow_config)
             )
@@ -72,14 +64,14 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
         experiment_config_path = ExptConfigReader.get_config_yaml_path(
             workspace_id, unique_id
         )
-        workflow_config_path = join_filepath(
-            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
+        workflow_config_path = WorkflowConfigReader.get_config_yaml_path(
+            workspace_id, unique_id
         )
         if os.path.exists(experiment_config_path) and os.path.exists(
             workflow_config_path
         ):
             experiment_config = ExptConfigReader.read(workspace_id, unique_id)
-            workflow_config = WorkflowConfigReader.read(workflow_config_path)
+            workflow_config = WorkflowConfigReader.read(workspace_id, unique_id)
             return WorkflowWithResults(
                 **asdict(experiment_config), **asdict(workflow_config)
             )
@@ -104,9 +96,7 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
     dependencies=[Depends(is_workspace_available)],
 )
 async def download_workspace_config(workspace_id: str, unique_id: str):
-    config_filepath = join_filepath(
-        [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
-    )
+    config_filepath = WorkflowConfigReader.get_config_yaml_path(workspace_id, unique_id)
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath, filename=DIRPATH.WORKFLOW_YML)
     else:
