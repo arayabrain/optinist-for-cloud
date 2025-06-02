@@ -69,8 +69,8 @@ async def fetch_last_experiment(workspace_id: str):
 )
 async def reproduce_experiment(workspace_id: str, unique_id: str):
     try:
-        experiment_config_path = join_filepath(
-            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+        experiment_config_path = ExptConfigReader.get_experiment_yaml_path(
+            workspace_id, unique_id
         )
         workflow_config_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
@@ -78,7 +78,7 @@ async def reproduce_experiment(workspace_id: str, unique_id: str):
         if os.path.exists(experiment_config_path) and os.path.exists(
             workflow_config_path
         ):
-            experiment_config = ExptConfigReader.read(experiment_config_path)
+            experiment_config = ExptConfigReader.read(workspace_id, unique_id)
             workflow_config = WorkflowConfigReader.read(workflow_config_path)
             return WorkflowWithResults(
                 **asdict(experiment_config), **asdict(workflow_config)

@@ -32,12 +32,10 @@ logger = AppLogger.get_logger()
 )
 async def get_experiments(workspace_id: str):
     exp_config = {}
-    config_paths = glob(
-        join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML])
-    )
+    config_paths = glob(ExptConfigReader.get_experiment_yaml_wild_path(workspace_id))
     for path in config_paths:
         try:
-            config = ExptConfigReader.read(path)
+            config = ExptConfigReader.read_from_path(path)
             exp_config[config.unique_id] = config
         except Exception as e:
             logger.error(e, exc_info=True)

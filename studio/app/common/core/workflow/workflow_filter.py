@@ -57,13 +57,7 @@ class WorkflowNodeDataFilter:
         )
 
     def _check_data_filter(self):
-        expt_filepath = join_filepath(
-            [
-                self.workflow_dirpath,
-                DIRPATH.EXPERIMENT_YML,
-            ]
-        )
-        exp_config = ExptConfigReader.read(expt_filepath)
+        exp_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
 
         assert (
             exp_config.function[self.node_id].success == WorkflowRunStatus.SUCCESS.value

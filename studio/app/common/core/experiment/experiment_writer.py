@@ -40,16 +40,11 @@ class ExptConfigWriter:
         self.builder = ExptConfigBuilder()
 
     def write(self) -> None:
-        expt_filepath = join_filepath(
-            [
-                DIRPATH.OUTPUT_DIR,
-                self.workspace_id,
-                self.unique_id,
-                DIRPATH.EXPERIMENT_YML,
-            ]
+        expt_filepath = ExptConfigReader.get_experiment_yaml_path(
+            self.workspace_id, self.unique_id
         )
         if os.path.exists(expt_filepath):
-            expt_config = ExptConfigReader.read(expt_filepath)
+            expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
             self.builder.set_config(expt_config)
             self.add_run_info()
         else:
@@ -136,7 +131,7 @@ class ExptDataWriter:
 
         try:
             # Check the expt is running or if don't have status it will return None
-            status = ExptConfigReader.load_experiment_success_status(
+            status = ExptConfigReader.read_experiment_status(
                 self.workspace_id, self.unique_id
             )
             # If the experiment is running or has no status, skip deletion
@@ -177,15 +172,7 @@ class ExptDataWriter:
         # Update & Write config
         ExptConfigWriter.write_raw(self.workspace_id, self.unique_id, config)
 
-        config_path = join_filepath(
-            [
-                DIRPATH.OUTPUT_DIR,
-                self.workspace_id,
-                self.unique_id,
-                DIRPATH.EXPERIMENT_YML,
-            ]
-        )
-        return ExptConfigReader.read(config_path)
+        return ExptConfigReader.read(self.workspace_id, self.unique_id)
 
     def copy_data(self, new_unique_id: str) -> bool:
         logger = AppLogger.get_logger()
