@@ -32,7 +32,7 @@ def test_delete(client):
     os.makedirs(dirpath, exist_ok=True)
 
     # Add dummy experiment.yaml
-    config_path = ExptConfigReader.get_experiment_yaml_path(workspace_id, dirname)
+    config_path = ExptConfigReader.get_config_yaml_path(workspace_id, dirname)
     with open(config_path, "w") as f:
         f.write("name: Dummy Experiment\nsuccess: success")
 
@@ -49,7 +49,7 @@ def test_delete_list(client):
         os.makedirs(dirpath, exist_ok=True)
 
         # Add dummy experiment.yaml
-        config_path = ExptConfigReader.get_experiment_yaml_path(workspace_id, name)
+        config_path = ExptConfigReader.get_config_yaml_path(workspace_id, name)
         with open(config_path, "w") as f:
             f.write("name: Dummy Experiment\nsuccess: success")
 

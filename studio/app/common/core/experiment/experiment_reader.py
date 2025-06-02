@@ -23,14 +23,14 @@ logger = AppLogger.get_logger()
 
 class ExptConfigReader:
     @classmethod
-    def get_experiment_yaml_path(cls, workspace_id: str, unique_id: str) -> str:
+    def get_config_yaml_path(cls, workspace_id: str, unique_id: str) -> str:
         path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
         )
         return path
 
     @classmethod
-    def get_experiment_yaml_wild_path(cls, workspace_id: str) -> str:
+    def get_config_yaml_wild_path(cls, workspace_id: str) -> str:
         path = join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML]
         )
@@ -38,7 +38,7 @@ class ExptConfigReader:
 
     @classmethod
     def read(cls, workspace_id: str, unique_id: str) -> ExptConfig:
-        filepath = cls.get_experiment_yaml_path(workspace_id, unique_id)
+        filepath = cls.get_config_yaml_path(workspace_id, unique_id)
         config = ConfigReader.read(filepath)
         assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
 
@@ -63,7 +63,7 @@ class ExptConfigReader:
 
     @classmethod
     def read_raw(cls, workspace_id: str, unique_id: str) -> dict:
-        config_path = cls.get_experiment_yaml_path(workspace_id, unique_id)
+        config_path = cls.get_config_yaml_path(workspace_id, unique_id)
 
         if not os.path.exists(config_path):
             return None

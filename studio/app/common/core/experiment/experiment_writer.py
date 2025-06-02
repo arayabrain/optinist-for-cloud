@@ -40,7 +40,7 @@ class ExptConfigWriter:
         self.builder = ExptConfigBuilder()
 
     def write(self) -> None:
-        expt_filepath = ExptConfigReader.get_experiment_yaml_path(
+        expt_filepath = ExptConfigReader.get_config_yaml_path(
             self.workspace_id, self.unique_id
         )
         if os.path.exists(expt_filepath):

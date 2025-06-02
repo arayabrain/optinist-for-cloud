@@ -69,7 +69,7 @@ async def fetch_last_experiment(workspace_id: str):
 )
 async def reproduce_experiment(workspace_id: str, unique_id: str):
     try:
-        experiment_config_path = ExptConfigReader.get_experiment_yaml_path(
+        experiment_config_path = ExptConfigReader.get_config_yaml_path(
             workspace_id, unique_id
         )
         workflow_config_path = join_filepath(
