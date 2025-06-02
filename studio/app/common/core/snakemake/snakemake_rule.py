@@ -9,6 +9,8 @@ from studio.app.const import FILETYPE
 
 
 class SmkRule:
+    RETURN_ARG_KEY_DELIMITER = ":"
+
     def __init__(
         self,
         workspace_id: str,
@@ -81,13 +83,18 @@ class SmkRule:
                     return_name = edge.sourceHandle.split("--")[0]
                     funcname = sourceNode.data.label.split(".")[0]
 
-                algo_input.append(
-                    get_pickle_file(
-                        self._workspace_id, self._unique_id, sourceNode.id, funcname
-                    )
+                input_file = get_pickle_file(
+                    self._workspace_id, self._unique_id, sourceNode.id, funcname
                 )
 
-                return_arg_names[return_name] = arg_name
+                if input_file not in algo_input:
+                    algo_input.append(input_file)
+
+                # Register input information from the source node
+                return_arg_key = __class__.RETURN_ARG_KEY_DELIMITER.join(
+                    [return_name, sourceNode.id]
+                )  # Generate a unique key
+                return_arg_names[return_arg_key] = arg_name
 
         params = get_typecheck_params(self._node.data.param, self._node.data.label)
         algo_output = get_pickle_file(
@@ -101,6 +108,7 @@ class SmkRule:
             .set_output(algo_output)
             .set_path(self._node.data.path)
             .set_type(self._node.data.label)
+            .set_nwbfile(self._nwbfile)
             .build()
         )
 

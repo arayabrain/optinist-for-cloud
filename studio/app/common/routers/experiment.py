@@ -19,7 +19,6 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -147,24 +146,20 @@ async def delete_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        await ExptDataWriter(
-            remote_bucket_name,
-            workspace_id,
-            unique_id,
-        ).delete_data()
-
-        if WorkspaceService.is_data_usage_available():
-            WorkspaceService.delete_workspace_experiment(db, workspace_id, unique_id)
+        await WorkspaceService.delete_workspace_experiment(
+            db, remote_bucket_name, workspace_id, unique_id, auto_commit=True
+        )
 
         return True
+
     except RemoteStorageLockError as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
     except Exception as e:
-        logger.error(e, exc_info=True)
+        logger.error("Deletion failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="can not delete record.",
+            detail="Failed to delete experiment and its associated data.",
         )
 
 
@@ -176,15 +171,15 @@ async def delete_experiment(
 async def delete_experiment_list(
     workspace_id: str,
     deleteItem: DeleteItem,
+    db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
         for unique_id in deleteItem.uidList:
-            await ExptDataWriter(
-                remote_bucket_name,
-                workspace_id,
-                unique_id,
-            ).delete_data()
+            await WorkspaceService.delete_workspace_experiment(
+                db, remote_bucket_name, workspace_id, unique_id, auto_commit=True
+            )
+
         return True
     except RemoteStorageLockError as e:
         logger.error(e)
@@ -205,41 +200,20 @@ async def delete_experiment_list(
 async def copy_experiment_list(
     workspace_id: str,
     copyItem: CopyItem,
+    db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
-    logger = AppLogger.get_logger()
-    logger.info(f"workspace_id: {workspace_id}, copyItem: {copyItem}")
-    created_unique_ids = []  # Keep track of successfully created unique IDs
     try:
-        for unique_id in copyItem.uidList:
-            logger.info(f"copying item with unique_id of {unique_id}")
-            new_unique_id = WorkflowRunner.create_workflow_unique_id()
-            ExptDataWriter(
-                remote_bucket_name,
-                workspace_id,
-                unique_id,
-            ).copy_data(new_unique_id)
-            created_unique_ids.append(new_unique_id)  # Record successful copy
+        await WorkspaceService.copy_workspace_experiment(
+            db, remote_bucket_name, workspace_id, copyItem=copyItem
+        )
         return True
+
     except Exception as e:
-        logger.error(e, exc_info=True)
-        # Clean up partially created data
-        for created_unique_id in created_unique_ids:
-            try:
-                ExptDataWriter(
-                    workspace_id,
-                    created_unique_id,
-                ).delete_data()
-                logger.info(f"Cleaned up data for unique_id: {created_unique_id}")
-            except Exception as cleanup_error:
-                logger.error(cleanup_error, exc_info=True)
-                logger.error(
-                    f"Failed to clean up data for unique_id: {created_unique_id}",
-                    exc_info=True,
-                )
+        logger.error("Copy failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to copy record. Partially created files have been removed.",
+            detail="Failed to copy experiment and its associated data.",
         )
 
 
