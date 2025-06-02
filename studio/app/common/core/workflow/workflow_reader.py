@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict
 
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.workflow.workflow import (
@@ -13,17 +13,28 @@ from studio.app.common.schemas.workflow import WorkflowConfig
 
 class WorkflowConfigReader:
     @classmethod
-    def read(cls, file: Union[str, bytes]) -> WorkflowConfig:
+    def read(cls, file: str) -> WorkflowConfig:
         config = ConfigReader.read(file)
         assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
+        return cls._create_workflow_config(config)
+
+    @classmethod
+    def read_from_bytes(cls, content: bytes) -> WorkflowConfig:
+        config = ConfigReader.read_from_bytes(content)
+        assert config, f"Invalid config yaml: [{config}]"
+
+        return cls._create_workflow_config(config)
+
+    @classmethod
+    def _create_workflow_config(cls, config: dict) -> WorkflowConfig:
         return WorkflowConfig(
             nodeDict=cls.read_nodeDict(config["nodeDict"]),
             edgeDict=cls.read_edgeDict(config["edgeDict"]),
         )
 
     @classmethod
-    def read_nodeDict(cls, config) -> Dict[str, Node]:
+    def read_nodeDict(cls, config: dict) -> Dict[str, Node]:
         return {
             key: Node(
                 id=key,
@@ -36,7 +47,7 @@ class WorkflowConfigReader:
         }
 
     @classmethod
-    def read_edgeDict(cls, config) -> Dict[str, Edge]:
+    def read_edgeDict(cls, config: dict) -> Dict[str, Edge]:
         return {
             key: Edge(
                 id=key,

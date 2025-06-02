@@ -118,7 +118,7 @@ async def download_workspace_config(workspace_id: str, unique_id: str):
 @router.post("/import")
 async def import_workflow_config(file: UploadFile = File(...)):
     try:
-        contents = WorkflowConfigReader.read(await file.read())
+        contents = WorkflowConfigReader.read_from_bytes(await file.read())
         return contents
     except Exception as e:
         logger.error(e, exc_info=True)

@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 import yaml
 
@@ -19,7 +19,7 @@ logger = AppLogger.get_logger()
 
 class ExptConfigReader:
     @classmethod
-    def read(cls, file: Union[str, bytes]) -> ExptConfig:
+    def read(cls, file: str) -> ExptConfig:
         config = ConfigReader.read(file)
         assert config, f"Invalid config yaml file: [{file}] [{config}]"
 
