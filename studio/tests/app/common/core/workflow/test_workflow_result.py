@@ -3,12 +3,13 @@ import shutil
 
 import pytest
 
+from studio.app.common.core.auth.auth_dependencies import _get_user_remote_bucket_name
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.workflow.workflow import Message
 from studio.app.common.core.workflow.workflow_result import NodeResult, WorkflowResult
 from studio.app.dir_path import DIRPATH
 
-remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
+remote_bucket_name = _get_user_remote_bucket_name()
 workspace_id = "default"
 unique_id = "result_test"
 node_id_list = ["func1", "func2"]

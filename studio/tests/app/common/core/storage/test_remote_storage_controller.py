@@ -10,6 +10,7 @@ import shutil
 
 import pytest
 
+from studio.app.common.core.auth.auth_dependencies import _get_user_remote_bucket_name
 from studio.app.common.core.storage.remote_storage_controller import (  # noqa: E402
     RemoteStorageController,
     RemoteStorageDeleter,
@@ -24,7 +25,7 @@ from studio.app.common.core.storage.remote_storage_controller import (  # noqa: 
 )
 from studio.app.dir_path import DIRPATH
 
-remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
+remote_bucket_name = _get_user_remote_bucket_name()
 workspace_id = "default"
 unique_id = "remote_storage_test"
 
