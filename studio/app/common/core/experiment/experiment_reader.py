@@ -1,9 +1,13 @@
 import os
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 import yaml
 
-from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
+from studio.app.common.core.experiment.experiment import (
+    ExptConfig,
+    ExptFunction,
+    ExptOutputPathIds,
+)
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.config_handler import ConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -19,10 +23,44 @@ logger = AppLogger.get_logger()
 
 class ExptConfigReader:
     @classmethod
-    def read(cls, file: Union[str, bytes]) -> ExptConfig:
-        config = ConfigReader.read(file)
-        assert config, f"Invalid config yaml file: [{file}] [{config}]"
+    def get_config_yaml_path(cls, workspace_id: str, unique_id: str) -> str:
+        path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+        )
+        return path
 
+    @classmethod
+    def get_config_yaml_wild_path(cls, workspace_id: str) -> str:
+        path = join_filepath(
+            [DIRPATH.OUTPUT_DIR, workspace_id, "*", DIRPATH.EXPERIMENT_YML]
+        )
+        return path
+
+    @classmethod
+    def read(cls, workspace_id: str, unique_id: str) -> ExptConfig:
+        filepath = cls.get_config_yaml_path(workspace_id, unique_id)
+        config = ConfigReader.read(filepath)
+        assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
+
+        return cls._create_experiments_config(config)
+
+    @classmethod
+    def read_from_path(cls, filepath: str) -> ExptConfig:
+        ids = ExptOutputPathIds(os.path.dirname(filepath))
+        return cls.read(ids.workspace_id, ids.unique_id)
+
+    @classmethod
+    def read_raw(cls, workspace_id: str, unique_id: str) -> dict:
+        config_path = cls.get_config_yaml_path(workspace_id, unique_id)
+
+        if not os.path.exists(config_path):
+            return None
+        config = ConfigReader.read(config_path)
+
+        return config
+
+    @classmethod
+    def _create_experiments_config(cls, config: dict) -> ExptConfig:
         return ExptConfig(
             workspace_id=config["workspace_id"],
             unique_id=config["unique_id"],
@@ -36,21 +74,6 @@ class ExptConfigReader:
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
         )
-
-    @staticmethod
-    def read_raw(workspace_id: str, unique_id: str) -> dict:
-        if not os.path.exists(
-            join_filepath(
-                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
-            )
-        ):
-            return None
-        config = ConfigReader.read(
-            join_filepath(
-                [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
-            )
-        )
-        return config
 
     @classmethod
     def read_function(cls, config) -> Dict[str, ExptFunction]:
@@ -84,7 +107,7 @@ class ExptConfigReader:
             return None
 
     @classmethod
-    def load_experiment_success_status(
+    def read_experiment_status(
         cls, workspace_id: str, unique_id: str
     ) -> Optional[WorkflowRunStatus]:
         try:

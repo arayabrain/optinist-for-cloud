@@ -11,7 +11,7 @@ from snakemake import snakemake
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
-from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
@@ -90,7 +90,8 @@ class EditROI:
     def __init__(self, file_path):
         self.node_dirpath = os.path.dirname(file_path)
         self.workflow_dirpath = os.path.dirname(self.node_dirpath)
-        self.function_id = ExptOutputPathIds(self.node_dirpath).function_id
+        self.workflow_ids = ExptOutputPathIds(self.node_dirpath)
+        self.function_id = self.workflow_ids.function_id
 
         self.output_info: Dict = PickleReader.read(self.pickle_file_path)
         self.tmp_output_info: Dict = (
@@ -293,10 +294,9 @@ class EditROI:
         )
 
     def __update_whole_nwb(self, output_info):
-        smk_config_file = join_filepath(
-            [self.workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
+        smk_config = SmkConfigReader.read(
+            self.workflow_ids.workspace_id, self.workflow_ids.unique_id
         )
-        smk_config = ConfigReader.read(smk_config_file)
         last_outputs = smk_config.get("last_output")
 
         for last_output in last_outputs:

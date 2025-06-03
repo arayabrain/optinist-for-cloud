@@ -41,9 +41,6 @@ class WorkflowResult:
                 self.unique_id,
             ]
         )
-        self.expt_filepath = join_filepath(
-            [self.workflow_dirpath, DIRPATH.EXPERIMENT_YML]
-        )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
     def observe(self, nodeIdList: List[str]) -> Dict:
@@ -158,7 +155,7 @@ class WorkflowResult:
 
         for nwb_filepath in nwb_filepath_list:
             if os.path.exists(nwb_filepath):
-                config = ExptConfigReader.read(self.expt_filepath)
+                config = ExptConfigReader.read(self.workspace_id, self.unique_id)
 
                 if target_whole_nwb:
                     config.hasNWB = True
@@ -191,9 +188,6 @@ class NodeResult:
         )
         self.node_id = node_id
         self.node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
-        self.expt_filepath = join_filepath(
-            [self.workflow_dirpath, DIRPATH.EXPERIMENT_YML]
-        )
         self.workflow_has_error = workflow_error.has_error if workflow_error else False
         self.workflow_error_log = workflow_error.error_log if workflow_error else None
 
@@ -210,7 +204,10 @@ class NodeResult:
             self.info = None
 
     def observe(self) -> Message:
-        expt_config = ExptConfigReader.read(self.expt_filepath)
+        expt_config = ExptConfigReader.read(
+            self.workspace_id,
+            self.unique_id,
+        )
 
         # case) error throughout workflow
         if self.workflow_has_error:
@@ -291,14 +288,6 @@ class WorkflowMonitor:
     def __init__(self, workspace_id: str, unique_id: str):
         self.workspace_id = workspace_id
         self.unique_id = unique_id
-        self.expt_filepath = join_filepath(
-            [
-                DIRPATH.OUTPUT_DIR,
-                self.workspace_id,
-                self.unique_id,
-                DIRPATH.EXPERIMENT_YML,
-            ]
-        )
 
     def search_process(self) -> WorkflowProcessInfo:
         pid_data = Runner.read_pid_file(self.workspace_id, self.unique_id)
@@ -311,7 +300,7 @@ class WorkflowMonitor:
             # )
 
             # Refer experiment_data instead of pid_data
-            expt_config = ExptConfigReader.read(self.expt_filepath)
+            expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
             try:
                 expt_started_time = datetime.strptime(
                     expt_config.started_at, DATE_FORMAT

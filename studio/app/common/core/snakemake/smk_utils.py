@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Dict
 
 from studio.app.common.core.logger import AppLogger
-from studio.app.common.core.utils.config_handler import ConfigReader
+from studio.app.common.core.snakemake.smk import Rule
+from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
 from studio.app.common.core.workflow.workflow import NodeType, NodeTypeUtil
@@ -127,7 +128,7 @@ class SmkUtils:
         return modified_params
 
     @staticmethod
-    def resolve_nwbfile_reference(rule_config):
+    def resolve_nwbfile_reference(rule_config: Rule):
         """Resolve NWB template reference if necessary"""
         if hasattr(rule_config, "nwbfile"):
             if isinstance(rule_config.nwbfile, str) and rule_config.nwbfile.startswith(
@@ -138,8 +139,8 @@ class SmkUtils:
                 config_path = join_filepath(
                     [DIRPATH.OUTPUT_DIR, workflow_dirpath, DIRPATH.SNAKEMAKE_CONFIG_YML]
                 )
+                config = SmkConfigReader.read_from_path(config_path)
 
-                config = ConfigReader.read(config_path)
                 if "nwb_template" in config:
                     template = config["nwb_template"]
                     rule_config.nwbfile = template

@@ -1,5 +1,4 @@
 import os
-from typing import Union
 
 import yaml
 from filelock import FileLock
@@ -13,20 +12,18 @@ from studio.app.common.core.utils.filepath_creater import (
 
 class ConfigReader:
     @classmethod
-    def read(cls, file: Union[str, bytes]):
+    def read(cls, filepath: str) -> dict:
         config = {}
 
-        if file is None:
-            return config
-
-        if isinstance(file, bytes):
-            config = yaml.safe_load(file)
-        elif isinstance(file, str) and os.path.exists(file):
-            with open(file) as f:
+        if filepath is not None and os.path.exists(filepath):
+            with open(filepath) as f:
                 config = yaml.safe_load(f)
-        else:
-            assert False, f"Invalid file [{file}]"
 
+        return config
+
+    @classmethod
+    def read_from_bytes(cls, content: bytes) -> dict:
+        config = yaml.safe_load(content)
         return config
 
 

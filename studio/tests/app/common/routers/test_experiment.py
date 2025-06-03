@@ -1,6 +1,7 @@
 import os
 import shutil
 
+from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.dir_path import DIRPATH
 
@@ -31,7 +32,8 @@ def test_delete(client):
     os.makedirs(dirpath, exist_ok=True)
 
     # Add dummy experiment.yaml
-    with open(os.path.join(dirpath, DIRPATH.EXPERIMENT_YML), "w") as f:
+    config_path = ExptConfigReader.get_config_yaml_path(workspace_id, dirname)
+    with open(config_path, "w") as f:
         f.write("name: Dummy Experiment\nsuccess: success")
 
     assert os.path.exists(dirpath)
@@ -47,7 +49,8 @@ def test_delete_list(client):
         os.makedirs(dirpath, exist_ok=True)
 
         # Add dummy experiment.yaml
-        with open(os.path.join(dirpath, DIRPATH.EXPERIMENT_YML), "w") as f:
+        config_path = ExptConfigReader.get_config_yaml_path(workspace_id, name)
+        with open(config_path, "w") as f:
             f.write("name: Dummy Experiment\nsuccess: success")
 
         assert os.path.exists(dirpath)

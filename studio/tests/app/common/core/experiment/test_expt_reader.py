@@ -1,18 +1,13 @@
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.workflow.workflow import NodeRunStatus
-from studio.app.dir_path import DIRPATH
 
 workspace_id = "default"
 unique_id = "0123"
 
-expt_filepath = (
-    f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}/experiment.yaml"
-)
-
 
 def test_read():
-    exp_config = ExptConfigReader.read(expt_filepath)
+    exp_config = ExptConfigReader.read(workspace_id, unique_id)
 
     assert isinstance(exp_config, ExptConfig)
     assert isinstance(exp_config.workspace_id, str)
