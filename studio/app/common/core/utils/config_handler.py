@@ -41,7 +41,7 @@ class ConfigReader:
 
 
 class ConfigWriter:
-    FILE_LOCK_TIMEOUT = 10
+    FILE_LOCK_TIMEOUT = 60
 
     @classmethod
     def write(cls, dirname: str, filename: str, config: dict, auto_file_lock=True):
