@@ -28,16 +28,17 @@ logger = AppLogger.get_logger()
 class WorkspaceService:
     @classmethod
     def _update_exp_data_usage_yaml(cls, workspace_id: str, unique_id: str, data_usage):
-        # Read config
-        config = ExptConfigReader.read_raw(workspace_id, unique_id)
+        # Read experiment config
+        config = ExptConfigReader.read(workspace_id, unique_id)
         if not config:
             logger.error(f"[{workspace_id}/{unique_id}] does not exist")
             return
 
-        config["data_usage"] = data_usage
+        # Make overwrite params
+        update_params = {"data_usage": data_usage}
 
-        # Update & Write config
-        ExptConfigWriter.write_raw(workspace_id, unique_id, config)
+        # Overwrite experiment config
+        ExptConfigWriter(workspace_id, unique_id).overwrite(update_params)
 
     @classmethod
     def _update_exp_data_usage_db(

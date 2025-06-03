@@ -10,6 +10,19 @@ from studio.app.common.core.utils.filepath_creater import (
 )
 
 
+def differential_deep_merge(d1: dict, d2: dict) -> dict:
+    """
+    Deep merge only the differences to avoid destroying existing elements
+    """
+    result = d1.copy()
+    for key, value in d2.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = differential_deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 class ConfigReader:
     @classmethod
     def read(cls, filepath: str) -> dict:

@@ -35,7 +35,8 @@ async def get_experiments(workspace_id: str):
     for path in config_paths:
         try:
             config = ExptConfigReader.read_from_path(path)
-            exp_config[config.unique_id] = config
+            if ExptConfigReader.validate_experiment_config(config):
+                exp_config[config.unique_id] = config
         except Exception as e:
             logger.error(e, exc_info=True)
             pass
