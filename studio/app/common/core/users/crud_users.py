@@ -7,6 +7,7 @@ from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
@@ -22,6 +23,8 @@ from studio.app.common.schemas.users import (
     UserSearchOptions,
     UserUpdate,
 )
+
+logger = AppLogger.get_logger()
 
 
 async def set_role(db: Session, user_id: int, role_id: int, auto_commit=True):
@@ -50,8 +53,10 @@ async def get_user(db: Session, user_id: int, organization_id: int) -> User:
         user.__dict__["role_id"] = role_id
         return User.from_orm(user)
     except AssertionError as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -131,6 +136,7 @@ async def list_user(
         )
         return users
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -154,6 +160,7 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
         user_db.__dict__["role_id"] = data.role_id
         return User.from_orm(user_db)
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -182,8 +189,10 @@ async def update_user(
         db.commit()
         return User.from_orm(user_db)
     except AssertionError as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -201,6 +210,7 @@ async def update_password(
         user = firebase_auth.update_user(user.uid, password=data.new_password)
         return True
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -260,6 +270,8 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
         return True
 
     except AssertionError as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
