@@ -41,14 +41,23 @@ class ConfigReader:
 
 
 class ConfigWriter:
+    FILE_LOCK_TIMEOUT = 10
+
     @classmethod
     def write(cls, dirname, filename, config):
         create_directory(dirname)
 
         config_path = join_filepath([dirname, filename])
+        config_tmp_path = f"{config_path}.tmp"
 
         # Controls locking for simultaneous writing to yaml-file from multiple nodes.
         lock_path = FileLockUtils.get_lockfile_path(config_path)
-        with FileLock(lock_path, timeout=10):
-            with open(config_path, "w") as f:
+        with FileLock(lock_path, cls.FILE_LOCK_TIMEOUT):
+            # First write to a temporary file
+            # (a measure to avoid read conflicts due to write delays)
+            with open(config_tmp_path, "w") as f:
                 yaml.dump(config, f, sort_keys=False)
+
+            # Write to the original file path
+            # (write atomically by using os.replace)
+            os.replace(config_tmp_path, config_path)
