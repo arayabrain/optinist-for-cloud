@@ -25,7 +25,7 @@ async def get_current_user(
     ex_token: Optional[str] = Depends(APIKeyHeader(name="ExToken", auto_error=False)),
     credential: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db),
-):
+) -> User:
     use_firebase_auth = AUTH_CONFIG.USE_FIREBASE_TOKEN
     try:
         assert credential is not None if use_firebase_auth else True
@@ -100,7 +100,7 @@ async def get_current_user(
         )
 
 
-async def get_admin_user(current_user: User = Depends(get_current_user)):
+async def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.is_admin:
         return current_user
     else:
@@ -110,11 +110,18 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
         )
 
 
-async def get_user_remote_bucket_name(current_user: User = Depends(get_current_user)):
+async def get_user_remote_bucket_name(
+    current_user: User = Depends(get_current_user),
+) -> str:
     """
     get user remote_bucket_name from users.attributes
     """
+
     if not current_user:
-        return os.environ.get("S3_DEFAULT_BUCKET_NAME")
+        remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
     else:
-        return current_user.remote_bucket_name
+        remote_bucket_name = current_user.remote_bucket_name
+
+    assert remote_bucket_name, f"Invalid remote_bucket_name: {remote_bucket_name}"
+
+    return remote_bucket_name
