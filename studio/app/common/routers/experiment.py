@@ -8,6 +8,7 @@ from sqlmodel import Session
 
 from studio.app.common.core.experiment.experiment import ExptConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
+from studio.app.common.core.experiment.experiment_services import ExperimentService
 from studio.app.common.core.experiment.experiment_writer import ExptDataWriter
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
@@ -15,7 +16,6 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
-from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.experiment import CopyItem, DeleteItem, RenameItem
 
@@ -76,7 +76,7 @@ async def delete_experiment(
     workspace_id: str, unique_id: str, db: Session = Depends(get_db)
 ):
     try:
-        WorkspaceService.delete_workspace_experiment(
+        ExperimentService.delete_experiment(
             db, workspace_id, unique_id, auto_commit=True
         )
 
@@ -100,7 +100,7 @@ async def delete_experiment_list(
 ):
     try:
         for unique_id in deleteItem.uidList:
-            WorkspaceService.delete_workspace_experiment(
+            ExperimentService.delete_experiment(
                 db, workspace_id, unique_id, auto_commit=True
             )
 
@@ -122,7 +122,7 @@ async def copy_experiment_list(
     workspace_id: str, copyItem: CopyItem, db: Session = Depends(get_db)
 ):
     try:
-        WorkspaceService.copy_workspace_experiment(db, workspace_id, copyItem=copyItem)
+        ExperimentService.copy_experiment(db, workspace_id, copyItem=copyItem)
         return True
 
     except Exception as e:
