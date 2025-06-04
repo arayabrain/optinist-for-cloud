@@ -11,6 +11,9 @@ from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
 from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.utils.filepath_creater import get_pickle_file, join_filepath
 from studio.app.common.core.workflow.workflow import Edge, Node
+from studio.app.common.core.workspace.workspace_data_capacity_services import (
+    WorkspaceDataCapacityService,
+)
 from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
@@ -33,8 +36,6 @@ def snakemake_execute(workspace_id: str, unique_id: str, params: SmkParam):
 def _snakemake_execute_process(
     workspace_id: str, unique_id: str, params: SmkParam
 ) -> bool:
-    from studio.app.common.core.workspace.workspace_services import WorkspaceService
-
     smk_logger = SmkStatusLogger(workspace_id, unique_id)
     smk_workdir = join_filepath(
         [
@@ -60,7 +61,7 @@ def _snakemake_execute_process(
     else:
         logger.error("snakemake_execute failed..")
 
-    WorkspaceService.update_experiment_data_usage(workspace_id, unique_id)
+    WorkspaceDataCapacityService.update_experiment_data_usage(workspace_id, unique_id)
 
     smk_logger.clean_up()
 
