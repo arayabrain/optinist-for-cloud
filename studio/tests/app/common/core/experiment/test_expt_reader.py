@@ -51,7 +51,7 @@ def test_read_function():
         }
     }
 
-    function = ExptConfigReader.read_function(func_config)
+    function = ExptConfigReader.convert_function(func_config)
 
     assert isinstance(function, dict)
     assert isinstance(function["sample1"], ExptFunction)

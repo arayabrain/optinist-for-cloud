@@ -18,6 +18,9 @@ from studio.app.common.core.utils.filepath_creater import (
     create_directory,
     join_filepath,
 )
+from studio.app.common.core.workspace.workspace_data_capacity_services import (
+    WorkspaceDataCapacityService,
+)
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -199,7 +202,7 @@ async def create_file(
 
     update_image_shape(workspace_id, filename)
 
-    if WorkspaceService.is_data_usage_available():
+    if WorkspaceDataCapacityService.is_available():
         background_tasks.add_task(
             WorkspaceService.update_workspace_data_usage, db, workspace_id
         )
@@ -227,7 +230,7 @@ async def delete_file(
     try:
         os.remove(filepath)
 
-        if WorkspaceService.is_data_usage_available():
+        if WorkspaceDataCapacityService.is_available():
             background_tasks.add_task(
                 WorkspaceService.update_workspace_data_usage, db, workspace_id
             )
@@ -299,5 +302,5 @@ def download(
     except Exception as e:
         DOWNLOAD_STATUS[filepath] = DownloadStatus(error=str(e))
 
-    if WorkspaceService.is_data_usage_available():
+    if WorkspaceDataCapacityService.is_available():
         WorkspaceService.update_workspace_data_usage(db, workspace_id)
