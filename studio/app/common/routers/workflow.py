@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
-from studio.app.common.core.experiment.experiment_utils import ExptUtils
+from studio.app.common.core.experiment.experiment_services import ExperimentService
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -31,7 +31,7 @@ logger = AppLogger.get_logger()
 )
 async def fetch_last_experiment(workspace_id: str):
     try:
-        last_expt_config = ExptUtils.get_last_experiment(workspace_id)
+        last_expt_config = ExperimentService.get_last_experiment(workspace_id)
         if last_expt_config:
             unique_id = last_expt_config.unique_id
 

@@ -76,7 +76,7 @@ class ExptConfigReader:
             finished_at=config.get("finished_at"),
             success=config.get("success", NodeRunStatus.RUNNING.value),
             hasNWB=config["hasNWB"],
-            function=cls.read_function(config["function"]),
+            function=cls.convert_function(config["function"]),
             nwb=config.get("nwb"),
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
@@ -96,7 +96,7 @@ class ExptConfigReader:
         return True
 
     @classmethod
-    def read_function(cls, config: dict) -> Dict[str, ExptFunction]:
+    def convert_function(cls, config: dict) -> Dict[str, ExptFunction]:
         return {
             key: ExptFunction(
                 unique_id=value["unique_id"],
@@ -106,13 +106,13 @@ class ExptConfigReader:
                 success=value.get("success", NodeRunStatus.RUNNING.value),
                 hasNWB=value["hasNWB"],
                 message=value.get("message"),
-                outputPaths=cls.read_output_paths(value.get("outputPaths")),
+                outputPaths=cls.convert_output_paths(value.get("outputPaths")),
             )
             for key, value in config.items()
         }
 
     @classmethod
-    def read_output_paths(cls, config: dict) -> Dict[str, OutputPath]:
+    def convert_output_paths(cls, config: dict) -> Dict[str, OutputPath]:
         if config:
             return {
                 key: OutputPath(
