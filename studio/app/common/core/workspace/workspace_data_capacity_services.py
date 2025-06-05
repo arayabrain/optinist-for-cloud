@@ -41,16 +41,17 @@ class WorkspaceDataCapacityService:
 
     @classmethod
     def _update_exp_data_usage_yaml(cls, workspace_id: str, unique_id: str, data_usage):
-        # Read config
-        config = ExptConfigReader.read_raw(workspace_id, unique_id)
+        # Read experiment config
+        config = ExptConfigReader.read(workspace_id, unique_id)
         if not config:
             logger.error(f"[{workspace_id}/{unique_id}] does not exist")
             return
 
-        config["data_usage"] = data_usage
+        # Make overwrite params
+        update_params = {"data_usage": data_usage}
 
-        # Update & Write config
-        ExptConfigWriter.write_raw(workspace_id, unique_id, config)
+        # Overwrite experiment config
+        ExptConfigWriter(workspace_id, unique_id).overwrite(update_params)
 
     @classmethod
     def _update_exp_data_usage_db(
@@ -106,9 +107,7 @@ class WorkspaceDataCapacityService:
             unique_id = exp_folder.name
             data_usage = get_folder_size(exp_folder.as_posix())
 
-            WorkspaceDataCapacityService._update_exp_data_usage_yaml(
-                workspace_id, unique_id, data_usage
-            )
+            cls._update_exp_data_usage_yaml(workspace_id, unique_id, data_usage)
 
             exp_records.append(
                 ExperimentRecord(
@@ -118,7 +117,7 @@ class WorkspaceDataCapacityService:
                 )
             )
 
-        if WorkspaceDataCapacityService.is_available():
+        if cls.is_available():
             db.execute(
                 delete(ExperimentRecord).where(
                     ExperimentRecord.workspace_id == workspace_id

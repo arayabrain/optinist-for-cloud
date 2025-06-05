@@ -1,4 +1,5 @@
 import os
+from dataclasses import asdict
 from typing import Dict, Optional
 
 import yaml
@@ -42,7 +43,7 @@ class ExptConfigReader:
         config = ConfigReader.read(filepath)
         assert config, f"Invalid config yaml file: [{filepath}] [{config}]"
 
-        return cls._create_experiments_config(config)
+        return cls._create_experiment_config(config)
 
     @classmethod
     def read_from_path(cls, filepath: str) -> ExptConfig:
@@ -50,17 +51,23 @@ class ExptConfigReader:
         return cls.read(ids.workspace_id, ids.unique_id)
 
     @classmethod
-    def read_raw(cls, workspace_id: str, unique_id: str) -> dict:
-        config_path = cls.get_config_yaml_path(workspace_id, unique_id)
-
-        if not os.path.exists(config_path):
-            return None
-        config = ConfigReader.read(config_path)
-
-        return config
+    def create_empty_experiment_config(cls) -> ExptConfig:
+        return ExptConfig(
+            workspace_id=None,
+            unique_id=None,
+            name=None,
+            started_at=None,
+            finished_at=None,
+            success=None,
+            hasNWB=None,
+            function=None,
+            nwb=None,
+            snakemake=None,
+            data_usage=None,
+        )
 
     @classmethod
-    def _create_experiments_config(cls, config: dict) -> ExptConfig:
+    def _create_experiment_config(cls, config: dict) -> ExptConfig:
         return ExptConfig(
             workspace_id=config["workspace_id"],
             unique_id=config["unique_id"],
@@ -76,7 +83,20 @@ class ExptConfigReader:
         )
 
     @classmethod
-    def read_function(cls, config) -> Dict[str, ExptFunction]:
+    def validate_experiment_config(cls, config: ExptConfig) -> bool:
+        """
+        ExptConfig content validation
+        """
+        config_dict = asdict(config)
+        for field in ExptConfig.required_fields():
+            assert (
+                config_dict.get(field) is not None
+            ), f"ExptConfig.{field} is required."
+
+        return True
+
+    @classmethod
+    def read_function(cls, config: dict) -> Dict[str, ExptFunction]:
         return {
             key: ExptFunction(
                 unique_id=value["unique_id"],
@@ -92,7 +112,7 @@ class ExptConfigReader:
         }
 
     @classmethod
-    def read_output_paths(cls, config) -> Dict[str, OutputPath]:
+    def read_output_paths(cls, config: dict) -> Dict[str, OutputPath]:
         if config:
             return {
                 key: OutputPath(
@@ -111,11 +131,12 @@ class ExptConfigReader:
         cls, workspace_id: str, unique_id: str
     ) -> Optional[WorkflowRunStatus]:
         try:
-            data = cls.read_raw(workspace_id=workspace_id, unique_id=unique_id)
-            if data is not None:
-                value = data.get(WorkflowRunStatus.SUCCESS.value)
-                if value is None:
-                    return None
-                return WorkflowRunStatus(value)
-        except (yaml.YAMLError, ValueError):
+            config = cls.read(workspace_id=workspace_id, unique_id=unique_id)
+            if config.success is None:
+                return None
+            return WorkflowRunStatus(config.success)
+        except (ValueError, AssertionError, yaml.YAMLError) as e:
+            logger.warning(
+                f"experiment config read error: [{workspace_id}/{unique_id}] {e}"
+            )
             return None
