@@ -19,11 +19,11 @@ def main(args):
                 WorkspaceDataCapacityService.update_workspace_data_usage(
                     db, str(workspace_id)
                 )
-                WorkspaceDataCapacityService.sync_workspace_experiment(
+                WorkspaceDataCapacityService.recalculate_workspace_data_capacity(
                     db, str(workspace_id)
                 )
     else:
-        WorkspaceDataCapacityService.sync_workspace_experiment(
+        WorkspaceDataCapacityService.recalculate_workspace_data_capacity(
             db=None, workspace_id="1"
         )
 

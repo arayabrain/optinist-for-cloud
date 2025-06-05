@@ -96,7 +96,7 @@ class WorkspaceDataCapacityService:
             db.commit()
 
     @classmethod
-    def sync_workspace_experiment(cls, db: Session, workspace_id: str):
+    def recalculate_workspace_data_capacity(cls, db: Session, workspace_id: str):
         folder = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
         if not os.path.exists(folder):
             logger.error(f"'{folder}' does not exist")
@@ -104,18 +104,23 @@ class WorkspaceDataCapacityService:
         exp_records = []
 
         for exp_folder in Path(folder).iterdir():
-            unique_id = exp_folder.name
-            data_usage = get_folder_size(exp_folder.as_posix())
+            try:
+                unique_id = exp_folder.name
+                data_usage = get_folder_size(exp_folder.as_posix())
 
-            cls._update_exp_data_usage_yaml(workspace_id, unique_id, data_usage)
+                cls._update_exp_data_usage_yaml(workspace_id, unique_id, data_usage)
 
-            exp_records.append(
-                ExperimentRecord(
-                    workspace_id=workspace_id,
-                    uid=unique_id,
-                    data_usage=data_usage,
+                exp_records.append(
+                    ExperimentRecord(
+                        workspace_id=workspace_id,
+                        uid=unique_id,
+                        data_usage=data_usage,
+                    )
                 )
-            )
+            except Exception as e:
+                logger.error(
+                    f"Failed to update Record information [{exp_folder}] [{e}]"
+                )
 
         if cls.is_available():
             db.execute(
@@ -124,3 +129,8 @@ class WorkspaceDataCapacityService:
                 )
             )
             db.bulk_save_objects(exp_records)
+
+        logger.info(
+            "Workspace capacity recalculation succeeded. "
+            f"[workspace_id: {workspace_id}]"
+        )
