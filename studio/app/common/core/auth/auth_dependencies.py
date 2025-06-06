@@ -25,7 +25,7 @@ async def get_current_user(
     ex_token: Optional[str] = Depends(APIKeyHeader(name="ExToken", auto_error=False)),
     credential: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db),
-):
+) -> User:
     use_firebase_auth = AUTH_CONFIG.USE_FIREBASE_TOKEN
     try:
         assert credential is not None if use_firebase_auth else True
@@ -100,7 +100,7 @@ async def get_current_user(
         )
 
 
-async def get_admin_user(current_user: User = Depends(get_current_user)):
+async def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.is_admin:
         return current_user
     else:
