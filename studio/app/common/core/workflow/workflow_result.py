@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import signal
@@ -11,6 +12,7 @@ from typing import Dict, List
 from fastapi import HTTPException, status
 from psutil import AccessDenied, NoSuchProcess, Process, ZombieProcess, process_iter
 
+from studio.app.common.core.experiment.experiment import ExptFunction
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
 from studio.app.common.core.logger import AppLogger
@@ -51,9 +53,6 @@ class WorkflowResult:
                 self.workspace_id,
                 self.unique_id,
             ]
-        )
-        self.expt_filepath = join_filepath(
-            [self.workflow_dirpath, DIRPATH.EXPERIMENT_YML]
         )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
@@ -184,16 +183,32 @@ class WorkflowResult:
 
         for nwb_filepath in nwb_filepath_list:
             if os.path.exists(nwb_filepath):
-                config = ExptConfigReader.read(self.expt_filepath)
+                update_expt_config = ExptConfigReader.create_empty_experiment_config()
+                update_config_function: ExptFunction = None
 
                 if target_whole_nwb:
-                    config.hasNWB = True
+                    update_expt_config.hasNWB = True
                 else:
-                    config.function[node_id].hasNWB = True
+                    original_config = ExptConfigReader.read(
+                        self.workspace_id, self.unique_id
+                    )
+                    update_config_function = copy.deepcopy(
+                        original_config.function[node_id]
+                    )
+                    update_config_function.hasNWB = True
 
-                # Update EXPERIMENT_YML
-                ExptConfigWriter.write_raw(
-                    self.workspace_id, self.unique_id, asdict(config)
+                # Make overwrite params
+                update_expt_config_dict = {}
+                if update_config_function is not None:
+                    update_expt_config_dict["function"] = {
+                        update_config_function.unique_id: asdict(update_config_function)
+                    }
+                if update_expt_config.hasNWB is not None:
+                    update_expt_config_dict["hasNWB"] = update_expt_config.hasNWB
+
+                # Overwrite experiment config
+                ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(
+                    update_expt_config_dict
                 )
 
 
@@ -231,9 +246,6 @@ class NodeResult(BaseNodeResult):
         )
         self.node_id = node_id
         self.node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
-        self.expt_filepath = join_filepath(
-            [self.workflow_dirpath, DIRPATH.EXPERIMENT_YML]
-        )
         self.workflow_has_error = workflow_error.has_error if workflow_error else False
         self.workflow_error_log = workflow_error.error_log if workflow_error else None
 
@@ -250,7 +262,14 @@ class NodeResult(BaseNodeResult):
             self.info = None
 
     def observe(self) -> Message:
-        expt_config = ExptConfigReader.read(self.expt_filepath)
+        original_expt_config = ExptConfigReader.read(
+            self.workspace_id,
+            self.unique_id,
+        )
+        update_expt_config = ExptConfigReader.create_empty_experiment_config()
+        update_config_function: ExptFunction = copy.deepcopy(
+            original_expt_config.function[self.node_id]
+        )
 
         # case) error throughout workflow
         if self.workflow_has_error:
@@ -261,34 +280,54 @@ class NodeResult(BaseNodeResult):
         # case) success in node
         else:
             message = self.success()
-            expt_config.function[self.node_id].outputPaths = message.outputPaths
+            update_config_function.outputPaths = message.outputPaths
 
-        expt_config.function[self.node_id].success = message.status
+        update_config_function.success = message.status
 
         # TODO: Set started_at on the node
         #   At the moment, there is insufficient data to obtain an accurate started_at,
         #  so set it to None.
         #   separate modification is required to record running info for each node.
-        expt_config.function[self.node_id].started_at = None
+        update_config_function.started_at = None
 
         now = datetime.now().strftime(DATE_FORMAT)
-        expt_config.function[self.node_id].finished_at = now
-        expt_config.function[self.node_id].message = message.message
+        update_config_function.finished_at = now
+        update_config_function.message = message.message
 
         # check all function processed status
-        statuses = list(map(lambda x: x.success, expt_config.function.values()))
+        latest_statuses = [
+            (
+                update_config_function.success
+                if k == update_config_function.unique_id
+                else v.success
+            )
+            for k, v in original_expt_config.function.items()
+        ]
 
-        if NodeRunStatus.RUNNING.value not in statuses:
-            expt_config.finished_at = now
-            if NodeRunStatus.ERROR.value in statuses:
-                expt_config.success = NodeRunStatus.ERROR.value
+        # Status check of each node
+        if NodeRunStatus.RUNNING.value not in latest_statuses:
+            update_expt_config.finished_at = now
+            if NodeRunStatus.ERROR.value in latest_statuses:
+                update_expt_config.success = NodeRunStatus.ERROR.value
             else:
-                expt_config.success = NodeRunStatus.SUCCESS.value
+                update_expt_config.success = NodeRunStatus.SUCCESS.value
 
-        # Update EXPERIMENT_YML
-        ExptConfigWriter.write_raw(
-            self.workspace_id, self.unique_id, asdict(expt_config)
+        # Make overwrite params
+        update_expt_config_dict = {}
+        if update_config_function is not None:
+            update_expt_config_dict["function"] = {
+                update_config_function.unique_id: asdict(update_config_function)
+            }
+        if update_expt_config.success is not None:
+            update_expt_config_dict["success"] = update_expt_config.success
+        if update_expt_config.finished_at is not None:
+            update_expt_config_dict["finished_at"] = update_expt_config.finished_at
+
+        # Overwrite experiment config
+        ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(
+            update_expt_config_dict
         )
+
         return message
 
     def success(self) -> Message:
@@ -364,7 +403,11 @@ class PostProcessResult(BaseNodeResult):
             self.info = None
 
     async def observe(self) -> Message:
-        expt_config = ExptConfigReader.read(self.expt_filepath)
+        original_expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+        update_expt_config = ExptConfigReader.create_empty_experiment_config()
+        update_config_function: ExptFunction = copy.deepcopy(
+            original_expt_config.procs[self.node_id]
+        )
 
         # case) error throughout workflow
         if self.workflow_has_error:
@@ -376,36 +419,57 @@ class PostProcessResult(BaseNodeResult):
         else:
             message = self.success()
 
-        expt_config.procs[self.node_id].success = message.status
+        update_config_function.success = message.status
 
         now = datetime.now().strftime(DATE_FORMAT)
-        expt_config.procs[self.node_id].finished_at = now
-        expt_config.procs[self.node_id].message = message.message
+        update_config_function.finished_at = now
+        update_config_function.message = message.message
 
         # check all function processed status
-        statuses = list(map(lambda x: x.success, expt_config.procs.values()))
+        latest_statuses = [
+            (
+                update_config_function.success
+                if k == update_config_function.unique_id
+                else v.success
+            )
+            for k, v in original_expt_config.function.items()
+        ]
 
-        if NodeRunStatus.RUNNING.value not in statuses:
-            expt_config.finished_at = now
-            if NodeRunStatus.ERROR.value in statuses:
-                expt_config.success = NodeRunStatus.ERROR.value
+        # Status check of each node
+        if NodeRunStatus.RUNNING.value not in latest_statuses:
+            update_expt_config.finished_at = now
+            if NodeRunStatus.ERROR.value in latest_statuses:
+                update_expt_config.success = NodeRunStatus.ERROR.value
             else:
-                expt_config.success = NodeRunStatus.SUCCESS.value
+                update_expt_config.success = NodeRunStatus.SUCCESS.value
 
-        # Update EXPERIMENT_YML
-        ExptConfigWriter.write_raw(
-            self.workspace_id, self.unique_id, asdict(expt_config)
+        # Make overwrite params
+        update_expt_config_dict = {}
+        if update_config_function is not None:
+            update_expt_config_dict["function"] = {
+                update_config_function.unique_id: asdict(update_config_function)
+            }
+        if update_expt_config.success is not None:
+            update_expt_config_dict["success"] = update_expt_config.success
+        if update_expt_config.finished_at is not None:
+            update_expt_config_dict["finished_at"] = update_expt_config.finished_at
+
+        # Overwrite experiment config
+        ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(
+            update_expt_config_dict
         )
 
         # Operate remote storage data.
         if RemoteStorageController.is_available():
             # upload latest EXPERIMENT_YML
             async with RemoteStorageWriter(
-                self.remote_bucket_name, expt_config.workspace_id, expt_config.unique_id
+                self.remote_bucket_name,
+                original_expt_config.workspace_id,
+                original_expt_config.unique_id,
             ) as remote_storage_controller:
                 await remote_storage_controller.upload_experiment(
-                    expt_config.workspace_id,
-                    expt_config.unique_id,
+                    original_expt_config.workspace_id,
+                    original_expt_config.unique_id,
                     [DIRPATH.EXPERIMENT_YML],
                 )
 
@@ -442,14 +506,6 @@ class WorkflowMonitor:
     def __init__(self, workspace_id: str, unique_id: str):
         self.workspace_id = workspace_id
         self.unique_id = unique_id
-        self.expt_filepath = join_filepath(
-            [
-                DIRPATH.OUTPUT_DIR,
-                self.workspace_id,
-                self.unique_id,
-                DIRPATH.EXPERIMENT_YML,
-            ]
-        )
 
     def search_process(self) -> WorkflowProcessInfo:
         pid_data = Runner.read_pid_file(self.workspace_id, self.unique_id)
@@ -462,7 +518,7 @@ class WorkflowMonitor:
             # )
 
             # Refer experiment_data instead of pid_data
-            expt_config = ExptConfigReader.read(self.expt_filepath)
+            expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
             try:
                 expt_started_time = datetime.strptime(
                     expt_config.started_at, DATE_FORMAT

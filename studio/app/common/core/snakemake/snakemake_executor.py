@@ -8,6 +8,7 @@ from snakemake import snakemake
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import ForceRun, SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
+from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteSyncAction,
@@ -16,6 +17,9 @@ from studio.app.common.core.storage.remote_storage_controller import (
 )
 from studio.app.common.core.utils.filepath_creater import get_pickle_file, join_filepath
 from studio.app.common.core.workflow.workflow import Edge, Node
+from studio.app.common.core.workspace.workspace_data_capacity_services import (
+    WorkspaceDataCapacityService,
+)
 from studio.app.dir_path import DIRPATH
 
 logger = AppLogger.get_logger()
@@ -38,8 +42,6 @@ def snakemake_execute(workspace_id: str, unique_id: str, params: SmkParam):
 def _snakemake_execute_process(
     workspace_id: str, unique_id: str, params: SmkParam
 ) -> bool:
-    from studio.app.common.core.workspace.workspace_services import WorkspaceService
-
     smk_logger = SmkStatusLogger(workspace_id, unique_id)
     smk_workdir = join_filepath(
         [
@@ -56,14 +58,7 @@ def _snakemake_execute_process(
         use_conda=params.use_conda,
         conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
         workdir=smk_workdir,
-        configfiles=[
-            join_filepath(
-                [
-                    smk_workdir,
-                    DIRPATH.SNAKEMAKE_CONFIG_YML,
-                ]
-            )
-        ],
+        configfiles=[SmkConfigReader.get_config_yaml_path(workspace_id, unique_id)],
         log_handler=[smk_logger.log_handler],
     )
 
@@ -72,7 +67,7 @@ def _snakemake_execute_process(
     else:
         logger.error("snakemake_execute failed..")
 
-    WorkspaceService.update_experiment_data_usage(workspace_id, unique_id)
+    WorkspaceDataCapacityService.update_experiment_data_usage(workspace_id, unique_id)
 
     smk_logger.clean_up()
 

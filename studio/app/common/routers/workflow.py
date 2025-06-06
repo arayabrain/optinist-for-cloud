@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
-from studio.app.common.core.experiment.experiment_utils import ExptUtils
+from studio.app.common.core.experiment.experiment_services import ExperimentService
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
@@ -42,7 +42,7 @@ async def fetch_last_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        last_expt_config = ExptUtils.get_last_experiment(workspace_id)
+        last_expt_config = ExperimentService.get_last_experiment(workspace_id)
         if last_expt_config:
             unique_id = last_expt_config.unique_id
 
@@ -57,16 +57,7 @@ async def fetch_last_experiment(
                 )
 
             # fetch workflow
-            workflow_config_path = join_filepath(
-                [
-                    DIRPATH.OUTPUT_DIR,
-                    workspace_id,
-                    unique_id,
-                    DIRPATH.WORKFLOW_YML,
-                ]
-            )
-            workflow_config = WorkflowConfigReader.read(workflow_config_path)
-
+            workflow_config = WorkflowConfigReader.read(workspace_id, unique_id)
             return WorkflowWithResults(
                 **asdict(last_expt_config),
                 **asdict(workflow_config),
@@ -100,17 +91,17 @@ async def reproduce_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        experiment_config_path = join_filepath(
-            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.EXPERIMENT_YML]
+        experiment_config_path = ExptConfigReader.get_config_yaml_path(
+            workspace_id, unique_id
         )
-        workflow_config_path = join_filepath(
-            [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
+        workflow_config_path = WorkflowConfigReader.get_config_yaml_path(
+            workspace_id, unique_id
         )
         if os.path.exists(experiment_config_path) and os.path.exists(
             workflow_config_path
         ):
-            experiment_config = ExptConfigReader.read(experiment_config_path)
-            workflow_config = WorkflowConfigReader.read(workflow_config_path)
+            experiment_config = ExptConfigReader.read(workspace_id, unique_id)
+            workflow_config = WorkflowConfigReader.read(workspace_id, unique_id)
 
             # sync unsynced remote storage data.
             is_remote_synced = False
@@ -151,9 +142,7 @@ async def reproduce_experiment(
     dependencies=[Depends(is_workspace_available)],
 )
 async def download_workspace_config(workspace_id: str, unique_id: str):
-    config_filepath = join_filepath(
-        [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, DIRPATH.WORKFLOW_YML]
-    )
+    config_filepath = WorkflowConfigReader.get_config_yaml_path(workspace_id, unique_id)
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath, filename=DIRPATH.WORKFLOW_YML)
     else:
@@ -165,7 +154,7 @@ async def download_workspace_config(workspace_id: str, unique_id: str):
 @router.post("/import")
 async def import_workflow_config(file: UploadFile = File(...)):
     try:
-        contents = WorkflowConfigReader.read(await file.read())
+        contents = WorkflowConfigReader.read_from_bytes(await file.read())
         return contents
     except Exception as e:
         logger.error(e, exc_info=True)
