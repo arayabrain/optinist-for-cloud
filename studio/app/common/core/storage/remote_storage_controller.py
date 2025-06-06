@@ -479,12 +479,19 @@ class RemoteStorageController(BaseRemoteStorageController):
 
     async def create_bucket(self) -> bool:
         remote_storage_type = RemoteStorageType.get_activated_type()
+
         if remote_storage_type == RemoteStorageType.S3:
             await self.__controller.create_bucket()
+        elif remote_storage_type == RemoteStorageType.MOCK:
+            logger.info(
+                "This remote_storage_type does not use bucket: "
+                f"{remote_storage_type.value}"
+            )
+            pass
         else:
             assert False, (
-                "This remote_storage_type "
-                f"does not support bucket: {remote_storage_type.value}"
+                "This remote_storage_type does not support bucket: "
+                f"{remote_storage_type.value}"
             )
 
         return True
@@ -493,10 +500,16 @@ class RemoteStorageController(BaseRemoteStorageController):
         remote_storage_type = RemoteStorageType.get_activated_type()
         if remote_storage_type == RemoteStorageType.S3:
             await self.__controller.delete_bucket(force_delete)
+        elif remote_storage_type == RemoteStorageType.MOCK:
+            logger.info(
+                "This remote_storage_type does not support bucket: "
+                f"{remote_storage_type.value}"
+            )
+            pass
         else:
             assert False, (
-                "This remote_storage_type "
-                f"does not support bucket: {remote_storage_type.value}"
+                "This remote_storage_type does not use bucket: "
+                f"{remote_storage_type.value}"
             )
 
         return True
