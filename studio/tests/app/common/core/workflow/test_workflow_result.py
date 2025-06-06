@@ -43,7 +43,7 @@ def test_NodeResult_get():
         workspace_id=workspace_id,
         unique_id=unique_id,
         node_id="func1",
-        pickle_filepath=pickle_path,
+        node_pickle_path=pickle_path,
     ).observe()
 
     assert isinstance(output, Message)

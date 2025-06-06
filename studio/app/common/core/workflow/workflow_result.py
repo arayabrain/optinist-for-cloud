@@ -45,14 +45,14 @@ class WorkflowResult:
         )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
-    def observe(self, nodeIdList: List[str]) -> Dict:
+    def observe(self, observe_node_ids: List[str]) -> Dict:
         """
         Perform the following operations for the specified workflow
           - Check and update the workflow execution status
           - Response with the confirmed workflow execution status
         """
         # validate args
-        if not nodeIdList:
+        if not observe_node_ids:
             return {}
 
         # check for workflow errors
@@ -61,11 +61,11 @@ class WorkflowResult:
         )
 
         # observe node list
-        results = self.__observe_node_list(nodeIdList, workflow_error)
+        results = self.__observe_node_list(observe_node_ids, workflow_error)
 
         # check workflow status
         is_workflow_status_running = self.__is_workflow_status_running(
-            nodeIdList, results
+            observe_node_ids, results
         )
 
         # If the workflow status is running (workflow is incomplete),
@@ -81,16 +81,16 @@ class WorkflowResult:
                 )
 
             # re-run observe node list (reflects workflow error)
-            results = self.__observe_node_list(nodeIdList, workflow_error)
+            results = self.__observe_node_list(observe_node_ids, workflow_error)
 
         return results
 
     def __observe_node_list(
-        self, nodeIdList: List[str], workflow_error: WorkflowErrorInfo
+        self, observe_node_ids: List[str], workflow_error: WorkflowErrorInfo
     ) -> Dict[str, Message]:
         results: Dict[str, Message] = {}
 
-        for node_id in nodeIdList:
+        for node_id in observe_node_ids:
             # Cases with errors in workflow
             if workflow_error.has_error:
                 node_pickle_path = None
@@ -130,14 +130,14 @@ class WorkflowResult:
         return results
 
     def __is_workflow_status_running(
-        self, nodeIdList: List[str], messages: Dict[str, Message]
+        self, observe_node_ids: List[str], messages: Dict[str, Message]
     ) -> bool:
         """
         By comparing the number of nodeIdList waiting for processing completion
         with the number of nodeIdList that has completed processing immediately before,
         is_running is determined.
         """
-        is_running = len(nodeIdList) != len(messages.keys())
+        is_running = len(observe_node_ids) != len(messages.keys())
 
         # logger.debug(
         #     "check wornflow running status "
@@ -192,7 +192,7 @@ class NodeResult:
         workspace_id: str,
         unique_id: str,
         node_id: str,
-        pickle_filepath: str,
+        node_pickle_path: str,
         workflow_error: WorkflowErrorInfo = None,
     ):
         self.workspace_id = workspace_id
@@ -210,10 +210,10 @@ class NodeResult:
         self.workflow_error_log = workflow_error.error_log if workflow_error else None
 
         if not self.workflow_has_error:
-            pickle_filepath = pickle_filepath.replace("\\", "/")
-            self.algo_name = os.path.splitext(os.path.basename(pickle_filepath))[0]
+            node_pickle_path = node_pickle_path.replace("\\", "/")
+            self.algo_name = os.path.splitext(os.path.basename(node_pickle_path))[0]
             try:
-                self.info = PickleReader.read(pickle_filepath)
+                self.info = PickleReader.read(node_pickle_path)
             except Exception as e:
                 self.info = None  # indicates error
                 logger.error(e, exc_info=True)
