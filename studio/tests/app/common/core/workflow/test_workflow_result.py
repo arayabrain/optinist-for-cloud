@@ -1,8 +1,9 @@
 import os
 import shutil
 
+from studio.app.common.core.experiment.experiment import ExptFunction
 from studio.app.common.core.rules.runner import Runner
-from studio.app.common.core.workflow.workflow import Message
+from studio.app.common.core.workflow.workflow import Message, NodeRunStatus
 from studio.app.common.core.workflow.workflow_result import NodeResult, WorkflowResult
 from studio.app.dir_path import DIRPATH
 
@@ -39,11 +40,19 @@ def test_WorkflowResult_get():
 
 def test_NodeResult_get():
     assert os.path.exists(pickle_path)
+
+    expt_function = ExptFunction(
+        unique_id=unique_id,
+        name=node_id_list[0],
+        success=NodeRunStatus.RUNNING.value,
+        hasNWB=False,
+    )
+
     output = NodeResult(
         workspace_id=workspace_id,
         unique_id=unique_id,
         node_id="func1",
         node_pickle_path=pickle_path,
-    ).observe()
+    ).observe(expt_function)
 
     assert isinstance(output, Message)

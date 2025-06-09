@@ -68,13 +68,13 @@ class WorkflowResult:
         )
 
         # check workflow status
-        is_workflow_status_running = self.__is_workflow_status_running(
+        is_workflow_observation_ongoing = self.__is_workflow_observation_ongoing(
             observe_node_ids, node_results
         )
 
-        # If the workflow status is running (workflow is incomplete),
+        # If the workflow status observation is ongoing (maybe workflow is incomplete),
         # check whether the actual process exists.
-        if is_workflow_status_running:
+        if is_workflow_observation_ongoing:
             # check workflow process exists
             current_process = self.monitor.search_process()
 
@@ -90,6 +90,17 @@ class WorkflowResult:
             )
 
         return node_results
+
+    def observe_overall(self) -> Dict[str, Message]:
+        """
+        Automatically observe all nodes
+        """
+        expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+
+        # Observe all nodes
+        observe_node_ids = expt_config.function.keys()
+
+        return self.observe(observe_node_ids)
 
     def __observe_nodes(
         self,
@@ -136,22 +147,22 @@ class WorkflowResult:
 
         return node_results
 
-    def __is_workflow_status_running(
+    def __is_workflow_observation_ongoing(
         self, observe_node_ids: List[str], messages: Dict[str, Message]
     ) -> bool:
         """
-        By comparing the number of nodeIdList waiting for processing completion
-        with the number of nodeIdList that has completed processing immediately before,
-        is_running is determined.
+        By comparing the number of observe_node_ids waiting for processing completion
+        with the number of observe_node_ids that has completed processing immediately
+        before, is_running is determined.
         """
-        is_running = len(observe_node_ids) != len(messages.keys())
+        is_ongoing = len(observe_node_ids) != len(messages.keys())
 
         # logger.debug(
-        #     "check wornflow running status "
-        #     f"[{self.workspace_id}/{self.unique_id}] [is_running: {is_running}]"
+        #     "check wornflow ongoing status "
+        #     f"[{self.workspace_id}/{self.unique_id}] [is_ongoing: {is_ongoing}]"
         # )
 
-        return is_running
+        return is_ongoing
 
     def __check_has_whole_nwb(self, node_id=None) -> None:
         nwb_filepath_list = glob(join_filepath([self.workflow_dirpath, "*.nwb"]))
