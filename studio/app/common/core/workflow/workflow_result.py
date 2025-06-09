@@ -11,7 +11,7 @@ from typing import Dict, List
 from fastapi import HTTPException, status
 from psutil import AccessDenied, NoSuchProcess, Process, ZombieProcess, process_iter
 
-from studio.app.common.core.experiment.experiment import ExptFunction
+from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
 from studio.app.common.core.logger import AppLogger
@@ -45,12 +45,14 @@ class WorkflowResult:
         )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
-    def observe(self, observe_node_ids: List[str]) -> Dict:
+    def observe(self, observe_node_ids: List[str]) -> Dict[str, Message]:
         """
         Perform the following operations for the specified workflow
           - Check and update the workflow execution status
           - Response with the confirmed workflow execution status
         """
+        expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+
         # validate args
         if not observe_node_ids:
             return {}
@@ -61,11 +63,13 @@ class WorkflowResult:
         )
 
         # observe node list
-        results = self.__observe_node_list(observe_node_ids, workflow_error)
+        node_results = self.__observe_nodes(
+            observe_node_ids, expt_config, workflow_error
+        )
 
         # check workflow status
         is_workflow_status_running = self.__is_workflow_status_running(
-            observe_node_ids, results
+            observe_node_ids, node_results
         )
 
         # If the workflow status is running (workflow is incomplete),
@@ -81,53 +85,56 @@ class WorkflowResult:
                 )
 
             # re-run observe node list (reflects workflow error)
-            results = self.__observe_node_list(observe_node_ids, workflow_error)
+            node_results = self.__observe_nodes(
+                observe_node_ids, expt_config, workflow_error
+            )
 
-        return results
+        return node_results
 
-    def __observe_node_list(
-        self, observe_node_ids: List[str], workflow_error: WorkflowErrorInfo
+    def __observe_nodes(
+        self,
+        observe_node_ids: List[str],
+        expt_config: ExptConfig,
+        workflow_error: WorkflowErrorInfo,
     ) -> Dict[str, Message]:
-        results: Dict[str, Message] = {}
+        """
+        Observe by Nodes
+        """
+        node_results: Dict[str, Message] = {}
 
         for node_id in observe_node_ids:
-            # Cases with errors in workflow
-            if workflow_error.has_error:
-                node_pickle_path = None
-                node_result = NodeResult(
-                    self.workspace_id,
-                    self.unique_id,
-                    node_id,
-                    node_pickle_path,
-                    workflow_error,
-                )
-                results[node_id] = node_result.observe()
+            # Check node processed status (inspect ExptConfig)
+            expt_function = expt_config.function.get(node_id)
+            if not expt_function:
+                logger.warning(f"Invalid node_id [{node_id}]")
+                continue
 
-            # Normal case
-            else:
-                # search node pickle files
+            # Search for node's input pickle files
+            if not workflow_error.has_error:
                 node_dirpath = join_filepath([self.workflow_dirpath, node_id])
                 node_pickle_files = list(
                     set(glob(join_filepath([node_dirpath, "*.pkl"])))
                     - set(glob(join_filepath([node_dirpath, "tmp_*.pkl"])))
                 )
+            else:
+                node_pickle_files = [None]
 
-                # process node pickle files
-                for node_pickle_path in node_pickle_files:
-                    node_result = NodeResult(
-                        self.workspace_id,
-                        self.unique_id,
-                        node_id,
-                        node_pickle_path,
-                    )
-                    results[node_id] = node_result.observe()
+            # Perform observations of nodes (per input file)
+            for node_pickle_path in node_pickle_files:
+                node_result = NodeResult(
+                    self.workspace_id,
+                    self.unique_id,
+                    node_id,
+                    node_pickle_path,
+                    workflow_error=workflow_error,
+                )
+                node_results[node_id] = node_result.observe(expt_function)
 
-                    self.__check_has_nwb(node_id)
+        # Check if whole.nwb file exists
+        if not NodeResult.is_all_nodes_already_finished(expt_config):
+            self.__check_has_whole_nwb()
 
-        # check workflow nwb
-        self.__check_has_nwb()
-
-        return results
+        return node_results
 
     def __is_workflow_status_running(
         self, observe_node_ids: List[str], messages: Dict[str, Message]
@@ -146,44 +153,28 @@ class WorkflowResult:
 
         return is_running
 
-    def __check_has_nwb(self, node_id=None) -> None:
-        target_whole_nwb = node_id is None
+    def __check_has_whole_nwb(self, node_id=None) -> None:
+        nwb_filepath_list = glob(join_filepath([self.workflow_dirpath, "*.nwb"]))
+        nwb_filepath = nwb_filepath_list[0] if nwb_filepath_list else None
+        hasNWB = os.path.exists(nwb_filepath) if nwb_filepath else False
 
-        if target_whole_nwb:
-            nwb_filepath_list = glob(join_filepath([self.workflow_dirpath, "*.nwb"]))
-        else:
-            node_dirpath = join_filepath([self.workflow_dirpath, node_id])
-            nwb_filepath_list = glob(join_filepath([node_dirpath, "*.nwb"]))
+        # ------------------------------------------------------------
+        # Update process of node processing status
+        # ------------------------------------------------------------
 
-        for nwb_filepath in nwb_filepath_list:
-            if os.path.exists(nwb_filepath):
-                update_expt_config = ExptConfigReader.create_empty_experiment_config()
-                update_config_function: ExptFunction = None
+        update_expt_config = ExptConfigReader.create_empty_experiment_config()
 
-                if target_whole_nwb:
-                    update_expt_config.hasNWB = True
-                else:
-                    original_config = ExptConfigReader.read(
-                        self.workspace_id, self.unique_id
-                    )
-                    update_config_function = copy.deepcopy(
-                        original_config.function[node_id]
-                    )
-                    update_config_function.hasNWB = True
+        update_expt_config.hasNWB = hasNWB
 
-                # Make overwrite params
-                update_expt_config_dict = {}
-                if update_config_function is not None:
-                    update_expt_config_dict["function"] = {
-                        update_config_function.unique_id: asdict(update_config_function)
-                    }
-                if update_expt_config.hasNWB is not None:
-                    update_expt_config_dict["hasNWB"] = update_expt_config.hasNWB
+        # Make overwrite params
+        update_expt_config_dict = {}
+        if update_expt_config.hasNWB is not None:
+            update_expt_config_dict["hasNWB"] = update_expt_config.hasNWB
 
-                # Overwrite experiment config
-                ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(
-                    update_expt_config_dict
-                )
+        # Overwrite experiment config
+        ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(
+            update_expt_config_dict
+        )
 
 
 class NodeResult:
@@ -209,7 +200,7 @@ class NodeResult:
         self.workflow_has_error = workflow_error.has_error if workflow_error else False
         self.workflow_error_log = workflow_error.error_log if workflow_error else None
 
-        if not self.workflow_has_error:
+        if not self.workflow_has_error and node_pickle_path:
             node_pickle_path = node_pickle_path.replace("\\", "/")
             self.algo_name = os.path.splitext(os.path.basename(node_pickle_path))[0]
             try:
@@ -221,16 +212,8 @@ class NodeResult:
             self.algo_name = None
             self.info = None
 
-    def observe(self) -> Message:
-        original_expt_config = ExptConfigReader.read(
-            self.workspace_id,
-            self.unique_id,
-        )
-        update_expt_config = ExptConfigReader.create_empty_experiment_config()
-        update_config_function: ExptFunction = copy.deepcopy(
-            original_expt_config.function[self.node_id]
-        )
-
+    def observe(self, expt_function: ExptFunction) -> Message:
+        # Generate node process status (workflow.Message)
         # case) error throughout workflow
         if self.workflow_has_error:
             message = self.error(self.workflow_error_log)
@@ -240,8 +223,37 @@ class NodeResult:
         # case) success in node
         else:
             message = self.success()
-            update_config_function.outputPaths = message.outputPaths
 
+        # Determine if the node has already been processed
+        # *If it has, skip subsequent ExptConfig update process.
+        is_already_finished: bool = __class__.is_node_already_finished(expt_function)
+        if is_already_finished:
+            # # debug log.
+            # logger.debug(
+            #     "Target node has already been finished "
+            #     f"[id: {self.node_id}][status: {expt_function.success}]"
+            # )
+            return message
+
+        # ------------------------------------------------------------
+        # Update process of node processing status
+        # ------------------------------------------------------------
+
+        # ----------------------------------------
+        # Generate update parameters
+        # ----------------------------------------
+
+        original_expt_config = ExptConfigReader.read(
+            self.workspace_id,
+            self.unique_id,
+        )
+        update_expt_config = ExptConfigReader.create_empty_experiment_config()
+        update_config_function: ExptFunction = copy.deepcopy(
+            original_expt_config.function[self.node_id]
+        )
+
+        if message.status == NodeRunStatus.SUCCESS.value:
+            update_config_function.outputPaths = message.outputPaths
         update_config_function.success = message.status
 
         # TODO: Set started_at on the node
@@ -271,6 +283,13 @@ class NodeResult:
             else:
                 update_expt_config.success = NodeRunStatus.SUCCESS.value
 
+        # Check if nwb file exists
+        update_config_function.hasNWB = self.__check_has_nwb()
+
+        # ----------------------------------------
+        # ExptConfig update commit process
+        # ----------------------------------------
+
         # Make overwrite params
         update_expt_config_dict = {}
         if update_config_function is not None:
@@ -287,7 +306,30 @@ class NodeResult:
             update_expt_config_dict
         )
 
+        logger.debug(
+            "Node observation completed "
+            f"[id: {self.node_id}][status: {update_expt_config.success}]"
+        )
+
         return message
+
+    @classmethod
+    def is_node_already_finished(cls, expt_function: ExptFunction) -> bool:
+        return expt_function.success != NodeRunStatus.RUNNING.value
+
+    @classmethod
+    def is_all_nodes_already_finished(cls, expt_config: ExptConfig) -> bool:
+        expt_functions = expt_config.function.values()
+        return all([cls.is_node_already_finished(v) for v in expt_functions])
+
+    def __check_has_nwb(self) -> bool:
+        node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
+
+        nwb_filepath_list = glob(join_filepath([node_dirpath, "*.nwb"]))
+        nwb_filepath = nwb_filepath_list[0] if nwb_filepath_list else None
+        hasNWB = os.path.exists(nwb_filepath) if nwb_filepath else False
+
+        return hasNWB
 
     def success(self) -> Message:
         return Message(
