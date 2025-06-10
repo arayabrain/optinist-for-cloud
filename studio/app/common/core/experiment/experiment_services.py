@@ -48,7 +48,7 @@ class ExperimentService:
         auto_commit: bool = False,
     ) -> bool:
         # Delete experiment data
-        deleted = await ExptDataWriter(
+        result = await ExptDataWriter(
             remote_bucket_name, workspace_id, unique_id
         ).delete_data()
 
@@ -56,7 +56,7 @@ class ExperimentService:
         if WorkspaceDataCapacityService.is_available():
             cls._delete_experiment_db(db, workspace_id, unique_id, auto_commit)
 
-        return deleted
+        return result
 
     @classmethod
     def _delete_experiment_db(

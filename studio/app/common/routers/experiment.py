@@ -142,15 +142,24 @@ async def delete_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        await ExperimentService.delete_experiment(
+        result = await ExperimentService.delete_experiment(
             db, remote_bucket_name, workspace_id, unique_id, auto_commit=True
         )
 
-        return True
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete experiment [{workspace_id}/{unique_id}]",
+            )
+
+        return result
 
     except RemoteStorageLockError as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except HTTPException as e:
+        logger.error(e, exc_info=True)
+        raise e
     except Exception as e:
         logger.error("Deletion failed: %s", e, exc_info=True)
         raise HTTPException(
@@ -171,15 +180,35 @@ async def delete_experiment_list(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
+        deleted_statuses = {}
+
         for unique_id in deleteItem.uidList:
-            await ExperimentService.delete_experiment(
+            result = await ExperimentService.delete_experiment(
                 db, remote_bucket_name, workspace_id, unique_id, auto_commit=True
+            )
+            deleted_statuses[unique_id] = result
+
+        deleted_failed_statuses = [
+            id for id, res in deleted_statuses.items() if not res
+        ]
+
+        if deleted_failed_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"Failed to delete some experiments "
+                    f"[{workspace_id}] / {deleted_failed_statuses}"
+                ),
             )
 
         return True
+
     except RemoteStorageLockError as e:
         logger.error(e)
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+    except HTTPException as e:
+        logger.error(e, exc_info=True)
+        raise e
     except Exception as e:
         logger.error(e, exc_info=True)
         raise HTTPException(
