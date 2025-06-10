@@ -120,7 +120,7 @@ async def get_user_remote_bucket_name(
     return _get_user_remote_bucket_name(current_user)
 
 
-async def _get_user_remote_bucket_name(
+def _get_user_remote_bucket_name(
     current_user: User = None,
 ) -> str:
     """
