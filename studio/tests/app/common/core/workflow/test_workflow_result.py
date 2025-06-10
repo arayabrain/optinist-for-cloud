@@ -10,11 +10,12 @@ from studio.app.dir_path import DIRPATH
 workspace_id = "default"
 unique_id = "result_test"
 node_id_list = ["func1", "func2"]
+node_1st = node_id_list[0]
 
 workflow_dirpath = f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}"
 output_dirpath = f"{DIRPATH.OUTPUT_DIR}/{workspace_id}/{unique_id}"
 pickle_path = (
-    f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}/func1/func1.pkl"
+    f"{DIRPATH.DATA_DIR}/output_test/{workspace_id}/{unique_id}/{node_1st}/func1.pkl"
 )
 
 
@@ -43,7 +44,7 @@ def test_NodeResult_get():
 
     expt_function = ExptFunction(
         unique_id=unique_id,
-        name=node_id_list[0],
+        name=node_1st,
         success=NodeRunStatus.RUNNING.value,
         hasNWB=False,
     )
@@ -51,8 +52,7 @@ def test_NodeResult_get():
     output = NodeResult(
         workspace_id=workspace_id,
         unique_id=unique_id,
-        node_id="func1",
-        node_pickle_path=pickle_path,
+        node_id=node_1st,
     ).observe(expt_function)
 
     assert isinstance(output, Message)

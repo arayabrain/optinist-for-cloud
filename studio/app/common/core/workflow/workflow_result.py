@@ -120,26 +120,21 @@ class WorkflowResult:
                 logger.warning(f"Invalid node_id [{node_id}]")
                 continue
 
-            # Search for node's input pickle files
-            if not workflow_error.has_error:
-                node_dirpath = join_filepath([self.workflow_dirpath, node_id])
-                node_pickle_files = list(
-                    set(glob(join_filepath([node_dirpath, "*.pkl"])))
-                    - set(glob(join_filepath([node_dirpath, "tmp_*.pkl"])))
-                )
-            else:
-                node_pickle_files = [None]
-
-            # Perform observations of nodes (per input file)
-            for node_pickle_path in node_pickle_files:
-                node_result = NodeResult(
-                    self.workspace_id,
-                    self.unique_id,
-                    node_id,
-                    node_pickle_path,
-                    workflow_error=workflow_error,
-                )
+            # Perform observations of nodes
+            node_result = NodeResult(
+                self.workspace_id,
+                self.unique_id,
+                node_id,
+                workflow_error=workflow_error,
+            )
+            if node_result.is_ready():
                 node_results[node_id] = node_result.observe(expt_function)
+            else:
+                # # debug log.
+                # logger.debug(
+                #     "Target node not yet completed " f"[id: {node_id}]"
+                # )
+                pass
 
         # Check if whole.nwb file exists
         if not NodeResult.is_all_nodes_already_finished(expt_config):
@@ -157,6 +152,7 @@ class WorkflowResult:
         """
         is_ongoing = len(observe_node_ids) != len(messages.keys())
 
+        # # debug log.
         # logger.debug(
         #     "check wornflow ongoing status "
         #     f"[{self.workspace_id}/{self.unique_id}] [is_ongoing: {is_ongoing}]"
@@ -194,7 +190,6 @@ class NodeResult:
         workspace_id: str,
         unique_id: str,
         node_id: str,
-        node_pickle_path: str,
         workflow_error: WorkflowErrorInfo = None,
     ):
         self.workspace_id = workspace_id
@@ -211,17 +206,19 @@ class NodeResult:
         self.workflow_has_error = workflow_error.has_error if workflow_error else False
         self.workflow_error_log = workflow_error.error_log if workflow_error else None
 
-        if not self.workflow_has_error and node_pickle_path:
-            node_pickle_path = node_pickle_path.replace("\\", "/")
-            self.algo_name = os.path.splitext(os.path.basename(node_pickle_path))[0]
-            try:
-                self.info = PickleReader.read(node_pickle_path)
-            except Exception as e:
-                self.info = None  # indicates error
-                logger.error(e, exc_info=True)
-        else:
-            self.algo_name = None
-            self.info = None
+        # Read node's output pickle file
+        self.algo_name = None
+        self.info = None
+        if not self.workflow_has_error:
+            node_pickle_path = PickleReader.search_node_pickle_path(self.node_dirpath)
+            if node_pickle_path:
+                node_pickle_path = node_pickle_path.replace("\\", "/")
+                self.algo_name = os.path.splitext(os.path.basename(node_pickle_path))[0]
+                try:
+                    self.info = PickleReader.read(node_pickle_path)
+                except Exception as e:
+                    self.info = None  # indicates error
+                    logger.error(e, exc_info=True)
 
     def observe(self, expt_function: ExptFunction) -> Message:
         # Generate node process status (workflow.Message)
@@ -324,6 +321,10 @@ class NodeResult:
 
         return message
 
+    def is_ready(self) -> bool:
+        is_ready = (not self.workflow_has_error) and (self.info is not None)
+        return is_ready
+
     @classmethod
     def is_node_already_finished(cls, expt_function: ExptFunction) -> bool:
         return expt_function.success != NodeRunStatus.RUNNING.value
@@ -334,9 +335,7 @@ class NodeResult:
         return all([cls.is_node_already_finished(v) for v in expt_functions])
 
     def __check_has_nwb(self) -> bool:
-        node_dirpath = join_filepath([self.workflow_dirpath, self.node_id])
-
-        nwb_filepath_list = glob(join_filepath([node_dirpath, "*.nwb"]))
+        nwb_filepath_list = glob(join_filepath([self.node_dirpath, "*.nwb"]))
         nwb_filepath = nwb_filepath_list[0] if nwb_filepath_list else None
         hasNWB = os.path.exists(nwb_filepath) if nwb_filepath else False
 
