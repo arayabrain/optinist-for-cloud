@@ -40,6 +40,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install poetry && \
     poetry config virtualenvs.create false
 RUN poetry install --no-root
+RUN pip3 install snakemake-executor-plugin-aws-batch snakemake-storage-plugin-s3
 
 # setup optinist: download caiman model files
 COPY studio/app/optinist/wrappers/caiman/run_download_model_files.sh ./

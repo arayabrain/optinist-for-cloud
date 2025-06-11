@@ -9,6 +9,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from studio.app.common.core.cloud_batch.cloud_batch_config import BATCH_CONFIG
 from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import Rule
@@ -39,6 +40,25 @@ class Runner:
     def run(cls, __rule: Rule, last_output, run_script_path: str):
         try:
             logger.info("start rule runner")
+
+            # Determine if this should run on AWS Batch
+            if hasattr(BATCH_CONFIG, "USE_AWS_BATCH") and BATCH_CONFIG.USE_AWS_BATCH:
+                logger.debug("=================== AWS BATCH CONFIG ===================")
+                logger.debug(
+                    f"aws_batch_job_queue = {BATCH_CONFIG.AWS_BATCH_JOB_QUEUE}"
+                )
+                logger.debug(
+                    f"aws_batch_job_definition={BATCH_CONFIG.AWS_BATCH_JOB_DEFINITION}"
+                )
+                logger.debug(
+                    f"aws_batch_s3_bucket_name={BATCH_CONFIG.AWS_BATCH_S3_BUCKET_NAME}"
+                )
+                logger.debug(
+                    f"aws_default_provider = {BATCH_CONFIG.AWS_DEFAULT_PROVIDER}"
+                )
+                logger.debug("====================================================")
+            else:
+                logger.debug("AWS Batch disabled - using local execution")
 
             # write pid file
             workflow_dirpath = str(Path(__rule.output).parent.parent)

@@ -5,10 +5,10 @@ from typing import Dict, List
 
 from snakemake import snakemake
 
+from studio.app.common.core.cloud_batch.cloud_batch_config import BATCH_CONFIG
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.snakemake.smk import ForceRun, SmkParam
 from studio.app.common.core.snakemake.smk_status_logger import SmkStatusLogger
-from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteSyncAction,
@@ -50,17 +50,61 @@ def _snakemake_execute_process(
             unique_id,
         ]
     )
-
-    result = snakemake(
-        DIRPATH.SNAKEMAKE_FILEPATH,
-        forceall=params.forceall,
-        cores=params.cores,
-        use_conda=params.use_conda,
-        conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
-        workdir=smk_workdir,
-        configfiles=[SmkConfigReader.get_config_yaml_path(workspace_id, unique_id)],
-        log_handler=[smk_logger.log_handler],
-    )
+    S3_bucket = BATCH_CONFIG.AWS_BATCH_S3_BUCKET_NAME
+    S3_bucket = f"s3://{S3_bucket}/workflows/{workspace_id}/{unique_id}"
+    if hasattr(BATCH_CONFIG, "USE_AWS_BATCH") and BATCH_CONFIG.USE_AWS_BATCH:
+        executor_args = {
+            "executor": "aws-batch",
+            "executor_args": {
+                "job_queue": BATCH_CONFIG.AWS_BATCH_JOB_QUEUE,
+                "job_definition": BATCH_CONFIG.AWS_BATCH_JOB_DEFINITION,
+                "job_role": BATCH_CONFIG.AWS_BATCH_JOB_ROLE,
+                "region": BATCH_CONFIG.AWS_BATCH_REGION,
+            },
+            "default_storage_provider": "s3",
+            "default_storage_prefix": S3_bucket,
+        }
+        s3_params = {
+            "storage_s3_region": BATCH_CONFIG.AWS_BATCH_REGION,
+            "storage_s3_retries": 5,
+        }
+        result = snakemake(
+            DIRPATH.SNAKEMAKE_FILEPATH,
+            forceall=params.forceall,
+            cores=params.cores,
+            use_conda=params.use_conda,
+            conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
+            workdir=smk_workdir,
+            configfiles=[
+                join_filepath(
+                    [
+                        smk_workdir,
+                        DIRPATH.SNAKEMAKE_CONFIG_YML,
+                    ]
+                )
+            ],
+            log_handler=[smk_logger.log_handler],
+            **executor_args,
+            **s3_params,
+        )
+    else:
+        result = snakemake(
+            DIRPATH.SNAKEMAKE_FILEPATH,
+            forceall=params.forceall,
+            cores=params.cores,
+            use_conda=params.use_conda,
+            conda_prefix=DIRPATH.SNAKEMAKE_CONDA_ENV_DIR,
+            workdir=smk_workdir,
+            configfiles=[
+                join_filepath(
+                    [
+                        smk_workdir,
+                        DIRPATH.SNAKEMAKE_CONFIG_YML,
+                    ]
+                )
+            ],
+            log_handler=[smk_logger.log_handler],
+        )
 
     if result:
         logger.info("snakemake_execute succeeded.")
