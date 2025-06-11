@@ -117,7 +117,7 @@ async def get_user_remote_bucket_name(
     """
     get user remote_bucket_name from users.attributes
     """
-    return _get_user_remote_bucket_name(current_user)
+    return await _get_user_remote_bucket_name(current_user)
 
 
 async def _get_user_remote_bucket_name(
