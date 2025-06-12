@@ -154,9 +154,40 @@ class WorkflowResult:
             if node_result.is_ready():
                 node_results[node_id] = await node_result.observe(expt_function)
 
+        # If all nodes have already been processed, return here.
+        if NodeResult.is_all_nodes_already_finished(expt_config):
+            return node_results
+
         # Check if whole.nwb file exists
-        if not NodeResult.is_all_nodes_already_finished(expt_config):
-            self.__check_has_whole_nwb()
+        self.__check_has_whole_nwb()
+
+        # --------------------------------------------------
+        # Postprocessing after all node processing is completed
+        # --------------------------------------------------
+
+        # Get the latest completion status of all nodes
+        latest_expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+        is_all_nodes_finished = NodeResult.is_all_nodes_already_finished(
+            latest_expt_config
+        )
+
+        if is_all_nodes_finished:
+            # Operate remote storage data.
+            if RemoteStorageController.is_available():
+                # upload latest EXPERIMENT_YML
+                remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                    self.workspace_id, self.unique_id
+                )
+                async with RemoteStorageWriter(
+                    remote_bucket_name,
+                    self.workspace_id,
+                    self.unique_id,
+                ) as remote_storage_controller:
+                    await remote_storage_controller.upload_experiment(
+                        self.workspace_id,
+                        self.unique_id,
+                        [DIRPATH.EXPERIMENT_YML],
+                    )
 
         return node_results
 
@@ -224,7 +255,6 @@ class NodeResult(BaseNodeResult):
         node_id: str,
         workflow_error: WorkflowErrorInfo = None,
     ):
-        self.remote_bucket_name = None
         self.workspace_id = workspace_id
         self.unique_id = unique_id
         self.workflow_dirpath = join_filepath(
@@ -354,23 +384,6 @@ class NodeResult(BaseNodeResult):
             update_expt_config_dict
         )
 
-        # Operate remote storage data.
-        if (
-            self.is_procs_node(node_result=self)
-            and RemoteStorageController.is_available()
-        ):
-            # upload latest EXPERIMENT_YML
-            async with RemoteStorageWriter(
-                self.remote_bucket_name,
-                original_expt_config.workspace_id,
-                original_expt_config.unique_id,
-            ) as remote_storage_controller:
-                await remote_storage_controller.upload_experiment(
-                    original_expt_config.workspace_id,
-                    original_expt_config.unique_id,
-                    [DIRPATH.EXPERIMENT_YML],
-                )
-
         logger.debug(
             "Node observation completed "
             f"[id: {self.node_id}][status: {update_expt_config.success}]"
@@ -388,7 +401,9 @@ class NodeResult(BaseNodeResult):
 
     @classmethod
     def is_all_nodes_already_finished(cls, expt_config: ExptConfig) -> bool:
-        expt_functions = expt_config.function.values()
+        expt_functions = list(expt_config.function.values()) + list(
+            expt_config.procs.values()
+        )
         return all([cls.is_node_already_finished(v) for v in expt_functions])
 
     @classmethod
@@ -447,13 +462,6 @@ class PostProcessResult(NodeResult):
         workflow_error: WorkflowErrorInfo = None,
     ):
         super().__init__(workspace_id, unique_id, node_id, workflow_error)
-
-        if RemoteStorageController.is_available():
-            self.remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
-                workspace_id, unique_id
-            )
-        else:
-            self.remote_bucket_name = None
 
 
 class WorkflowMonitor:
