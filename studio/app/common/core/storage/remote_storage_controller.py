@@ -210,6 +210,10 @@ class RemoteSyncStatusFileUtil:
             with open(remote_sync_status_file_path) as f:
                 sync_status_data = json.load(f)
                 remote_bucket_name = sync_status_data.get("remote_bucket_name")
+        else:
+            logger.warning(
+                f"remote_sync_status_file not found. [{remote_sync_status_file_path}]"
+            )
 
         assert remote_bucket_name, f"Invalid remote_bucket_name: {remote_bucket_name}"
 

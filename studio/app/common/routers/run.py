@@ -127,10 +127,9 @@ async def run_result(
     uid: str,
     nodeDict: NodeItem,
     background_tasks: BackgroundTasks,
-    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        res = await WorkflowResult(remote_bucket_name, workspace_id, uid).observe(
+        res = await WorkflowResult(workspace_id, uid).observe(
             nodeDict.pendingNodeIdList
         )
         if res:
