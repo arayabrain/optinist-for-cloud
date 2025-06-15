@@ -30,7 +30,6 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
-from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.files import (
     DownloadFileRequest,
@@ -210,7 +209,7 @@ async def create_file(
 
     if WorkspaceDataCapacityService.is_available():
         background_tasks.add_task(
-            WorkspaceService.update_workspace_data_usage, db, workspace_id
+            WorkspaceDataCapacityService.update_workspace_data_usage, db, workspace_id
         )
 
     # Operate remote storage data.
@@ -237,16 +236,27 @@ async def delete_file(
     filename: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filename])
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="File not found.")
     try:
+        # Remove from remote storage if available
+        if RemoteStorageController.is_available():
+            async with RemoteStorageSimpleWriter(
+                remote_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.delete_input_data(
+                    workspace_id, filename
+                )
         os.remove(filepath)
 
         if WorkspaceDataCapacityService.is_available():
             background_tasks.add_task(
-                WorkspaceService.update_workspace_data_usage, db, workspace_id
+                WorkspaceDataCapacityService.update_workspace_data_usage,
+                db,
+                workspace_id,
             )
 
         return True
@@ -317,4 +327,4 @@ def download(
         DOWNLOAD_STATUS[filepath] = DownloadStatus(error=str(e))
 
     if WorkspaceDataCapacityService.is_available():
-        WorkspaceService.update_workspace_data_usage(db, workspace_id)
+        WorkspaceDataCapacityService.update_workspace_data_usage(db, workspace_id)
