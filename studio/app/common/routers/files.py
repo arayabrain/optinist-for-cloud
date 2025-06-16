@@ -14,6 +14,7 @@ from sqlmodel import Session
 from tqdm import tqdm
 
 from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageSimpleWriter,
@@ -41,6 +42,8 @@ from studio.app.const import ACCEPT_FILE_EXT, FILETYPE
 from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+logger = AppLogger.get_logger()
 
 
 class DirTreeGetter:
@@ -261,6 +264,7 @@ async def delete_file(
 
         return True
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
