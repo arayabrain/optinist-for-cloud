@@ -15,7 +15,7 @@ logger = AppLogger.get_logger()
 
 class WorkspaceService:
     @classmethod
-    def delete_workspace_contents(
+    async def delete_workspace_contents(
         cls,
         db: Session,
         ws: Workspace,
@@ -34,7 +34,7 @@ class WorkspaceService:
                 if experiment_id.startswith("."):
                     continue
 
-                deleted_status = ExperimentService.delete_experiment(
+                deleted_status = await ExperimentService.delete_experiment(
                     db,
                     remote_bucket_name,
                     workspace_id,
@@ -81,7 +81,7 @@ class WorkspaceService:
             )
 
     @classmethod
-    def process_workspace_deletion(
+    async def process_workspace_deletion(
         cls, db: Session, remote_bucket_name: str, workspace_id: str, user_id: str
     ):
         try:
@@ -100,7 +100,7 @@ class WorkspaceService:
                 raise HTTPException(status_code=404, detail="Workspace not found")
 
             # Delete workspace storage files
-            cls.delete_workspace_contents(db, ws, remote_bucket_name)
+            await cls.delete_workspace_contents(db, ws, remote_bucket_name)
 
             # Commit all DB changes before doing anything irreversible
             db.commit()
