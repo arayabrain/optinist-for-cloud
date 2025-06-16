@@ -1,4 +1,5 @@
 import os
+from posixpath import basename
 import shutil
 from dataclasses import asdict
 
@@ -13,6 +14,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageLockError,
     RemoteStorageReader,
+    RemoteStorageSimpleWriter,
     RemoteStorageWriter,
     RemoteSyncStatusFileUtil,
 )
@@ -194,6 +196,21 @@ async def import_sample_data(
     if RemoteStorageController.is_available():
         from glob import glob
 
+        # Upload the input sample data to remote storage.
+        sample_data_input_dir = join_filepath(
+            [DIRPATH.ROOT_DIR, sample_data_dir_name, category, "input"]
+        )
+        sample_data_input_subdirs = sorted(glob(f"{sample_data_input_dir}/*"))
+        # Process sample data individually.
+        for sample_data_input_subdir in sample_data_input_subdirs:
+            async with RemoteStorageSimpleWriter(
+                remote_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_input_data(
+                    workspace_id, basename(sample_data_input_subdir)
+                )
+
+        # Upload the output sample data to remote storage.
         # Get list of sample data names.
         sample_data_output_dir = join_filepath(
             [DIRPATH.ROOT_DIR, sample_data_dir_name, category, "output"]
