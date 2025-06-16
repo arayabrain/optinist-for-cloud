@@ -186,6 +186,9 @@ class Runner:
         try:
             # Initialize CONFIG dictionary structure
             function_id = ExptOutputPathIds(output_dir).function_id
+            if "nwbfile" not in output_info:
+                output_info["nwbfile"] = {}
+
             if NWBDATASET.CONFIG not in output_info["nwbfile"]:
                 output_info["nwbfile"][NWBDATASET.CONFIG] = {}
             if function_id not in output_info["nwbfile"][NWBDATASET.CONFIG]:
