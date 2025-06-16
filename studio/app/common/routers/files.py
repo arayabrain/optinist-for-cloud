@@ -18,6 +18,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageSimpleWriter,
 )
+from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -30,7 +31,6 @@ from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
 )
-from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.db.database import get_db
 from studio.app.common.schemas.files import (
     DownloadFileRequest,
@@ -42,6 +42,8 @@ from studio.app.const import ACCEPT_FILE_EXT, FILETYPE
 from studio.app.dir_path import DIRPATH
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+logger = AppLogger.get_logger()
 
 
 class DirTreeGetter:
@@ -210,7 +212,7 @@ async def create_file(
 
     if WorkspaceDataCapacityService.is_available():
         background_tasks.add_task(
-            WorkspaceService.update_workspace_data_usage, db, workspace_id
+            WorkspaceDataCapacityService.update_workspace_data_usage, db, workspace_id
         )
 
     # Operate remote storage data.
@@ -246,11 +248,14 @@ async def delete_file(
 
         if WorkspaceDataCapacityService.is_available():
             background_tasks.add_task(
-                WorkspaceService.update_workspace_data_usage, db, workspace_id
+                WorkspaceDataCapacityService.update_workspace_data_usage,
+                db,
+                workspace_id,
             )
 
         return True
     except Exception as e:
+        logger.error(e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -317,4 +322,4 @@ def download(
         DOWNLOAD_STATUS[filepath] = DownloadStatus(error=str(e))
 
     if WorkspaceDataCapacityService.is_available():
-        WorkspaceService.update_workspace_data_usage(db, workspace_id)
+        WorkspaceDataCapacityService.update_workspace_data_usage(db, workspace_id)
