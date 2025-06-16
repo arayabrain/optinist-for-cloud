@@ -30,6 +30,7 @@ class ExptConfig:
     success: Optional[str]
     hasNWB: bool
     function: Dict[str, ExptFunction]
+    procs: Optional[Dict[str, ExptFunction]]
     nwb: NWBParams
     snakemake: SmkParam
     data_usage: Optional[int]
@@ -46,6 +47,11 @@ class ExptConfig:
             "nwb",
             "snakemake",
         ]
+
+
+@dataclass
+class ExptExtConfig(ExptConfig):
+    is_remote_synced: Optional[bool] = None
 
 
 @dataclass

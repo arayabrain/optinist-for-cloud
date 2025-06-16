@@ -14,13 +14,23 @@ from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunctio
 from studio.app.common.core.experiment.experiment_builder import ExptConfigBuilder
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageDeleter,
+    RemoteStorageWriter,
+    RemoteSyncLockFileUtil,
+)
 from studio.app.common.core.utils.config_handler import (
     ConfigWriter,
     differential_deep_merge,
 )
 from studio.app.common.core.utils.filelock_handler import FileLockUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.workflow.workflow import NodeRunStatus, WorkflowRunStatus
+from studio.app.common.core.workflow.workflow import (
+    NodeRunStatus,
+    ProcessType,
+    WorkflowRunStatus,
+)
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.const import DATE_FORMAT
 from studio.app.dir_path import DIRPATH
@@ -56,6 +66,7 @@ class ExptConfigWriter:
             self.create_config()
 
         self.build_function_from_nodeDict()
+        self.build_procs()
 
         # Write EXPERIMENT_YML
         self._write_raw(
@@ -135,20 +146,35 @@ class ExptConfigWriter:
 
         return self.builder.set_function(func_dict).build()
 
+    def build_procs(self) -> ExptConfig:
+        target_procs = [ProcessType.POST_PROCESS]
+        func_dict: Dict[str, ExptFunction] = {}
+
+        for proc in target_procs:
+            func_dict[proc.id] = ExptFunction(
+                unique_id=proc.id, name=proc.label, hasNWB=False, success="running"
+            )
+
+        return self.builder.set_procs(func_dict).build()
+
 
 class ExptDataWriter:
     def __init__(
         self,
+        remote_bucket_name: str,
         workspace_id: str,
         unique_id: str,
     ):
+        self.remote_bucket_name = remote_bucket_name
         self.workspace_id = workspace_id
         self.unique_id = unique_id
 
-    def delete_data(self) -> bool:
+    async def delete_data(self) -> bool:
         experiment_path = join_filepath(
             [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
         )
+
+        result = False
 
         try:
             # Check the expt is running or if don't have status it will return None
@@ -165,7 +191,25 @@ class ExptDataWriter:
                 )
                 return False
 
+            # Operate remote storage data.
+            if RemoteStorageController.is_available():
+                # Check for remote-sync-lock-file
+                # - If lock file exists, an exception is raised (raise_error=True)
+                RemoteSyncLockFileUtil.check_sync_lock_file(
+                    self.workspace_id, self.unique_id, raise_error=True
+                )
+
+                # delete remote data
+                async with RemoteStorageDeleter(
+                    self.remote_bucket_name, self.workspace_id, self.unique_id
+                ) as remote_storage_controller:
+                    result = await remote_storage_controller.delete_experiment(
+                        self.workspace_id, self.unique_id
+                    )
+
+            # delete local data
             shutil.rmtree(experiment_path)
+
             logger.info(f"Deleted experiment data at: {experiment_path}")
 
             result = True
@@ -179,7 +223,15 @@ class ExptDataWriter:
 
         return result
 
-    def rename(self, new_name: str) -> ExptConfig:
+    async def rename(self, new_name: str) -> ExptConfig:
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                self.workspace_id, self.unique_id, raise_error=True
+            )
+
         # validate params
         new_name = "" if new_name is None else new_name  # filter None
 
@@ -187,9 +239,19 @@ class ExptDataWriter:
         update_params = {"name": new_name}
         ExptConfigWriter(self.workspace_id, self.unique_id).overwrite(update_params)
 
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # upload latest EXPERIMENT_YML
+            async with RemoteStorageWriter(
+                self.remote_bucket_name, self.workspace_id, self.unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    self.workspace_id, self.unique_id, [DIRPATH.EXPERIMENT_YML]
+                )
+
         return ExptConfigReader.read(self.workspace_id, self.unique_id)
 
-    def copy_data(self, new_unique_id: str) -> bool:
+    async def copy_data(self, new_unique_id: str) -> bool:
         logger = AppLogger.get_logger()
 
         try:

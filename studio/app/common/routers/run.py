@@ -2,7 +2,11 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageLockError,
+)
 from studio.app.common.core.workflow.workflow import (
     DataFilterParam,
     Message,
@@ -33,10 +37,17 @@ logger = AppLogger.get_logger()
     response_model=str,
     dependencies=[Depends(is_workspace_owner)],
 )
-async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundTasks):
+async def run(
+    workspace_id: str,
+    runItem: RunItem,
+    background_tasks: BackgroundTasks,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
+):
     try:
         unique_id = WorkflowRunner.create_workflow_unique_id()
-        WorkflowRunner(workspace_id, unique_id, runItem).run_workflow(background_tasks)
+        WorkflowRunner(
+            remote_bucket_name, workspace_id, unique_id, runItem
+        ).run_workflow(background_tasks)
 
         logger.info("run snakemake")
 
@@ -50,6 +61,10 @@ async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundT
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e).strip('"'),  # Remove quotes from the KeyError message
         )
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
 
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -65,16 +80,25 @@ async def run(workspace_id: str, runItem: RunItem, background_tasks: BackgroundT
     dependencies=[Depends(is_workspace_owner)],
 )
 async def run_id(
-    workspace_id: str, uid: str, runItem: RunItem, background_tasks: BackgroundTasks
+    workspace_id: str,
+    uid: str,
+    runItem: RunItem,
+    background_tasks: BackgroundTasks,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        WorkflowRunner(workspace_id, uid, runItem).run_workflow(background_tasks)
+        WorkflowRunner(remote_bucket_name, workspace_id, uid, runItem).run_workflow(
+            background_tasks
+        )
 
         logger.info("run snakemake")
         logger.info("forcerun list: %s", runItem.forceRunList)
 
         return uid
 
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
     except Exception as e:
         # Check if this is a KeyError with a specific workflow yaml error message
         if isinstance(e, KeyError) and "Workflow yaml error" in str(e):
@@ -103,9 +127,12 @@ async def run_result(
     uid: str,
     nodeDict: NodeItem,
     background_tasks: BackgroundTasks,
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     try:
-        res = WorkflowResult(workspace_id, uid).observe(nodeDict.pendingNodeIdList)
+        res = await WorkflowResult(remote_bucket_name, workspace_id, uid).observe(
+            nodeDict.pendingNodeIdList
+        )
         if res:
             background_tasks.add_task(
                 WorkspaceDataCapacityService.update_experiment_data_usage,
@@ -113,6 +140,11 @@ async def run_result(
                 uid,
             )
         return res
+
+    except RemoteStorageLockError as e:
+        logger.error(e)
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(e))
+
     except Exception as e:
         logger.error(e, exc_info=True)
         raise HTTPException(

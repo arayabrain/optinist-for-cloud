@@ -255,7 +255,7 @@ def delete_workspace(
     current_user: User = Depends(get_current_user),
 ):
     WorkspaceService.process_workspace_deletion(
-        db=db, workspace_id=workspace_id, user_id=current_user.id
+        db, current_user.remote_bucket_name, workspace_id, current_user.id
     )
 
     return True

@@ -36,6 +36,7 @@ export type ExperimentType = {
   hasNWB: boolean
   frameRate?: number
   data_usage: number
+  isRemoteSynced?: boolean
 }
 
 export type ExperimentFunction = {

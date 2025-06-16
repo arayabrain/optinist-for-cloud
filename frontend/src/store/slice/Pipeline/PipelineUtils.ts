@@ -24,6 +24,7 @@ import {
   NodeResultError,
   NodeResultSuccess,
   NodeResult,
+  PROCESS_TYPE,
 } from "store/slice/Pipeline/PipelineType"
 
 export function isNodeResultPending(
@@ -64,6 +65,14 @@ export function getInitialRunResult(runPostData: RunPostData) {
         name: data?.label ?? "",
       }
     })
+
+  // NOTE: Force the addition of a parameter here
+  //     to confirm post_process processing.
+  initialResult[PROCESS_TYPE.POST_PROCESS.id] = {
+    status: NODE_RESULT_STATUS.PENDING,
+    name: PROCESS_TYPE.POST_PROCESS.name,
+  }
+
   return initialResult
 }
 

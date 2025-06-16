@@ -1,5 +1,6 @@
 from studio.app.common.core.snakemake.smk_utils import SmkUtils
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.optinist.core.edit_ROI import EditRoiUtils
 from studio.app.dir_path import DIRPATH
 
@@ -15,8 +16,8 @@ else:
     rule all:
         input: [join_filepath([DIRPATH.OUTPUT_DIR, x]) for x in config["last_output"]]
 
-
     for rule_name, details in config["rules"].items():
+        # make rules of input node
         if NodeTypeUtil.check_nodetype_from_filetype(details["type"]) == NodeType.DATA:
             rule:
                 name:
@@ -29,6 +30,24 @@ else:
                     name = details
                 script:
                     f"{DIRPATH.APP_DIR}/common/core/rules/data.py"
+
+        # make rule of post_process
+        elif details["type"] in [
+            ProcessType.POST_PROCESS.type,
+        ]:
+            rule:
+                name:
+                    rule_name
+                input:
+                    SmkUtils.input(details)
+                output:
+                    SmkUtils.output(details)
+                params:
+                    name = details
+                script:
+                    f"{DIRPATH.APP_DIR}/common/core/rules/post_process.py"
+
+        # make rules of algo node
         else:
             rule:
                 name:

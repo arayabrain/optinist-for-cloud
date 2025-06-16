@@ -61,10 +61,14 @@ export async function uploadFileApi(
   },
   formData: FormData,
 ): Promise<{ file_path: string }> {
+  const upload_config = {
+    onUploadProgress: config.onUploadProgress,
+    timeout: 1800000, // Set a long timeout for upload api (30min)
+  }
   const response = await axios.post(
     `${BASE_URL}/files/${workspaceId}/upload/${fileName}`,
     formData,
-    config,
+    upload_config,
   )
   return response.data
 }

@@ -61,6 +61,7 @@ class ExptConfigReader:
             success=None,
             hasNWB=None,
             function=None,
+            procs=None,
             nwb=None,
             snakemake=None,
             data_usage=None,
@@ -77,6 +78,7 @@ class ExptConfigReader:
             success=config.get("success", NodeRunStatus.RUNNING.value),
             hasNWB=config["hasNWB"],
             function=cls.convert_function(config["function"]),
+            procs=cls.convert_function(config.get("procs")),
             nwb=config.get("nwb"),
             snakemake=config.get("snakemake"),
             data_usage=config.get("data_usage"),
@@ -97,6 +99,11 @@ class ExptConfigReader:
 
     @classmethod
     def convert_function(cls, config: dict) -> Dict[str, ExptFunction]:
+        # Assuming the case where an empty value is specified, check here.
+        # (For backward compatibility with config yaml)
+        if not config:
+            return {}
+
         return {
             key: ExptFunction(
                 unique_id=value["unique_id"],

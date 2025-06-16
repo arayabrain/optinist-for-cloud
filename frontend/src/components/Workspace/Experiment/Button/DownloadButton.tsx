@@ -3,7 +3,9 @@ import { useSelector } from "react-redux"
 
 import { useSnackbar } from "notistack"
 
+import CloudQueueIcon from "@mui/icons-material/CloudQueue"
 import SimCardDownloadOutlinedIcon from "@mui/icons-material/SimCardDownloadOutlined"
+import { Tooltip } from "@mui/material"
 import IconButton from "@mui/material/IconButton"
 
 import {
@@ -18,12 +20,14 @@ interface NWBDownloadButtonProps {
   name: string
   nodeId?: string
   hasNWB: boolean
+  isRemoteSynced: boolean
 }
 
 export const NWBDownloadButton = memo(function NWBDownloadButton({
   name,
   nodeId,
   hasNWB,
+  isRemoteSynced,
 }: NWBDownloadButtonProps) {
   const workspaceId = useSelector(selectCurrentWorkspaceId)
   const uid = useContext(ExperimentUidContext)
@@ -52,18 +56,26 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
 
   return (
     <>
-      <IconButton onClick={onClick} color="primary" disabled={!hasNWB}>
-        <SimCardDownloadOutlinedIcon />
-      </IconButton>
-      <a
-        href={url}
-        download={`nwb_${name}.nwb`}
-        className="hidden"
-        ref={ref}
-        data-testid="nwb-download-link"
-      >
-        {/* 警告が出るので空文字を入れておく */}{" "}
-      </a>
+      {isRemoteSynced ? (
+        <>
+          <IconButton onClick={onClick} color="primary" disabled={!hasNWB}>
+            <SimCardDownloadOutlinedIcon />
+          </IconButton>
+          <a
+            href={url}
+            download={`nwb_${name}.nwb`}
+            className="hidden"
+            ref={ref}
+            data-testid="nwb-download-link"
+          >
+            {/* 警告が出るので空文字を入れておく */}{" "}
+          </a>
+        </>
+      ) : (
+        <Tooltip title="Data is unsynchronized">
+          <CloudQueueIcon color="disabled" style={{ padding: "8px" }} />
+        </Tooltip>
+      )}
     </>
   )
 })

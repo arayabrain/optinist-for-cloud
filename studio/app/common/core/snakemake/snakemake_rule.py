@@ -3,7 +3,7 @@ from typing import Dict
 from studio.app.common.core.snakemake.smk import Rule
 from studio.app.common.core.snakemake.smk_builder import RuleBuilder
 from studio.app.common.core.utils.filepath_creater import get_pickle_file
-from studio.app.common.core.workflow.workflow import Edge, Node, NodeType
+from studio.app.common.core.workflow.workflow import Edge, Node, NodeType, ProcessType
 from studio.app.common.core.workflow.workflow_params import get_typecheck_params
 from studio.app.const import FILETYPE
 
@@ -109,6 +109,17 @@ class SmkRule:
             .set_path(self._node.data.path)
             .set_type(self._node.data.label)
             .set_nwbfile(self._nwbfile)
+            .build()
+        )
+
+    def post_process(self) -> Rule:
+        # For post_process, set node.data.path directly without modification
+        # (adjustment to make post_process fit into Snakefile)
+        pp_input = self._node.data.path.copy()  # do explicit copy
+
+        return (
+            self.builder.set_input(pp_input)
+            .set_type(ProcessType.POST_PROCESS.type)
             .build()
         )
 

@@ -13,6 +13,11 @@ from requests.models import Response
 from sqlmodel import Session
 from tqdm import tqdm
 
+from studio.app.common.core.auth.auth_dependencies import get_user_remote_bucket_name
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageSimpleWriter,
+)
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.common.core.utils.filepath_creater import (
     create_directory,
@@ -192,6 +197,7 @@ async def create_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     create_directory(join_filepath([DIRPATH.INPUT_DIR, workspace_id]))
 
@@ -206,6 +212,14 @@ async def create_file(
         background_tasks.add_task(
             WorkspaceService.update_workspace_data_usage, db, workspace_id
         )
+
+    # Operate remote storage data.
+    if RemoteStorageController.is_available():
+        # upload input data to remote storage
+        async with RemoteStorageSimpleWriter(
+            remote_bucket_name
+        ) as remote_storage_controller:
+            await remote_storage_controller.upload_input_data(workspace_id, filename)
 
     return {"file_path": filename}
 

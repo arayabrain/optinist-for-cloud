@@ -24,6 +24,12 @@ class FlowConfig:
     nwb_template: dict
 
 
+class NormalRun(BaseModel):
+    id: str
+    type: str
+    label: str
+
+
 class ForceRun(BaseModel):
     nodeId: str
     name: str

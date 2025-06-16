@@ -11,6 +11,7 @@ class ExptConfigBuilder:
         self._success = None
         self._hasNWB = False
         self._function = {}
+        self._procs = {}
         self._nwbfile = None
         self._snakemake = None
         self._data_usage = None
@@ -24,6 +25,7 @@ class ExptConfigBuilder:
         self._success = config.success
         self._hasNWB = config.hasNWB
         self._function = config.function
+        self._procs = config.procs
         self._nwbfile = config.nwb
         self._snakemake = config.snakemake
         self._data_usage = config.data_usage
@@ -57,6 +59,10 @@ class ExptConfigBuilder:
         self._function = function
         return self
 
+    def set_procs(self, function) -> "ExptConfigBuilder":
+        self._procs = function
+        return self
+
     def set_nwbfile(self, nwbfile) -> "ExptConfigBuilder":
         self._nwbfile = nwbfile
         return self
@@ -79,6 +85,7 @@ class ExptConfigBuilder:
             success=self._success,
             hasNWB=self._hasNWB,
             function=self._function,
+            procs=self._procs,
             nwb=self._nwbfile,
             snakemake=self._snakemake,
             data_usage=self._data_usage,

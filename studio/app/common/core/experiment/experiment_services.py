@@ -39,11 +39,18 @@ class ExperimentService:
         return last_expt_config
 
     @classmethod
-    def delete_experiment(
-        cls, db: Session, workspace_id: str, unique_id: str, auto_commit: bool = False
+    async def delete_experiment(
+        cls,
+        db: Session,
+        remote_bucket_name: str,
+        workspace_id: str,
+        unique_id: str,
+        auto_commit: bool = False,
     ) -> bool:
         # Delete experiment data
-        result = ExptDataWriter(workspace_id, unique_id).delete_data()
+        result = await ExptDataWriter(
+            remote_bucket_name, workspace_id, unique_id
+        ).delete_data()
 
         # Delete experiment database record
         if WorkspaceDataCapacityService.is_available():
@@ -66,12 +73,15 @@ class ExperimentService:
             db.commit()
 
     @classmethod
-    def copy_experiment(cls, db: Session, workspace_id: int, copyItem: CopyItem):
+    async def copy_experiment(
+        cls, db: Session, remote_bucket_name: str, workspace_id: int, copyItem: CopyItem
+    ):
         created_unique_ids = []
         try:
             for unique_id in copyItem.uidList:
                 new_unique_id = WorkflowRunner.create_workflow_unique_id()
-                ExptDataWriter(
+                await ExptDataWriter(
+                    remote_bucket_name,
                     workspace_id,
                     unique_id,
                 ).copy_data(new_unique_id)
@@ -93,7 +103,7 @@ class ExperimentService:
             # Clean up partially created data
             for created_unique_id in created_unique_ids:
                 try:
-                    ExptDataWriter(
+                    await ExptDataWriter(
                         workspace_id,
                         created_unique_id,
                     ).delete_data()

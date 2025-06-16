@@ -19,6 +19,7 @@ class WorkspaceService:
         cls,
         db: Session,
         ws: Workspace,
+        remote_bucket_name: str,
     ):
         workspace_id = str(ws.id)
         logger.info(f"Deleting workspace data for workspace '{workspace_id}'")
@@ -34,7 +35,11 @@ class WorkspaceService:
                     continue
 
                 deleted_status = ExperimentService.delete_experiment(
-                    db, workspace_id, experiment_id, auto_commit=False
+                    db,
+                    remote_bucket_name,
+                    workspace_id,
+                    experiment_id,
+                    auto_commit=False,
                 )
 
                 deleted_statuses.append(deleted_status)
@@ -76,7 +81,9 @@ class WorkspaceService:
             )
 
     @classmethod
-    def process_workspace_deletion(cls, db: Session, workspace_id: str, user_id: str):
+    def process_workspace_deletion(
+        cls, db: Session, remote_bucket_name: str, workspace_id: str, user_id: str
+    ):
         try:
             # Search for workspace
             ws: Workspace = (
@@ -93,7 +100,7 @@ class WorkspaceService:
                 raise HTTPException(status_code=404, detail="Workspace not found")
 
             # Delete workspace storage files
-            cls.delete_workspace_contents(db, ws)
+            cls.delete_workspace_contents(db, ws, remote_bucket_name)
 
             # Commit all DB changes before doing anything irreversible
             db.commit()

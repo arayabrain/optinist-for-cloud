@@ -8,6 +8,10 @@ from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageSimpleWriter,
+)
 from studio.app.common.core.workspace.workspace_services import WorkspaceService
 from studio.app.common.models import Role as RoleModel
 from studio.app.common.models import User as UserModel
@@ -142,9 +146,12 @@ async def list_user(
 
 async def create_user(db: Session, data: UserCreate, organization_id: int):
     try:
+        # create firebase user
         user: UserRecord = firebase_auth.create_user(
             email=data.email, password=data.password
         )
+
+        # create application db user
         user_db = UserModel(
             uid=user.uid,
             email=user.email,
@@ -158,6 +165,23 @@ async def create_user(db: Session, data: UserCreate, organization_id: int):
         await set_role(db, user_id=user_db.id, role_id=data.role_id, auto_commit=False)
         db.commit()
         user_db.__dict__["role_id"] = data.role_id
+
+        # create remote_storage bucket
+        if RemoteStorageController.is_available():
+            new_bucket_name = RemoteStorageController.create_user_bucket_name(
+                id=user_db.id
+            )
+
+            async with RemoteStorageSimpleWriter(
+                new_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.create_bucket()
+
+            # store bucket info in user record
+            user_db.attributes = {"remote_bucket_name": new_bucket_name}
+            db.flush()
+            db.commit()
+
         return User.from_orm(user_db)
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -168,6 +192,7 @@ async def update_user(
     db: Session, user_id: int, data: UserUpdate, organization_id: int
 ):
     try:
+        # update application db user
         user_db = (
             db.query(UserModel)
             .filter(
@@ -185,8 +210,12 @@ async def update_user(
         if role_id is not None:
             await set_role(db, user_id=user_db.id, role_id=role_id, auto_commit=False)
         user_db.__dict__["role_id"] = role_id
+
+        # create firebase user
         firebase_auth.update_user(user_db.uid, email=data.email)
+
         db.commit()
+
         return User.from_orm(user_db)
     except AssertionError as e:
         logger.error(e, exc_info=True)
@@ -216,6 +245,18 @@ async def update_password(
 
 async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
     try:
+        # delete application db user
+        user_db: User = (
+            db.query(UserModel)
+            .filter(
+                UserModel.active.is_(True),
+                UserModel.id == user_id,
+                UserModel.organization_id == organization_id,
+            )
+            .first()
+        )
+        assert user_db is not None, "User not found"
+
         # ----------------------------------------
         # Delete a User workspace contents
         # ----------------------------------------
@@ -233,23 +274,23 @@ async def delete_user(db: Session, user_id: int, organization_id: int) -> bool:
         # Delete owned workspaces
         for workspace_id in workspace_ids:
             WorkspaceService.process_workspace_deletion(
-                db=db, workspace_id=workspace_id, user_id=user_id
+                db, user_db.remote_bucket_name, workspace_id, user_id
             )
+
+        # ----------------------------------------
+        # Delete a User remote storage data
+        # ----------------------------------------
+
+        # delete remote_storage bucket
+        if RemoteStorageController.is_available():
+            async with RemoteStorageSimpleWriter(
+                user_db.remote_bucket_name
+            ) as remote_storage_controller:
+                await remote_storage_controller.delete_bucket(force_delete=True)
 
         # ----------------------------------------
         # Delete a User database record
         # ----------------------------------------
-
-        user_db = (
-            db.query(UserModel)
-            .filter(
-                UserModel.active.is_(True),
-                UserModel.id == user_id,
-                UserModel.organization_id == organization_id,
-            )
-            .first()
-        )
-        assert user_db is not None, "User not found"
 
         user_db.active = False
 

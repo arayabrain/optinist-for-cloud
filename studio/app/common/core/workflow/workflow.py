@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
-from studio.app.common.core.snakemake.smk import ForceRun
+from studio.app.common.core.snakemake.smk import ForceRun, NormalRun
 from studio.app.const import FILETYPE
 
 
@@ -64,6 +64,7 @@ class NodeType:
 
     # Algo Type
     ALGO: str = "AlgorithmNode"
+    PROC: str = "ProcessNode"
 
 
 class NodeTypeUtil:
@@ -118,6 +119,13 @@ class OutputType:
     POLAR: str = "polar"
     HISTOGRAM: str = "histogram"
     PIE: str = "pie"
+
+
+@dataclass
+class ProcessType:
+    POST_PROCESS: NormalRun = NormalRun(
+        id="post_process_0", type="post_process", label="post_process"
+    )
 
 
 class NodeItem(BaseModel):

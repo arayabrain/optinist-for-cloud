@@ -43,7 +43,12 @@ describe("Pipeline State Test", () => {
         currentPipeline: { uid: "response data" },
         run: {
           runPostData,
-          runResult: {},
+          runResult: {
+            post_process_0: {
+              name: "post_process",
+              status: "pending",
+            },
+          },
           status: RUN_STATUS.START_SUCCESS,
           uid: "response data",
         },
@@ -87,7 +92,12 @@ describe("Pipeline State Test", () => {
         currentPipeline: { uid: "response data" },
         run: {
           runPostData,
-          runResult: {},
+          runResult: {
+            post_process_0: {
+              name: "post_process",
+              status: "pending",
+            },
+          },
           status: RUN_STATUS.START_SUCCESS,
           uid: "response data",
         },

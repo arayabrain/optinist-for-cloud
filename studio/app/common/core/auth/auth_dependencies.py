@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Response, status
@@ -11,6 +12,7 @@ from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth_config import AUTH_CONFIG
 from studio.app.common.core.auth.security import validate_access_token
+from studio.app.common.core.mode import MODE
 from studio.app.common.db.database import get_db
 from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserRole as UserRoleModel
@@ -107,3 +109,32 @@ async def get_admin_user(current_user: User = Depends(get_current_user)) -> User
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges",
         )
+
+
+async def get_user_remote_bucket_name(
+    current_user: User = Depends(get_current_user),
+) -> str:
+    """
+    get user remote_bucket_name from users.attributes
+    """
+    return _get_user_remote_bucket_name(current_user)
+
+
+def _get_user_remote_bucket_name(
+    current_user: User = None,
+) -> str:
+    """
+    get user remote_bucket_name from users.attributes
+    """
+
+    if current_user:
+        remote_bucket_name = current_user.remote_bucket_name
+    else:
+        if MODE.IS_TEST:
+            remote_bucket_name = "TEST_DUMMY_BUCKET_NAME"
+        else:
+            remote_bucket_name = os.environ.get("S3_DEFAULT_BUCKET_NAME")
+
+    assert remote_bucket_name, f"Invalid remote_bucket_name: {remote_bucket_name}"
+
+    return remote_bucket_name

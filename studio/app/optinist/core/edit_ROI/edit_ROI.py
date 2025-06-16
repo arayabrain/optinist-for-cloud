@@ -12,9 +12,20 @@ from studio.app.common.core.experiment.experiment import ExptOutputPathIds
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.rules.runner import Runner
 from studio.app.common.core.snakemake.snakemake_reader import SmkConfigReader
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+    RemoteStorageWriter,
+    RemoteSyncAction,
+    RemoteSyncLockFileUtil,
+    RemoteSyncStatusFileUtil,
+)
 from studio.app.common.core.utils.filepath_creater import join_filepath
-from studio.app.common.core.utils.filepath_finder import find_condaenv_filepath
+from studio.app.common.core.utils.filepath_finder import (
+    find_condaenv_filepath,
+    find_recent_updated_files,
+)
 from studio.app.common.core.utils.pickle_handler import PickleReader, PickleWriter
+from studio.app.common.core.workflow.workflow import ProcessType
 from studio.app.common.dataclass.base import BaseData
 from studio.app.dir_path import DIRPATH
 from studio.app.optinist.core.edit_ROI.utils import create_ellipse_mask
@@ -54,9 +65,34 @@ class EditRoiUtils:
         return algo
 
     @classmethod
-    def execute(cls, filepath: set):
-        result = False
+    def execute(cls, filepath: str, remote_bucket_name: str):
+        # Get workspace_id, unique_id from output file path
+        ids = ExptOutputPathIds(os.path.dirname(filepath))
+        workspace_id = ids.workspace_id
+        unique_id = ids.unique_id
 
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Check for remote-sync-lock-file
+            # - If lock file exists, an exception is raised (raise_error=True)
+            RemoteSyncLockFileUtil.check_sync_lock_file(
+                workspace_id, unique_id, raise_error=True
+            )
+
+            # creating remote-sync-lock-file
+            RemoteSyncLockFileUtil.create_sync_lock_file(workspace_id, unique_id)
+
+            # creating remote_sync_status file.
+            # - The status file is used to pass bucket info to subsequent processing.
+            RemoteSyncStatusFileUtil.create_sync_status_file_for_processing(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                RemoteSyncAction.UPLOAD,
+            )
+
+        # Run snakemake
+        result = False
         with ProcessPoolExecutor(max_workers=1) as executor:
             logger.info("start snakemake edit_roi process.")
 
@@ -204,7 +240,7 @@ class EditROI:
         self.__update_pickle_for_roi_edition(self.tmp_pickle_file_path, info)
         self.__save_json(info)
 
-    def commit(self):
+    async def commit(self):
         if "suite2p" in self.function_id:
             from studio.app.optinist.core.edit_ROI.wrappers.suite2p_edit_roi import (
                 commit_edit as suite2p_commit,
@@ -271,6 +307,40 @@ class EditROI:
             else None
         )
 
+        # Operate remote storage data.
+        if RemoteStorageController.is_available():
+            # Get workspace_id, unique_id from output file path
+            ids = ExptOutputPathIds(self.node_dirpath)
+            workspace_id = ids.workspace_id
+            unique_id = ids.unique_id
+
+            # Delete lock file created at the start of workflow.
+            RemoteSyncLockFileUtil.delete_sync_lock_file(workspace_id, unique_id)
+
+            # Get remote_bucket_name
+            remote_bucket_name = RemoteSyncStatusFileUtil.get_remote_bucket_name(
+                workspace_id, unique_id
+            )
+
+            # Search upload target files (most recently updated files)
+            upload_target_files = find_recent_updated_files(
+                self.workflow_dirpath,
+                threshold_minutes=600,
+                do_relative_path=True,
+                exclude_files=[
+                    ".lock",
+                    RemoteSyncStatusFileUtil.REMOTE_SYNC_STATUS_FILE,
+                ],
+            )
+
+            # upload update files
+            async with RemoteStorageWriter(
+                remote_bucket_name, workspace_id, unique_id
+            ) as remote_storage_controller:
+                await remote_storage_controller.upload_experiment(
+                    workspace_id, unique_id, upload_target_files
+                )
+
     def cancel(self):
         original_num_cell = len(self.output_info.get("fluorescence").data)
         self.tmp_data.im = self.tmp_data.im[:original_num_cell]
@@ -297,9 +367,17 @@ class EditROI:
         smk_config = SmkConfigReader.read(
             self.workflow_ids.workspace_id, self.workflow_ids.unique_id
         )
+
+        # get last_outputs
         last_outputs = smk_config.get("last_output")
 
-        for last_output in last_outputs:
+        # delete data not to be processed from the list of last_output
+        excluded_last_output_keyword = f"/{ProcessType.POST_PROCESS.id}/"
+        effective_last_outputs = [
+            v for v in last_outputs if excluded_last_output_keyword not in v
+        ]
+
+        for last_output in effective_last_outputs:
             last_output_path = join_filepath([DIRPATH.OUTPUT_DIR, last_output])
             last_output_info = self.__update_pickle_for_roi_edition(
                 last_output_path, output_info
