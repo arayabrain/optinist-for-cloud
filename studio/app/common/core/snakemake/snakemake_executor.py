@@ -83,7 +83,7 @@ def _snakemake_execute_process(
 
     # Data usage calculation
     WorkspaceDataCapacityService.update_experiment_data_usage(workspace_id, unique_id)
-    
+
     # result error handling
     if not result:
         # Operate remote storage.

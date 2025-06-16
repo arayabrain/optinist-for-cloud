@@ -24,12 +24,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.core.utils.pickle_handler import PickleReader
-from studio.app.common.core.workflow.workflow import (
-    Message,
-    NodeRunStatus,
-    OutputPath,
-    ProcessType,
-)
+from studio.app.common.core.workflow.workflow import Message, NodeRunStatus, OutputPath
 from studio.app.common.dataclass import BaseData
 from studio.app.common.schemas.workflow import (
     WorkflowErrorInfo,
@@ -56,7 +51,7 @@ class WorkflowResult:
         )
         self.monitor = WorkflowMonitor(workspace_id, unique_id)
 
-    async def observe(self, nodeIdList: List[str]) -> Dict[str, Message]:
+    async def observe(self, observe_node_ids: List[str]) -> Dict[str, Message]:
         """
         Perform the following operations for the specified workflow
           - Check and update the workflow execution status
