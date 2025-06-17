@@ -253,6 +253,8 @@ async def delete_file(
                 await remote_storage_controller.delete_input_data(
                     workspace_id, filename
                 )
+
+        # Remove local file
         os.remove(filepath)
 
         if WorkspaceDataCapacityService.is_available():
