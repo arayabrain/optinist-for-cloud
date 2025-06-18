@@ -255,6 +255,13 @@ class ExptDataWriter:
         logger = AppLogger.get_logger()
 
         try:
+            if RemoteStorageController.is_available():
+                # Check for remote-sync-lock-file
+                # - If lock file exists, an exception is raised (raise_error=True)
+                RemoteSyncLockFileUtil.check_sync_lock_file(
+                    self.workspace_id, self.unique_id, raise_error=True
+                )
+
             # Define file paths
             output_dir = join_filepath(
                 [DIRPATH.OUTPUT_DIR, self.workspace_id, self.unique_id]
@@ -281,12 +288,6 @@ class ExptDataWriter:
 
             # Operate remote storage data.
             if RemoteStorageController.is_available():
-                # Check for remote-sync-lock-file
-                # - If lock file exists, an exception is raised (raise_error=True)
-                RemoteSyncLockFileUtil.check_sync_lock_file(
-                    self.workspace_id, self.unique_id, raise_error=True
-                )
-
                 # Upload a new data with new unique id to remote data
                 async with RemoteStorageWriter(
                     self.remote_bucket_name, self.workspace_id, new_unique_id
