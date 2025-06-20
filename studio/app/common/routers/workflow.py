@@ -1,8 +1,8 @@
 import asyncio
 import os
+from pathlib import Path
 import shutil
 from dataclasses import asdict
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -198,8 +198,8 @@ async def import_sample_data(
         # ------------------------------------------------------------
         # Upload the input sample data to remote storage process.
         # ------------------------------------------------------------
-        sample_data_input_dir = (
-            Path(DIRPATH.ROOT_DIR) / sample_data_dir_name / category / "input"
+        sample_data_input_dir = Path(
+            join_filepath([DIRPATH.ROOT_DIR, sample_data_dir_name, category, "input"])
         )
 
         logger.info(
@@ -234,8 +234,8 @@ async def import_sample_data(
         # Upload the output sample data to remote storage process.
         # ------------------------------------------------------------
 
-        sample_data_output_dir = (
-            Path(DIRPATH.ROOT_DIR) / sample_data_dir_name / category / "output"
+        sample_data_output_dir = Path(
+            join_filepath([DIRPATH.ROOT_DIR, sample_data_dir_name, category, "output"])
         )
 
         sample_data_output_subdirs = sorted(
