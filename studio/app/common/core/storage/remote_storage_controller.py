@@ -388,6 +388,12 @@ class BaseRemoteStorageController(metaclass=ABCMeta):
         delete experiment data from remote storage.
         """
 
+    @abstractmethod
+    async def delete_workspace(self, workspace_id: str) -> bool:
+        """
+        Delete workspace data.
+        """
+
     async def _clear_local_experiment_data(self, experiment_local_path: str):
         """
         Clean existing local experiment data
@@ -634,6 +640,17 @@ class RemoteStorageController(BaseRemoteStorageController):
             raise e
 
         return result
+
+    async def delete_workspace(self, workspace_id: str, category: str) -> bool:
+        try:
+            logger.info(f"[AWS] Delete WID '{workspace_id}' for category '{category}'")
+
+            # Delegate the call to the actual backend (S3, Mock, etc.)
+            return await self.__controller.delete_workspace(workspace_id, category)
+
+        except Exception as e:
+            logger.exception(f"[AWS] Failed to delete workspace '{workspace_id}': {e}")
+            return False
 
 
 class BaseRemoteStorageSimpleReaderWriter(metaclass=ABCMeta):
