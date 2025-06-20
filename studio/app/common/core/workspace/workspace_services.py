@@ -6,6 +6,10 @@ from sqlmodel import Session
 
 from studio.app.common.core.experiment.experiment_services import ExperimentService
 from studio.app.common.core.logger import AppLogger
+from studio.app.common.core.storage.remote_storage_controller import (
+    RemoteStorageController,
+)
+from studio.app.common.core.storage.s3_storage_controller import S3StorageController
 from studio.app.common.core.utils.filepath_creater import join_filepath
 from studio.app.common.models.workspace import Workspace
 from studio.app.dir_path import DIRPATH
@@ -48,10 +52,16 @@ class WorkspaceService:
 
         if all(deleted_statuses):
             # Delete the workspace directory itself
-            cls.delete_workspace_files(workspace_id=workspace_id)
+            await cls.delete_workspace_files(
+                workspace_id=workspace_id, remote_bucket_name=remote_bucket_name
+            )
 
             # Delete input directory
-            cls.delete_workspace_files(workspace_id=workspace_id, is_input_dir=True)
+            await cls.delete_workspace_files(
+                workspace_id=workspace_id,
+                remote_bucket_name=remote_bucket_name,
+                is_input_dir=True,
+            )
 
             # Soft delete the workspace
             ws.deleted = True
@@ -63,7 +73,21 @@ class WorkspaceService:
             )
 
     @classmethod
-    def delete_workspace_files(cls, workspace_id: str, is_input_dir: bool = False):
+    async def delete_workspace_files(
+        cls, workspace_id: str, remote_bucket_name, is_input_dir: bool = False
+    ):
+        if RemoteStorageController.is_available():
+            # delete remote data
+            remote_storage_controller = RemoteStorageController(remote_bucket_name)
+            if is_input_dir:
+                await remote_storage_controller.delete_workspace(
+                    workspace_id, category=S3StorageController.S3_INPUT_DIR
+                )
+            else:
+                await remote_storage_controller.delete_workspace(
+                    workspace_id, category=S3StorageController.S3_OUTPUT_DIR
+                )
+
         if is_input_dir:
             directory = join_filepath([DIRPATH.INPUT_DIR, workspace_id])
         else:
