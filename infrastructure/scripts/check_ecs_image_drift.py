@@ -105,14 +105,8 @@ def resolve_version(region, repo, digest, cache):
         )
         or []
     )
-    if not tags:
-        # Silence here is ambiguous — expired, untagged, throttled or denied —
-        # and a lost permission would mute every row. Say it once per digest.
-        print(
-            f"WARN: no ECR tags resolved for {short(digest)}"
-            f" (expired, untagged, or lookup failed)",
-            file=sys.stderr,
-        )
+    # A None in the cache marks a digest nothing could be resolved for; main()
+    # reports those once, after the table.
     cache[digest] = label_for(tags, None)
     return cache[digest]
 
@@ -309,13 +303,9 @@ def main():
                             ref_tag,
                             short(digest),
                             status,
-                            # An OK row is a RUNNING task by construction, so
-                            # the marker there is a content-free note line.
-                            (
-                                f"[{status_kind} task] {note}".strip()
-                                if note or status != "OK"
-                                else ""
-                            ),
+                            # A marker with no content is not a note. Every
+                            # status that has something to say sets `note`.
+                            f"[{status_kind} task] {note}" if note else "",
                         )
                     )
 
@@ -349,6 +339,20 @@ def main():
             print(f"{'':<6}↳ {note}")
     print()
 
+    # Silence on a row is ambiguous — expired, untagged, throttled or denied —
+    # and a lost ecr:DescribeImages would quietly unname every row. Reported
+    # here rather than mid-build so a redirected stdout keeps the table and its
+    # caveats together; the cache has already deduplicated them.
+    unresolved = [d for d, v in digest_to_version.items() if v is None]
+    if unresolved:
+        sys.stdout.flush()
+        for d in unresolved:
+            print(
+                f"WARN: no ECR tags resolved for {short(d)}"
+                f" (expired, untagged, or lookup failed)",
+                file=sys.stderr,
+            )
+
     stale = [r for r in rows if r[5] == "STALE"]
     down = [r for r in rows if r[5] == "DOWN"]
     if stale or down:
@@ -359,9 +363,12 @@ def main():
                 f" {target_label} ({short(target)})"
             )
         for r in down:
+            # Only point at a note that is actually there: a stopped task
+            # need report neither a reason nor a resolvable build.
             print(
                 f"  ✖ {r[0]} has no running task"
-                f" (desired={r[1]}, running={r[2]}) — see ↳ reason above"
+                f" (desired={r[1]}, running={r[2]})"
+                f"{' — see ↳ reason above' if r[6] else ''}"
             )
         print("\nHosts (container instances) in play:")
         for arn, ec2 in ci_to_ec2.items():

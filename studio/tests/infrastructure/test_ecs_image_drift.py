@@ -8,9 +8,8 @@ rather than ending it.
 
 from unittest.mock import patch
 
-import pytest
-
 import check_ecs_image_drift as drift
+import pytest
 
 
 class TestTargetLabel:

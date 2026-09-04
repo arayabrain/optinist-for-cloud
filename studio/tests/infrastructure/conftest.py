@@ -36,18 +36,25 @@ _LAMBDA_PATHS.append(TERRAFORM_DIR)
 # aws_constants lives at infrastructure/aws_constants.py
 _LAMBDA_PATHS.append(PROJECT_ROOT / "infrastructure")
 
-# Operator scripts (e.g. check_ecs_image_drift) are importable modules, not a
-# package. Same dual layout as TERRAFORM_DIR above: infrastructure/scripts
-# locally, scripts/ in the Docker image.
-SCRIPTS_DIR = PROJECT_ROOT / "infrastructure" / "scripts"
-if not SCRIPTS_DIR.exists():
-    SCRIPTS_DIR = PROJECT_ROOT / "scripts"
-_LAMBDA_PATHS.append(SCRIPTS_DIR)
 
 for p in _LAMBDA_PATHS:
     p_str = str(p)
     if p_str not in sys.path:
         sys.path.insert(0, p_str)
+
+# Operator scripts (e.g. check_ecs_image_drift) are importable modules, not a
+# package. Same dual layout as TERRAFORM_DIR above: infrastructure/scripts
+# locally, scripts/ in the Docker image.
+#
+# Appended rather than prepended: the directory also holds manual test_*.py
+# scripts, one of which (test_free_manager.py) collides by basename with a test
+# collected here. Only one module is wanted from it, so it takes the lowest
+# priority rather than the highest.
+SCRIPTS_DIR = PROJECT_ROOT / "infrastructure" / "scripts"
+if not SCRIPTS_DIR.exists():
+    SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
 
 # Ensure the real aws_constants module is loaded from the paths above.
 # Other test files may install a limited mock into sys.modules;
