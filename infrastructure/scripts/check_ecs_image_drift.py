@@ -356,19 +356,27 @@ def main():
     stale = [r for r in rows if r[5] == "STALE"]
     down = [r for r in rows if r[5] == "DOWN"]
     if stale or down:
-        print("DRIFT DETECTED:")
+        # The target is the same for every line, so it is stated once rather
+        # than repeated per row — which also keeps these lines inside the
+        # table's width with real service names.
+        print(f"DRIFT DETECTED — target {target_label} ({short(target)}):")
+        # Rows are per task; a service with several tasks was listed once per
+        # task in identical words. Counted instead.
+        stale_tasks = {}
         for r in stale:
+            stale_tasks[r[0]] = stale_tasks.get(r[0], 0) + 1
+        for name, n in stale_tasks.items():
             print(
-                f"  ▲ {r[0]} stale — recycle/repull its host to pull"
-                f" {target_label} ({short(target)})"
+                f"  ▲ {name}{f' ({n} tasks)' if n > 1 else ''}"
+                f" — recycle/repull its host"
             )
         for r in down:
             # Only point at a note that is actually there: a stopped task
             # need report neither a reason nor a resolvable build.
             print(
-                f"  ✖ {r[0]} has no running task"
+                f"  ✖ {r[0]} — no running task"
                 f" (desired={r[1]}, running={r[2]})"
-                f"{' — see ↳ reason above' if r[6] else ''}"
+                f"{', reason above' if r[6] else ''}"
             )
         print("\nHosts (container instances) in play:")
         for arn, ec2 in ci_to_ec2.items():
