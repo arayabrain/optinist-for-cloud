@@ -36,6 +36,14 @@ _LAMBDA_PATHS.append(TERRAFORM_DIR)
 # aws_constants lives at infrastructure/aws_constants.py
 _LAMBDA_PATHS.append(PROJECT_ROOT / "infrastructure")
 
+# Operator scripts (e.g. check_ecs_image_drift) are importable modules, not a
+# package. Same dual layout as TERRAFORM_DIR above: infrastructure/scripts
+# locally, scripts/ in the Docker image.
+SCRIPTS_DIR = PROJECT_ROOT / "infrastructure" / "scripts"
+if not SCRIPTS_DIR.exists():
+    SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+_LAMBDA_PATHS.append(SCRIPTS_DIR)
+
 for p in _LAMBDA_PATHS:
     p_str = str(p)
     if p_str not in sys.path:

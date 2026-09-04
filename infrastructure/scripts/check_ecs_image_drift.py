@@ -24,6 +24,10 @@ import json
 import subprocess
 import sys
 
+# Tags that move between builds, so they name no particular one. ecr_build_push.sh
+# pushes exactly these plus one immutable version tag per build.
+MUTABLE_TAGS = {"latest"}
+
 
 def aws(region, *args):
     """Run an aws CLI command, return parsed JSON (None on empty output)."""
@@ -43,12 +47,38 @@ def aws_optional(region, *args):
     """
     try:
         return aws(region, *args)
-    except RuntimeError:
+    except (RuntimeError, ValueError):  # non-zero exit, or non-JSON stdout
         return None
 
 
 def short(digest):
     return (digest or "—").replace("sha256:", "")[:12]
+
+
+def label_for(tags, fallback):
+    """Name a build from the tags on its digest: one name, the rest as an aside.
+
+    A bare ", ".join competes with the "A != B" sentence it lands in, and a
+    mutable tag names no build — so prefer an immutable one and park the others
+    in parentheses.
+    """
+    if not tags:
+        return fallback
+    preferred = next((t for t in tags if t not in MUTABLE_TAGS), tags[0])
+    others = [t for t in tags if t != preferred]
+    return f"{preferred} (also {', '.join(others)})" if others else preferred
+
+
+def target_label_for(tag, alias_tags):
+    """Name the build a target tag refers to.
+
+    A mutable tag names no build, so it defers to its immutable alias. An
+    explicit tag already names the build asked for and is kept as given —
+    substituting there can only lose the information the caller supplied.
+    """
+    if tag in MUTABLE_TAGS:
+        return label_for(alias_tags, tag)
+    return tag
 
 
 def resolve_version(region, repo, digest, cache):
@@ -57,7 +87,7 @@ def resolve_version(region, repo, digest, cache):
     Purely presentational — it never feeds the OK/STALE decision. A digest no
     longer present in ECR yields None and the row falls back to the digest
     alone, so a report can never fail on the lookup. Cached per digest, so
-    tasks sharing an image cost one call.
+    tasks sharing an image cost one call, failures included.
     """
     if digest in cache:
         return cache[digest]
@@ -75,7 +105,15 @@ def resolve_version(region, repo, digest, cache):
         )
         or []
     )
-    cache[digest] = ", ".join(tags) or None
+    if not tags:
+        # Silence here is ambiguous — expired, untagged, throttled or denied —
+        # and a lost permission would mute every row. Say it once per digest.
+        print(
+            f"WARN: no ECR tags resolved for {short(digest)}"
+            f" (expired, untagged, or lookup failed)",
+            file=sys.stderr,
+        )
+    cache[digest] = label_for(tags, None)
     return cache[digest]
 
 
@@ -113,6 +151,10 @@ def main():
         "imageDetails[0]",
     )
     if not img:
+        # Kept on aws(), not aws_optional(): the raw error distinguishes a
+        # missing image from bad credentials, a wrong region or a throttle.
+        # Routing this through the fail-soft wrapper would report all of them
+        # as "not found", which is why this branch stays hard to reach.
         print(f"ERROR: {args.repo}:{args.tag} not found in ECR ({region}).")
         return 2
     target = img["imageDigest"]
@@ -122,12 +164,7 @@ def main():
         f"  digest  {short(target)}   pushed {img.get('imagePushedAt','?')}"
         f"   aka {', '.join(alias_tags) or '—'}"
     )
-    # `latest` is mutable and names no particular build, so label the target
-    # with its immutable alias instead (ecr_build_push.sh pushes both). An
-    # explicit --tag already names the build asked for and is kept as given.
-    target_label = args.tag
-    if args.tag == "latest":
-        target_label = ", ".join(alias_tags) or args.tag
+    target_label = target_label_for(args.tag, alias_tags)
     print()
 
     # 2. Services to inspect.
@@ -241,6 +278,15 @@ def main():
                     if status_kind == "STOPPED":
                         status = "DOWN"
                         note = (t.get("stoppedReason") or "")[:60]
+                        stopped_ver = (
+                            resolve_version(
+                                region, args.repo, digest, digest_to_version
+                            )
+                            if digest
+                            else None
+                        )
+                        if stopped_ver:
+                            note = f"{stopped_ver}: {note}" if note else stopped_ver
                     elif digest == target:
                         status, note = "OK", ""
                     elif digest is None:
@@ -263,7 +309,13 @@ def main():
                             ref_tag,
                             short(digest),
                             status,
-                            f"[{status_kind} task] {note}".strip(),
+                            # An OK row is a RUNNING task by construction, so
+                            # the marker there is a content-free note line.
+                            (
+                                f"[{status_kind} task] {note}".strip()
+                                if note or status != "OK"
+                                else ""
+                            ),
                         )
                     )
 
@@ -294,7 +346,7 @@ def main():
         line = f"{name:<46} {des:>3} {run:>3} {tag:<26} {digest:<14} {mark}{status}"
         print(line)
         if note:
-            print(f"{'':<46} {'':>3} {'':>3} {'':<26} {'':<14}   ↳ {note}")
+            print(f"{'':<6}↳ {note}")
     print()
 
     stale = [r for r in rows if r[5] == "STALE"]
