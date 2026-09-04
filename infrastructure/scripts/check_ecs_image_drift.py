@@ -116,15 +116,18 @@ def main():
         print(f"ERROR: {args.repo}:{args.tag} not found in ECR ({region}).")
         return 2
     target = img["imageDigest"]
-    version_tags = [t for t in img.get("imageTags", []) if t != args.tag]
+    alias_tags = [t for t in img.get("imageTags", []) if t != args.tag]
     print(f"Target  {args.repo}:{args.tag}")
     print(
         f"  digest  {short(target)}   pushed {img.get('imagePushedAt','?')}"
-        f"   aka {', '.join(version_tags) or '—'}"
+        f"   aka {', '.join(alias_tags) or '—'}"
     )
-    # Prefer a version tag; fall back to the requested tag, never to the digest
-    # (the summary already prints the digest alongside this label).
-    target_label = ", ".join(version_tags) or args.tag
+    # `latest` is mutable and names no particular build, so label the target
+    # with its immutable alias instead (ecr_build_push.sh pushes both). An
+    # explicit --tag already names the build asked for and is kept as given.
+    target_label = args.tag
+    if args.tag == "latest":
+        target_label = ", ".join(alias_tags) or args.tag
     print()
 
     # 2. Services to inspect.
