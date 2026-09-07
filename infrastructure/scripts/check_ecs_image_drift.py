@@ -24,6 +24,10 @@ import json
 import subprocess
 import sys
 
+# Tags that move between builds, so they name no particular one. ecr_build_push.sh
+# pushes exactly these plus one immutable version tag per build.
+MUTABLE_TAGS = {"latest"}
+
 
 def aws(region, *args):
     """Run an aws CLI command, return parsed JSON (None on empty output)."""
@@ -35,8 +39,76 @@ def aws(region, *args):
     return json.loads(out) if out else None
 
 
+def aws_optional(region, *args):
+    """Like aws(), but returns None instead of raising when the call fails.
+
+    Used only for presentational lookups, so a missing/expired image can never
+    turn a drift report into a crash.
+    """
+    try:
+        return aws(region, *args)
+    except (RuntimeError, ValueError):  # non-zero exit, or non-JSON stdout
+        return None
+
+
 def short(digest):
     return (digest or "—").replace("sha256:", "")[:12]
+
+
+def label_for(tags, fallback):
+    """Name a build from the tags on its digest: one name, the rest as an aside.
+
+    A bare ", ".join competes with the "A != B" sentence it lands in, and a
+    mutable tag names no build — so prefer an immutable one and park the others
+    in parentheses.
+    """
+    if not tags:
+        return fallback
+    preferred = next((t for t in tags if t not in MUTABLE_TAGS), tags[0])
+    others = [t for t in tags if t != preferred]
+    return f"{preferred} (also {', '.join(others)})" if others else preferred
+
+
+def target_label_for(tag, alias_tags):
+    """Name the build a target tag refers to.
+
+    A mutable tag names no build, so it defers to its immutable alias. An
+    explicit tag already names the build asked for and is kept as given —
+    substituting there can only lose the information the caller supplied.
+    """
+    if tag in MUTABLE_TAGS:
+        return label_for(alias_tags, tag)
+    return tag
+
+
+def resolve_version(region, repo, digest, cache):
+    """Best-effort ECR tag(s) for a digest, so a stale row can name its build.
+
+    Purely presentational — it never feeds the OK/STALE decision. A digest no
+    longer present in ECR yields None and the row falls back to the digest
+    alone, so a report can never fail on the lookup. Cached per digest, so
+    tasks sharing an image cost one call, failures included.
+    """
+    if digest in cache:
+        return cache[digest]
+    tags = (
+        aws_optional(
+            region,
+            "ecr",
+            "describe-images",
+            "--repository-name",
+            repo,
+            "--image-ids",
+            f"imageDigest={digest}",
+            "--query",
+            "imageDetails[0].imageTags",
+        )
+        or []
+    )
+    # A None in the cache marks a digest nothing could be resolved for; main()
+    # reports those once, after the table.
+    cache[digest] = label_for(tags, None)
+    return cache[digest]
 
 
 def chunks(seq, n):
@@ -73,15 +145,20 @@ def main():
         "imageDetails[0]",
     )
     if not img:
+        # Kept on aws(), not aws_optional(): the raw error distinguishes a
+        # missing image from bad credentials, a wrong region or a throttle.
+        # Routing this through the fail-soft wrapper would report all of them
+        # as "not found", which is why this branch stays hard to reach.
         print(f"ERROR: {args.repo}:{args.tag} not found in ECR ({region}).")
         return 2
     target = img["imageDigest"]
-    date_tags = [t for t in img.get("imageTags", []) if t != args.tag]
+    alias_tags = [t for t in img.get("imageTags", []) if t != args.tag]
     print(f"Target  {args.repo}:{args.tag}")
     print(
         f"  digest  {short(target)}   pushed {img.get('imagePushedAt','?')}"
-        f"   aka {', '.join(date_tags) or '—'}"
+        f"   aka {', '.join(alias_tags) or '—'}"
     )
+    target_label = target_label_for(args.tag, alias_tags)
     print()
 
     # 2. Services to inspect.
@@ -98,6 +175,7 @@ def main():
 
     rows = []  # (service, desired, running, tag, digest, status, note)
     ci_to_ec2 = {}  # container-instance ARN -> ec2 instance id (resolved lazily)
+    digest_to_version = {}  # image digest -> ECR tag(s), for naming stale builds
 
     for batch in chunks(services, 10):
         descs = (
@@ -194,12 +272,29 @@ def main():
                     if status_kind == "STOPPED":
                         status = "DOWN"
                         note = (t.get("stoppedReason") or "")[:60]
+                        stopped_ver = (
+                            resolve_version(
+                                region, args.repo, digest, digest_to_version
+                            )
+                            if digest
+                            else None
+                        )
+                        if stopped_ver:
+                            note = f"{stopped_ver}: {note}" if note else stopped_ver
                     elif digest == target:
                         status, note = "OK", ""
                     elif digest is None:
                         status, note = "UNKNOWN", "no imageDigest reported"
                     else:
-                        status, note = "STALE", "running != target digest"
+                        status = "STALE"
+                        running_ver = resolve_version(
+                            region, args.repo, digest, digest_to_version
+                        )
+                        note = (
+                            f"running {running_ver} != target {target_label}"
+                            if running_ver
+                            else "running != target digest"
+                        )
                     rows.append(
                         (
                             name,
@@ -208,7 +303,9 @@ def main():
                             ref_tag,
                             short(digest),
                             status,
-                            f"[{status_kind} task] {note}".strip(),
+                            # A marker with no content is not a note. Every
+                            # status that has something to say sets `note`.
+                            f"[{status_kind} task] {note}" if note else "",
                         )
                     )
 
@@ -239,22 +336,47 @@ def main():
         line = f"{name:<46} {des:>3} {run:>3} {tag:<26} {digest:<14} {mark}{status}"
         print(line)
         if note:
-            print(f"{'':<46} {'':>3} {'':>3} {'':<26} {'':<14}   ↳ {note}")
+            print(f"{'':<6}↳ {note}")
     print()
+
+    # Silence on a row is ambiguous — expired, untagged, throttled or denied —
+    # and a lost ecr:DescribeImages would quietly unname every row. Reported
+    # here rather than mid-build so a redirected stdout keeps the table and its
+    # caveats together; the cache has already deduplicated them.
+    unresolved = [d for d, v in digest_to_version.items() if v is None]
+    if unresolved:
+        sys.stdout.flush()
+        for d in unresolved:
+            print(
+                f"WARN: no ECR tags resolved for {short(d)}"
+                f" (expired, untagged, or lookup failed)",
+                file=sys.stderr,
+            )
 
     stale = [r for r in rows if r[5] == "STALE"]
     down = [r for r in rows if r[5] == "DOWN"]
     if stale or down:
-        print("DRIFT DETECTED:")
+        # The target is the same for every line, so it is stated once rather
+        # than repeated per row — which also keeps these lines inside the
+        # table's width with real service names.
+        print(f"DRIFT DETECTED — target {target_label} ({short(target)}):")
+        # Rows are per task; a service with several tasks was listed once per
+        # task in identical words. Counted instead.
+        stale_tasks = {}
         for r in stale:
+            stale_tasks[r[0]] = stale_tasks.get(r[0], 0) + 1
+        for name, n in stale_tasks.items():
             print(
-                f"  ▲ {r[0]} stale — recycle/repull its host to pull"
-                f" {short(target)}"
+                f"  ▲ {name}{f' ({n} tasks)' if n > 1 else ''}"
+                f" — recycle/repull its host"
             )
         for r in down:
+            # Only point at a note that is actually there: a stopped task
+            # need report neither a reason nor a resolvable build.
             print(
-                f"  ✖ {r[0]} has no running task"
-                f" (desired={r[1]}, running={r[2]}) — see ↳ reason above"
+                f"  ✖ {r[0]} — no running task"
+                f" (desired={r[1]}, running={r[2]})"
+                f"{', reason above' if r[6] else ''}"
             )
         print("\nHosts (container instances) in play:")
         for arn, ec2 in ci_to_ec2.items():
