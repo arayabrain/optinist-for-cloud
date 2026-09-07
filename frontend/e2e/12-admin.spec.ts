@@ -990,11 +990,12 @@ test.describe.serial("Admin Account Manager", () => {
       let row = await rowFor(page, mutable.email)
       await expect(row.getByText("Free", { exact: true })).toBeVisible()
 
-      // The extra hour keeps the day count at 30 for the minutes this test runs
+      // Days remaining rounds up, so 30 needs an expiry inside (29d, 30d]:
+      // the hour comes off the 30 days, not onto them
       runSql(
         `UPDATE subscription_users
             SET plan_id = 2,
-                expiration = DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY),
+                expiration = DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY),
                                       INTERVAL 1 HOUR)
           WHERE user_id = ${mutable.id};`,
       )

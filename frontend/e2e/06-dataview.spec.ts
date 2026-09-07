@@ -11,6 +11,8 @@ import {
   ensureWorkspaceId,
   ensureCompletedTutorialRun,
   ensurePublishableAccount,
+  ensurePublishedRecord,
+  setPublished,
   filterWorkspace,
   openWorkspace,
   apiUrl,
@@ -658,54 +660,86 @@ test.describe("Public Dataview", () => {
     await expect(headers.filter({ hasText: "Publish" })).toHaveCount(0)
   })
 
-  test("DV-10 - Public dataview loads without authentication", async ({
+  test("DV-10 - Public dataview loads without authentication @slow", async ({
     page,
+    browser,
   }) => {
+    skipWithoutCreds()
+    // Publishing, and a reload ladder over a fresh publish's S3 sync
+    test.setTimeout(240_000)
     // Row 813: the grid's thumbnails are served by /api/visualizations/*, which
     // only reaches the public tier through an ALB rule keyed on the
     // DATAVIEW_PUBLIC_REQUEST header the app sends. A broken rule leaves the
     // page loading fine with every image missing, so the statuses are the row.
-    const thumbnails: number[] = []
-    page.on("response", (r) => {
-      if (r.url().includes("/api/visualizations/thumbnail/")) {
-        thumbnails.push(r.status())
-      }
+    // Every publishing test here reverts its own state, so the row that the
+    // thumbnails come from has to be this test's own. A new context inherits
+    // neither the baseURL nor the session.
+    const publisher = await browser.newContext({
+      baseURL: process.env.BASE_URL || "http://localhost:3000",
+      storageState: freeStorageState(),
     })
+    const publisherPage = await publisher.newPage()
+    ensurePublishableAccount()
+    await gotoDashboard(publisherPage)
+    await ensurePublishedRecord(publisherPage, BASE_RECORD)
 
-    const response = await page.goto("/public")
-    expect(response?.status()).toBe(200)
-    await expect(
-      page.locator("text=OptiNiSt Public Repository").first(),
-    ).toBeVisible({ timeout: 15_000 })
-    await expect(page).not.toHaveURL(/\/login/)
-
-    await expect
-      .poll(() => thumbnails.length, {
-        timeout: 30_000,
-        message:
-          "the public grid requested no thumbnails - if the grid is empty this " +
-          "environment has no published records, which is a missing fixture " +
-          "rather than a broken ALB rule (publish one, or run DV-20 first)",
+    try {
+      const thumbnails: number[] = []
+      page.on("response", (r) => {
+        if (r.url().includes("/api/visualizations/thumbnail/")) {
+          thumbnails.push(r.status())
+        }
       })
-      .toBeGreaterThan(0)
-    // The poll returns on the FIRST response, so filtering here judged one or
-    // two thumbnails and let a partial regression through. Wait for the grid to
-    // stop requesting before reading the whole set.
-    let settled = 0
-    await expect
-      .poll(
-        () => {
-          const stable = thumbnails.length === settled
-          settled = thumbnails.length
-          return stable
-        },
-        { timeout: 30_000, intervals: [2_000] },
-      )
-      .toBe(true)
-    expect(
-      thumbnails.filter((status) => status !== 200),
-      `thumbnail responses that were not 200 (of ${thumbnails.length})`,
-    ).toEqual([])
+
+      // One anonymous load of the public grid, resolving to the thumbnail
+      // statuses that were not 200
+      const loadPublicGrid = async () => {
+        thumbnails.length = 0
+        const response = await page.goto("/public")
+        expect(response?.status()).toBe(200)
+        await expect(
+          page.locator("text=OptiNiSt Public Repository").first(),
+        ).toBeVisible({ timeout: 15_000 })
+        await expect(page).not.toHaveURL(/\/login/)
+
+        await expect
+          .poll(() => thumbnails.length, {
+            timeout: 30_000,
+            message:
+              `the public grid requested no thumbnails - ${BASE_RECORD} was ` +
+              "published above, so an empty grid is the public listing " +
+              "failing, not a missing fixture",
+          })
+          .toBeGreaterThan(0)
+        // The poll returns on the FIRST response, so filtering here judged one
+        // or two thumbnails and let a partial regression through. Wait for the
+        // grid to stop requesting before reading the whole set.
+        let settled = 0
+        await expect
+          .poll(
+            () => {
+              const stable = thumbnails.length === settled
+              settled = thumbnails.length
+              return stable
+            },
+            { timeout: 30_000, intervals: [2_000] },
+          )
+          .toBe(true)
+        return thumbnails.filter((status) => status !== 200)
+      }
+
+      // The record published above syncs from S3 on its first anonymous read
+      // and its thumbnail 423s while that lock is held, which is what the
+      // grid's own "Retry download" is for. A broken ALB rule never turns
+      // into a 200, so reloading forgives the transient without the row.
+      await expect
+        .poll(loadPublicGrid, { timeout: 150_000, intervals: [5_000] })
+        .toEqual([])
+    } finally {
+      // A failed assertion must not leave the record published
+      await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
+      await publisher.close()
+    }
   })
 
   test("DV-11 - Public API is open, private API rejects a bad token", async ({
