@@ -679,11 +679,14 @@ test.describe("Public Dataview", () => {
       storageState: freeStorageState(),
     })
     const publisherPage = await publisher.newPage()
-    ensurePublishableAccount()
-    await gotoDashboard(publisherPage)
-    await ensurePublishedRecord(publisherPage, BASE_RECORD)
 
+    // Inside the try: a publish whose response is lost still committed, so
+    // setup has to reach the cleanup too
     try {
+      ensurePublishableAccount()
+      await gotoDashboard(publisherPage)
+      await ensurePublishedRecord(publisherPage, BASE_RECORD)
+
       const thumbnails: number[] = []
       page.on("response", (r) => {
         if (r.url().includes("/api/visualizations/thumbnail/")) {

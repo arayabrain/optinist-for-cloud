@@ -1648,9 +1648,11 @@ export async function setPublished(page: Page, name: string, on: boolean) {
     throw new Error(`no dataview record named ${name} to publish`)
   }
   const headers = await apiHeaders(page)
+  // Publish syncs and validates against S3 in-request on a deployed env, which
+  // outlasts the default request timeout
   const res = await page.request.post(
     `${apiUrl()}/api/dataview/publish/${record.id}/${on ? "on" : "off"}`,
-    { headers },
+    { headers, timeout: 120_000 },
   )
   if (!res.ok()) {
     throw new Error(
