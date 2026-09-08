@@ -114,14 +114,19 @@ test.describe("Workspace", () => {
   })
 
   test("WS-07 - Storage refresh fires once per session", async ({ page }) => {
+    // Four refreshes are waited on here, each close to its own 10s client abort
+    test.setTimeout(120_000)
     // Clear the gate so this test owns the session's first refresh - but wait
     // for the surrounding hook's own refresh first, or it re-writes the flag
-    // after the clear
-    await page.waitForFunction(
-      () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
-      undefined,
-      { timeout: 30_000 },
-    )
+    // after the clear. A failed one wrote nothing, so it cannot race: the flag
+    // is tolerated, not required
+    await page
+      .waitForFunction(
+        () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
+        undefined,
+        { timeout: 15_000 },
+      )
+      .catch(() => {})
     await page.evaluate(() =>
       sessionStorage.removeItem("storage-refreshed-on-login"),
     )

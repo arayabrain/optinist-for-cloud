@@ -422,17 +422,19 @@ test.describe("Private Dataview @slow", () => {
 
   // Filtered rather than scanned: the row is otherwise only on the page the
   // listing happens to open on. The fill is debounced and toHaveCount settles
-  // on its first poll, so wait for the fetch, not the keystroke
+  // on its first poll, so wait for the fetch, not the keystroke, and hand back
+  // what it answered - the rendered count alone rides on task ordering
   async function filterPublicByUid(page: Page, uid: string) {
     const applied = page.waitForResponse(
       (r) =>
         r.url().includes("/api/public/dataview") &&
-        r.url().includes(`uid=${uid}`),
+        new URL(r.url()).searchParams.get("uid") === uid,
       { timeout: 30_000 },
     )
     await applyColumnFilter(page, "uid", uid)
-    await applied
+    const listed = (await (await applied).json()) as { items?: unknown[] }
     await page.keyboard.press("Escape")
+    return listed.items ?? []
   }
 
   test("DV-14 - Publish lists the record publicly; unpublish removes it", async ({
@@ -445,7 +447,7 @@ test.describe("Private Dataview @slow", () => {
     // Listed on the public dataview (S3 sync stays manual — the listing
     // gates on publish_status only)
     await page.goto("/public")
-    await filterPublicByUid(page, uid)
+    expect(await filterPublicByUid(page, uid)).toHaveLength(1)
     await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
 
     // Unpublish removes it from the public page
@@ -457,7 +459,7 @@ test.describe("Private Dataview @slow", () => {
     await expect(
       page.locator('.MuiDataGrid-columnHeader[data-field="name"]'),
     ).toBeVisible({ timeout: 15_000 })
-    await filterPublicByUid(page, uid)
+    expect(await filterPublicByUid(page, uid)).toHaveLength(0)
     await expect(publicRow(page, uid)).toHaveCount(0)
   })
 
