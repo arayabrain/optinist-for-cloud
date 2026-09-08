@@ -140,7 +140,13 @@ test.describe("Workspace", () => {
       await page.goto(route)
       await expect(page).toHaveURL(new RegExp(`${route}$`), { timeout: 30_000 })
       await meSeen
-      await page.waitForTimeout(2_000)
+      // The gate is written only once the refresh POST resolves; navigating
+      // away first aborts it and the next load refreshes again
+      await page.waitForFunction(
+        () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
+        undefined,
+        { timeout: 60_000 },
+      )
     }
     expect(refreshes).toHaveLength(1)
   })
