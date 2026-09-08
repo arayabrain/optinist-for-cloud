@@ -69,6 +69,7 @@ variable "mysql_root_password" {
   description = "MySQL/MariaDB root password"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "mysql_database" {
@@ -87,6 +88,7 @@ variable "mysql_password" {
   description = "MySQL/MariaDB password"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "optinist_org_name" {
