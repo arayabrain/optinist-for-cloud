@@ -242,16 +242,22 @@ describe("analytics", () => {
   })
 
   describe("index.html head snippet", () => {
-    const inlineScripts = (
-      fs
-        .readFileSync(
-          path.join(__dirname, "../../../public/index.html"),
-          "utf8",
-        )
-        .match(/<script>[\s\S]*?<\/script>/g) ?? []
+    // Capture the body directly rather than stripping the tags off the match:
+    // a single replace pass over the delimiters can leave a delimiter behind.
+    // [^>]* on the end tag too: `</script foo>` is still an end tag.
+    const scriptTag = /<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi
+    const html = fs.readFileSync(
+      path.join(__dirname, "../../../public/index.html"),
+      "utf8",
     )
-      .map((tag) => tag.replace(/<\/?script>/g, ""))
-      .filter((source) => /consent|gtm\.js/.test(source))
+    const inlineScripts: string[] = []
+    for (
+      let match = scriptTag.exec(html);
+      match !== null;
+      match = scriptTag.exec(html)
+    ) {
+      if (/consent|gtm\.js/.test(match[1])) inlineScripts.push(match[1])
+    }
 
     // window.eval, not eval: only the former makes the gtag declaration a
     // property of window, which is the browser behaviour utils/analytics.ts

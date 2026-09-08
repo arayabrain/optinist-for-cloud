@@ -44,16 +44,18 @@ def session_fixture():
     app.dependency_overrides[is_workspace_available] = skip_dependencies
     app.dependency_overrides[is_workspace_owner] = skip_dependencies
 
-    yield
-
     # DATA_DIR follows OPTINIST_DIR, which points at live user data in a
-    # deployed container, so prove this is test data before deleting anything.
+    # deployed container, so prove this is test data before the suite runs
+    # against it -- checking at teardown would be too late.
     data_dir = Path(DIRPATH.DATA_DIR).resolve()
     if data_dir.name != "test_data":
         raise RuntimeError(
-            f"refusing to delete {data_dir}/output: OPTINIST_DIR must end in "
+            f"refusing to run against {data_dir}: OPTINIST_DIR must end in "
             "test_data to run this suite"
         )
+
+    yield
+
     shutil.rmtree(data_dir / "output", ignore_errors=True)
 
 

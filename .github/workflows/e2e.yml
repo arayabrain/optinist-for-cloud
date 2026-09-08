@@ -17,6 +17,10 @@ concurrency:
   group: weekly-regression
   cancel-in-progress: false
 
+# Least-privilege default: jobs opt in to anything beyond reading the repo.
+permissions:
+  contents: read
+
 jobs:
   # The per-PR suites (backend, lambda, frontend), reused rather than copied.
   unit:

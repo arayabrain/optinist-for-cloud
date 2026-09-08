@@ -53,6 +53,10 @@ router = APIRouter(prefix="/users/me", tags=["users/me"])
 beacon_router = APIRouter(prefix="/users/me", tags=["users/me"])
 logger = AppLogger.get_logger()
 
+# Exception text can carry internal paths, SQL and connection details, so the
+# handlers below return this instead and keep the detail in the server log.
+INTERNAL_ERROR_MESSAGE = "An internal error occurred"
+
 
 @router.get("", response_model=User)
 async def me(current_user: User = Depends(get_current_user)):
@@ -274,8 +278,8 @@ async def release_premium_beacon(request: Request, db: Session = Depends(get_db)
         }
 
     except Exception as e:
-        logger.warning(f"Beacon release failed: {e}")
-        return {"success": False, "message": str(e)}
+        logger.warning(f"Beacon release failed: {e}", exc_info=True)
+        return {"success": False, "message": INTERNAL_ERROR_MESSAGE}
 
 
 @router.post(
@@ -347,11 +351,13 @@ async def logout_free_user(
         }
 
     except Exception as e:
-        logger.error(f"Error logging out free user {current_user.id}: {e}")
+        logger.error(
+            f"Error logging out free user {current_user.id}: {e}", exc_info=True
+        )
         return {
-            "message": f"Logout processed with warnings: {str(e)}",
+            "message": "Logout processed with warnings",
             "logged_out": False,
-            "error": str(e),
+            "error": INTERNAL_ERROR_MESSAGE,
         }
 
 
@@ -395,13 +401,16 @@ async def get_premium_assignment_status(current_user: User = Depends(get_current
         }
 
     except Exception as e:
-        logger.error(f"Error getting premium status for user {current_user.id}: {e}")
+        logger.error(
+            f"Error getting premium status for user {current_user.id}: {e}",
+            exc_info=True,
+        )
         return {
             "subscription_type": current_user.subscription_type,
             "is_premium": current_user.subscription_type
             == SubscriptionType.PREMIUM.value,
             "assignment": None,
-            "error": str(e),
+            "error": INTERNAL_ERROR_MESSAGE,
         }
 
 
@@ -451,15 +460,18 @@ async def send_premium_heartbeat(current_user: User = Depends(get_current_user))
             }
 
     except Exception as e:
-        logger.error(f"Error processing heartbeat for user " f"{current_user.id}: {e}")
+        logger.error(
+            f"Error processing heartbeat for user {current_user.id}: {e}",
+            exc_info=True,
+        )
         failure_count = increment_heartbeat_failures(current_user.id)
         return {
-            "message": f"Heartbeat processed with warnings: {str(e)}",
+            "message": "Heartbeat processed with warnings",
             "updated": False,
             "user_tier": SubscriptionType.PREMIUM.value,
             "assignment_active": False,
             "heartbeat_failures": failure_count,
-            "error": str(e),
+            "error": INTERNAL_ERROR_MESSAGE,
         }
 
 
@@ -581,7 +593,10 @@ async def get_my_cloud_details(
         return result
 
     except Exception as e:
-        logger.error(f"Failed to get cloud details for user {current_user.id}: {e}")
+        logger.error(
+            f"Failed to get cloud details for user {current_user.id}: {e}",
+            exc_info=True,
+        )
         return {
-            "error": str(e),
+            "error": INTERNAL_ERROR_MESSAGE,
         }
