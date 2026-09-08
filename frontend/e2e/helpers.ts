@@ -1618,6 +1618,74 @@ export function ensurePublishableAccount() {
   }
 }
 
+type DataviewItem = {
+  id: number
+  name?: string
+  publish_status?: number
+  thumbnails?: { image_url?: string | null }
+}
+
+// Scoped to DATA_WS: an unscoped name match could publish (and expose) a
+// same-named record from another workspace on a shared environment
+let dataWsId = 0
+
+export async function findDataviewRecord(
+  page: Page,
+  name: string,
+): Promise<DataviewItem | undefined> {
+  if (!dataWsId) dataWsId = await ensureWorkspaceId(page, DATA_WS)
+  const headers = await apiHeaders(page)
+  const res = await page.request.get(
+    `${apiUrl()}/api/dataview?limit=100&offset=0&workspace_id=${dataWsId}`,
+    { headers },
+  )
+  if (!res.ok()) {
+    throw new Error(`GET /api/dataview ${res.status()}: ${await res.text()}`)
+  }
+  const { items } = await res.json()
+  return (items as DataviewItem[]).find((record) => record.name === name)
+}
+
+export async function setPublished(page: Page, name: string, on: boolean) {
+  const record = await findDataviewRecord(page, name)
+  if (!record) {
+    if (!on) return
+    throw new Error(`no dataview record named ${name} to publish`)
+  }
+  const headers = await apiHeaders(page)
+  // Publish syncs and validates against S3 in-request on a deployed env, which
+  // outlasts the default request timeout
+  const res = await page.request.post(
+    `${apiUrl()}/api/dataview/publish/${record.id}/${on ? "on" : "off"}`,
+    { headers, timeout: 120_000 },
+  )
+  if (!res.ok()) {
+    throw new Error(
+      `publish ${name} ${on} -> ${res.status()}: ${await res.text()}`,
+    )
+  }
+}
+
+// Mint-or-find the success record, then publish it through the API - the
+// assertions stay on the public UI.
+export async function ensurePublishedRecord(page: Page, tutorialName: string) {
+  const existing = await findDataviewRecord(page, tutorialName)
+  if (!existing) {
+    // Minting costs a real workflow run (see RUN_TIMEOUT_MS). RUN_TIMEOUT_MS is
+    // env-overridable, so raise a caller's budget, never lower it.
+    test.setTimeout(Math.max(test.info().timeout, RUN_TEST_TIMEOUT_MS))
+    await openWorkspace(page, DATA_WS)
+    await ensureCompletedTutorialRun(page, DATA_WS, tutorialName)
+    // The record registers slightly after "Workflow finished"
+    await expect
+      .poll(async () => Boolean(await findDataviewRecord(page, tutorialName)), {
+        timeout: 90_000,
+      })
+      .toBe(true)
+  }
+  await setPublished(page, tutorialName, true)
+}
+
 // Shared routing contract fixture: sourcing the mock bodies from it keeps them
 // on the real response shape and guarantees no body carries a user_id.
 const PREMIUM_CONTRACT = JSON.parse(

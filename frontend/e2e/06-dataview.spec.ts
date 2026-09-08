@@ -1,4 +1,4 @@
-import { test, expect, Page } from "@playwright/test"
+import { test, expect, Page, Response } from "@playwright/test"
 
 import {
   apiHeaders,
@@ -11,6 +11,9 @@ import {
   ensureWorkspaceId,
   ensureCompletedTutorialRun,
   ensurePublishableAccount,
+  ensurePublishedRecord,
+  findDataviewRecord,
+  setPublished,
   filterWorkspace,
   openWorkspace,
   apiUrl,
@@ -101,7 +104,7 @@ async function ensureDataviewRows(page: Page): Promise<number> {
 // the dataview (the listing filters on ExperimentRecord.success), the sample
 // data ships metadata YAML only, and global setup wipes the e2e-* workspaces
 // each run - so the first test here always pays for a real snakemake run. The
-// public group below needs no records and stays in the default lane.
+// public group below publishes one of them, so it is @slow for the same reason.
 test.describe("Private Dataview @slow", () => {
   test.use({ storageState: freeStorageState() })
 
@@ -658,54 +661,126 @@ test.describe("Public Dataview", () => {
     await expect(headers.filter({ hasText: "Publish" })).toHaveCount(0)
   })
 
-  test("DV-10 - Public dataview loads without authentication", async ({
+  test("DV-10 - Public dataview loads without authentication @slow", async ({
     page,
+    browser,
   }) => {
+    skipWithoutCreds()
+    // The publish, the reload ladder and the unpublish in finally each carry
+    // their own multi-minute timeout; the budget has to clear their sum, or a
+    // slow publish times the test out and takes the cleanup with it
+    test.setTimeout(15 * 60_000)
     // Row 813: the grid's thumbnails are served by /api/visualizations/*, which
     // only reaches the public tier through an ALB rule keyed on the
     // DATAVIEW_PUBLIC_REQUEST header the app sends. A broken rule leaves the
     // page loading fine with every image missing, so the statuses are the row.
-    const thumbnails: number[] = []
-    page.on("response", (r) => {
-      if (r.url().includes("/api/visualizations/thumbnail/")) {
-        thumbnails.push(r.status())
-      }
+    // Every publishing test here reverts its own state, so the row that the
+    // thumbnails come from has to be this test's own. A new context inherits
+    // neither the baseURL nor the session.
+    const publisher = await browser.newContext({
+      baseURL: process.env.BASE_URL || "http://localhost:3000",
+      storageState: freeStorageState(),
     })
+    const publisherPage = await publisher.newPage()
 
-    const response = await page.goto("/public")
-    expect(response?.status()).toBe(200)
-    await expect(
-      page.locator("text=OptiNiSt Public Repository").first(),
-    ).toBeVisible({ timeout: 15_000 })
-    await expect(page).not.toHaveURL(/\/login/)
+    let unpublishAfter = false
+    // Inside the try: a publish whose response is lost still committed, so
+    // setup has to reach the cleanup too
+    try {
+      ensurePublishableAccount()
+      await gotoDashboard(publisherPage)
+      // Read the prior state before mutating it - a publish that throws
+      // half-way still committed, and the cleanup must leave a pre-existing
+      // public record public
+      const before = await findDataviewRecord(publisherPage, BASE_RECORD)
+      unpublishAfter = before?.publish_status !== 1
+      await ensurePublishedRecord(publisherPage, BASE_RECORD)
 
-    await expect
-      .poll(() => thumbnails.length, {
-        timeout: 30_000,
-        message:
-          "the public grid requested no thumbnails - if the grid is empty this " +
-          "environment has no published records, which is a missing fixture " +
-          "rather than a broken ALB rule (publish one, or run DV-20 first)",
-      })
-      .toBeGreaterThan(0)
-    // The poll returns on the FIRST response, so filtering here judged one or
-    // two thumbnails and let a partial regression through. Wait for the grid to
-    // stop requesting before reading the whole set.
-    let settled = 0
-    await expect
-      .poll(
-        () => {
-          const stable = thumbnails.length === settled
-          settled = thumbnails.length
-          return stable
-        },
-        { timeout: 30_000, intervals: [2_000] },
-      )
-      .toBe(true)
-    expect(
-      thumbnails.filter((status) => status !== 200),
-      `thumbnail responses that were not 200 (of ${thumbnails.length})`,
-    ).toEqual([])
+      // A record whose PNG generation failed falls back to its source TIFF,
+      // which the grid renders through ImagePlotSimpleWithLoading and never
+      // requests a thumbnail for. Without this the ladder below blames the ALB
+      // rule for a bad fixture.
+      const published = await findDataviewRecord(publisherPage, BASE_RECORD)
+      expect(
+        published?.thumbnails?.image_url ?? "",
+        `${BASE_RECORD} has no _thumb.png thumbnail - its PNG generation ` +
+          "failed at mint time, so the grid requests no thumbnails for it",
+      ).toContain("_thumb.png")
+
+      // One anonymous load of the public grid, resolving to every thumbnail
+      // status it requested. Buffer and listener are per attempt, so a
+      // response landing between two attempts is dropped rather than counted
+      // against the next one.
+      const loadPublicGrid = async () => {
+        const thumbnails: number[] = []
+        const collect = (r: Response) => {
+          if (r.url().includes("/api/visualizations/thumbnail/")) {
+            thumbnails.push(r.status())
+          }
+        }
+        page.on("response", collect)
+        try {
+          const response = await page.goto("/public")
+          expect(response?.status()).toBe(200)
+          await expect(
+            page.locator("text=OptiNiSt Public Repository").first(),
+          ).toBeVisible({ timeout: 15_000 })
+          await expect(page).not.toHaveURL(/\/login/)
+
+          await expect
+            .poll(() => thumbnails.length, {
+              timeout: 30_000,
+              message:
+                `the public grid requested no thumbnails - ${BASE_RECORD} ` +
+                "was published above, so an empty grid is the public " +
+                "listing failing, not a missing fixture",
+            })
+            .toBeGreaterThan(0)
+          // The poll returns on the FIRST response, so filtering here judged
+          // one or two thumbnails and let a partial regression through. Wait
+          // for the grid to stop requesting before reading the whole set.
+          let settled = 0
+          await expect
+            .poll(
+              () => {
+                const stable = thumbnails.length === settled
+                settled = thumbnails.length
+                return stable
+              },
+              { timeout: 30_000, intervals: [2_000] },
+            )
+            .toBe(true)
+          return thumbnails
+        } finally {
+          page.off("response", collect)
+        }
+      }
+
+      // The record published above syncs from S3 on its first anonymous read
+      // and its thumbnail 423s while that lock is held, which is what the
+      // grid's own "Retry download" is for. A broken ALB rule never turns
+      // into a 200, so reloading forgives the transient without the row.
+      // toPass, not poll: poll calls its function outside its own try, so a
+      // listing lag that throws inside loadPublicGrid would end the ladder on
+      // the first attempt with a message blaming the public listing for a
+      // condition it was given 30s of the ladder's 150s to settle.
+      await expect(async () => {
+        const seen = await loadPublicGrid()
+        expect(
+          seen.filter((status) => status !== 200),
+          `thumbnail responses that were not 200 (of ${seen.length}) - a ` +
+            "status that never clears means the ALB rule keyed on " +
+            "DATAVIEW_PUBLIC_REQUEST is not routing them to the public tier",
+        ).toEqual([])
+      }).toPass({ timeout: 150_000, intervals: [5_000] })
+    } finally {
+      // A failed assertion must not leave the record published, and a record
+      // that was already public before the row must stay that way
+      if (unpublishAfter) {
+        await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
+      }
+      await publisher.close()
+    }
   })
 
   test("DV-11 - Public API is open, private API rejects a bad token", async ({

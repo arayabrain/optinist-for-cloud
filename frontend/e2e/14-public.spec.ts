@@ -3,19 +3,17 @@ import { test, expect, Browser, Locator, Page } from "@playwright/test"
 import {
   CLOUDWATCH_POLL,
   PUBLIC_LOG_GROUP,
-  apiHeaders,
   apiUrl,
   cloudwatchHas,
   isLocalBaseUrl,
-  ensureCompletedTutorialRun,
   ensurePublishableAccount,
-  ensureWorkspaceId,
+  ensurePublishedRecord,
+  findDataviewRecord,
   filterWorkspace,
   freeStorageState,
   gotoDashboard,
-  openWorkspace,
+  setPublished,
   skipWithoutCreds,
-  RUN_TEST_TIMEOUT_MS,
   DATA_WS,
 } from "./helpers"
 
@@ -177,65 +175,6 @@ test.describe("Frontend error reporting", () => {
 // nodes, Tutorial4 the HDF5 and MAT ones.
 // ---------------------------------------------------------------------------
 
-type DataviewItem = { id: number; name?: string }
-
-// Scoped to DATA_WS: an unscoped name match could publish (and expose) a
-// same-named record from another workspace on a shared environment
-let dataWsId = 0
-
-async function findRecord(
-  page: Page,
-  name: string,
-): Promise<DataviewItem | undefined> {
-  if (!dataWsId) dataWsId = await ensureWorkspaceId(page, DATA_WS)
-  const headers = await apiHeaders(page)
-  const res = await page.request.get(
-    `${apiUrl()}/api/dataview?limit=100&offset=0&workspace_id=${dataWsId}`,
-    { headers },
-  )
-  if (!res.ok()) {
-    throw new Error(`GET /api/dataview ${res.status()}: ${await res.text()}`)
-  }
-  const { items } = await res.json()
-  return (items as DataviewItem[]).find((record) => record.name === name)
-}
-
-async function setPublished(page: Page, name: string, on: boolean) {
-  const record = await findRecord(page, name)
-  if (!record) {
-    if (!on) return
-    throw new Error(`no dataview record named ${name} to publish`)
-  }
-  const headers = await apiHeaders(page)
-  const res = await page.request.post(
-    `${apiUrl()}/api/dataview/publish/${record.id}/${on ? "on" : "off"}`,
-    { headers },
-  )
-  if (!res.ok()) {
-    throw new Error(
-      `publish ${name} ${on} -> ${res.status()}: ${await res.text()}`,
-    )
-  }
-}
-
-// Mint-or-find the success record, then publish it through the API - the
-// assertions stay on the public UI
-async function ensurePublishedRecord(page: Page, tutorialName: string) {
-  if (!(await findRecord(page, tutorialName))) {
-    // Minting costs a real workflow run (see RUN_TIMEOUT_MS)
-    test.setTimeout(RUN_TEST_TIMEOUT_MS)
-    await openWorkspace(page, DATA_WS)
-    await ensureCompletedTutorialRun(page, DATA_WS, tutorialName)
-    // The record registers slightly after "Workflow finished"
-    await expect
-      .poll(async () => Boolean(await findRecord(page, tutorialName)), {
-        timeout: 90_000,
-      })
-      .toBe(true)
-  }
-  await setPublished(page, tutorialName, true)
-}
-
 // The public page must be readable with no session at all; the shared
 // storage state is cleared explicitly because a new context inherits it
 async function anonymousPage(browser: Browser): Promise<Page> {
@@ -300,9 +239,14 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    await ensurePublishedRecord(page, "Tutorial4")
+    // Read the prior state before mutating it, and publish inside the try - a
+    // publish that throws half-way still committed, so it has to reach the
+    // cleanup, which must leave a pre-existing public record public
+    const before = await findDataviewRecord(page, "Tutorial4")
+    const unpublishAfter = before?.publish_status !== 1
     const viewer = await anonymousPage(browser)
     try {
+      await ensurePublishedRecord(page, "Tutorial4")
       const dialog = await openPublicInputs(viewer, "Tutorial4")
       for (const dataType of ["hdf5", "matlab"]) {
         await expect(
@@ -311,8 +255,11 @@ test.describe("Public input data loads @slow", () => {
       }
     } finally {
       await viewer.context().close()
-      // Best-effort: a cleanup failure must not mask the assertion that failed
-      await setPublished(page, "Tutorial4", false).catch(() => {})
+      // Best-effort: a cleanup failure must not mask the assertion that
+      // failed, and a record that was already public must stay that way
+      if (unpublishAfter) {
+        await setPublished(page, "Tutorial4", false).catch(() => {})
+      }
     }
   })
 
@@ -320,9 +267,14 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    await ensurePublishedRecord(page, "Tutorial1")
+    // Read the prior state before mutating it, and publish inside the try - a
+    // publish that throws half-way still committed, so it has to reach the
+    // cleanup, which must leave a pre-existing public record public
+    const before = await findDataviewRecord(page, "Tutorial1")
+    const unpublishAfter = before?.publish_status !== 1
     const viewer = await anonymousPage(browser)
     try {
+      await ensurePublishedRecord(page, "Tutorial1")
       const dialog = await openPublicInputs(viewer, "Tutorial1")
       // The CSV panel renders a data table, the TIFF one a plotly image
       await expect(
@@ -333,8 +285,11 @@ test.describe("Public input data loads @slow", () => {
       ).toBeVisible({ timeout: 120_000 })
     } finally {
       await viewer.context().close()
-      // Best-effort: a cleanup failure must not mask the assertion that failed
-      await setPublished(page, "Tutorial1", false).catch(() => {})
+      // Best-effort: a cleanup failure must not mask the assertion that
+      // failed, and a record that was already public must stay that way
+      if (unpublishAfter) {
+        await setPublished(page, "Tutorial1", false).catch(() => {})
+      }
     }
   })
 })
