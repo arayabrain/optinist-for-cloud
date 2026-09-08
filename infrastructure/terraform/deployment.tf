@@ -11,7 +11,10 @@ resource "null_resource" "build_and_deploy" {
     git_branch = var.git_branch
     # Force rebuild when ECR repo changes
     ecr_repo = local.ecr_repository_url
-    # Force rebuild when code changes
+    # Force rebuild when code changes. Without this the trigger set is
+    # constant across commits on a branch, so a routine apply skips the
+    # image build entirely.
+    source_revision = data.external.tf_build_info.result.git_commit
   }
 
   provisioner "local-exec" {
@@ -136,6 +139,11 @@ resource "null_resource" "deploy_to_ecs" {
   triggers = {
     git_branch = var.git_branch
     ecr_repo   = local.ecr_repository_url
+    # depends_on orders the two but does not force replacement, so without
+    # this the redeployment does not run after a freshly pushed image. The
+    # build's id changes whenever it is recreated, which is exactly when a
+    # new image exists to roll out.
+    build_id = null_resource.build_and_deploy.id
   }
 
   provisioner "local-exec" {

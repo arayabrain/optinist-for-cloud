@@ -52,10 +52,29 @@ export function trackEvent(
   window.dataLayer?.push({ ...params, event })
 }
 
+// Module state alone is not reactive, so a component that read the consent at
+// mount never learns about a decision made elsewhere in the same document --
+// the banner and the Account page render side by side on a first visit.
+const CONSENT_CHANGE_EVENT = "analytics-consent-change"
+
+export function subscribeAnalyticsConsent(
+  listener: (decision: ConsentDecision) => void,
+): () => void {
+  const handler = (event: Event) =>
+    listener((event as CustomEvent<ConsentDecision>).detail)
+  window.addEventListener(CONSENT_CHANGE_EVENT, handler)
+  return () => window.removeEventListener(CONSENT_CHANGE_EVENT, handler)
+}
+
 export function setAnalyticsConsent(decision: ConsentDecision): void {
   _sessionConsent = decision
   safeLocalStorage.setItem(CONSENT_STORAGE_KEY, decision)
   updateGtagConsent(decision)
+  window.dispatchEvent(
+    new CustomEvent<ConsentDecision>(CONSENT_CHANGE_EVENT, {
+      detail: decision,
+    }),
+  )
 
   const pending = _pending
   _pending = []

@@ -278,8 +278,27 @@ check_load_balancer() {
 check_load_balancer &
 LB_CHECK_PID=$!
 
-# Wait for all background processes to complete
-# This ensures the container keeps running as long as the application is running
-wait $APP_PID
-wait $LB_CHECK_PID
-[ -n "$CLEANUP_PID" ] && wait "$CLEANUP_PID" 2>/dev/null
+# Supervise the critical children. Waiting on $APP_PID alone means a cleanup
+# worker that dies during normal operation goes unnoticed: the shell keeps
+# waiting, ECS keeps reporting the task healthy, and this instance silently
+# stops cleaning up its own EBS data -- which no other instance can do for it.
+# `wait -n` returns as soon as either one exits, so the task can be replaced.
+#
+# The load balancer check is deliberately excluded: it finishes on its own
+# within a few minutes and its exit is not a failure of the task.
+# `|| EXIT_STATUS=$?` keeps a non-zero child status from tripping `set -e`
+# before the reason has been logged.
+EXIT_STATUS=0
+wait -n "$APP_PID" ${CLEANUP_PID:+"$CLEANUP_PID"} || EXIT_STATUS=$?
+
+if ! kill -0 "$APP_PID" 2>/dev/null; then
+    echo "Application exited (status: $EXIT_STATUS), stopping the task"
+elif [ -n "$CLEANUP_PID" ] && ! kill -0 "$CLEANUP_PID" 2>/dev/null; then
+    echo "Cleanup worker exited unexpectedly (status: $EXIT_STATUS), stopping the task"
+fi
+
+# Stop the surviving child. `|| true` because the handler's last command is a
+# kill that fails once a process is already gone, which `set -e` would
+# otherwise treat as this script's exit status.
+_forward_shutdown || true
+exit "$EXIT_STATUS"
