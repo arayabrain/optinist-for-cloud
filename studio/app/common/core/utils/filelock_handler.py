@@ -13,7 +13,9 @@ class FileLockUtils:
         """
         file_basename = os.path.basename(file_path)
 
-        file_path_hash = hashlib.md5(file_path.encode()).hexdigest()
+        # SHA-256 rather than MD5; truncating to 16 hex chars keeps the
+        # existing lockfile name length.
+        file_path_hash = hashlib.sha256(file_path.encode()).hexdigest()
         file_path_hash = file_path_hash[:16]
 
         lockfile_path = os.path.join(
