@@ -307,7 +307,11 @@ async def cancel_run(workspace_id: str, uid: str):
         )
 
 
-@router.post("/filter/{workspace_id}/{uid}/{node_id}", response_model=bool)
+@router.post(
+    "/filter/{workspace_id}/{uid}/{node_id}",
+    response_model=bool,
+    dependencies=[Depends(is_workspace_owner)],
+)
 async def apply_filter(
     workspace_id: str,
     uid: str,
