@@ -1618,7 +1618,12 @@ export function ensurePublishableAccount() {
   }
 }
 
-type DataviewItem = { id: number; name?: string; publish_status?: number }
+type DataviewItem = {
+  id: number
+  name?: string
+  publish_status?: number
+  thumbnails?: { image_url?: string | null }
+}
 
 // Scoped to DATA_WS: an unscoped name match could publish (and expose) a
 // same-named record from another workspace on a shared environment
@@ -1662,16 +1667,13 @@ export async function setPublished(page: Page, name: string, on: boolean) {
 }
 
 // Mint-or-find the success record, then publish it through the API - the
-// assertions stay on the public UI. Returns whether it was ALREADY published,
-// so a caller's cleanup leaves a pre-existing public record public.
-export async function ensurePublishedRecord(
-  page: Page,
-  tutorialName: string,
-): Promise<boolean> {
+// assertions stay on the public UI.
+export async function ensurePublishedRecord(page: Page, tutorialName: string) {
   const existing = await findDataviewRecord(page, tutorialName)
   if (!existing) {
-    // Minting costs a real workflow run (see RUN_TIMEOUT_MS)
-    test.setTimeout(RUN_TEST_TIMEOUT_MS)
+    // Minting costs a real workflow run (see RUN_TIMEOUT_MS). RUN_TIMEOUT_MS is
+    // env-overridable, so raise a caller's budget, never lower it.
+    test.setTimeout(Math.max(test.info().timeout, RUN_TEST_TIMEOUT_MS))
     await openWorkspace(page, DATA_WS)
     await ensureCompletedTutorialRun(page, DATA_WS, tutorialName)
     // The record registers slightly after "Workflow finished"
@@ -1682,7 +1684,6 @@ export async function ensurePublishedRecord(
       .toBe(true)
   }
   await setPublished(page, tutorialName, true)
-  return existing?.publish_status === 1
 }
 
 // Shared routing contract fixture: sourcing the mock bodies from it keeps them

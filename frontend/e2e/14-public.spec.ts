@@ -8,6 +8,7 @@ import {
   isLocalBaseUrl,
   ensurePublishableAccount,
   ensurePublishedRecord,
+  findDataviewRecord,
   filterWorkspace,
   freeStorageState,
   gotoDashboard,
@@ -238,9 +239,14 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    const wasPublished = await ensurePublishedRecord(page, "Tutorial4")
+    // Read the prior state before mutating it, and publish inside the try - a
+    // publish that throws half-way still committed, so it has to reach the
+    // cleanup, which must leave a pre-existing public record public
+    const before = await findDataviewRecord(page, "Tutorial4")
+    const unpublishAfter = before?.publish_status !== 1
     const viewer = await anonymousPage(browser)
     try {
+      await ensurePublishedRecord(page, "Tutorial4")
       const dialog = await openPublicInputs(viewer, "Tutorial4")
       for (const dataType of ["hdf5", "matlab"]) {
         await expect(
@@ -251,7 +257,7 @@ test.describe("Public input data loads @slow", () => {
       await viewer.context().close()
       // Best-effort: a cleanup failure must not mask the assertion that
       // failed, and a record that was already public must stay that way
-      if (!wasPublished) {
+      if (unpublishAfter) {
         await setPublished(page, "Tutorial4", false).catch(() => {})
       }
     }
@@ -261,9 +267,14 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    const wasPublished = await ensurePublishedRecord(page, "Tutorial1")
+    // Read the prior state before mutating it, and publish inside the try - a
+    // publish that throws half-way still committed, so it has to reach the
+    // cleanup, which must leave a pre-existing public record public
+    const before = await findDataviewRecord(page, "Tutorial1")
+    const unpublishAfter = before?.publish_status !== 1
     const viewer = await anonymousPage(browser)
     try {
+      await ensurePublishedRecord(page, "Tutorial1")
       const dialog = await openPublicInputs(viewer, "Tutorial1")
       // The CSV panel renders a data table, the TIFF one a plotly image
       await expect(
@@ -276,7 +287,7 @@ test.describe("Public input data loads @slow", () => {
       await viewer.context().close()
       // Best-effort: a cleanup failure must not mask the assertion that
       // failed, and a record that was already public must stay that way
-      if (!wasPublished) {
+      if (unpublishAfter) {
         await setPublished(page, "Tutorial1", false).catch(() => {})
       }
     }

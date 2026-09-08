@@ -12,6 +12,7 @@ import {
   ensureCompletedTutorialRun,
   ensurePublishableAccount,
   ensurePublishedRecord,
+  findDataviewRecord,
   setPublished,
   filterWorkspace,
   openWorkspace,
@@ -103,7 +104,7 @@ async function ensureDataviewRows(page: Page): Promise<number> {
 // the dataview (the listing filters on ExperimentRecord.success), the sample
 // data ships metadata YAML only, and global setup wipes the e2e-* workspaces
 // each run - so the first test here always pays for a real snakemake run. The
-// public group below needs no records and stays in the default lane.
+// public group below publishes one of them, so it is @slow for the same reason.
 test.describe("Private Dataview @slow", () => {
   test.use({ storageState: freeStorageState() })
 
@@ -668,7 +669,7 @@ test.describe("Public Dataview", () => {
     // The publish, the reload ladder and the unpublish in finally each carry
     // their own multi-minute timeout; the budget has to clear their sum, or a
     // slow publish times the test out and takes the cleanup with it
-    test.setTimeout(10 * 60_000)
+    test.setTimeout(15 * 60_000)
     // Row 813: the grid's thumbnails are served by /api/visualizations/*, which
     // only reaches the public tier through an ALB rule keyed on the
     // DATAVIEW_PUBLIC_REQUEST header the app sends. A broken rule leaves the
@@ -682,13 +683,29 @@ test.describe("Public Dataview", () => {
     })
     const publisherPage = await publisher.newPage()
 
-    let wasPublished = false
+    let unpublishAfter = false
     // Inside the try: a publish whose response is lost still committed, so
     // setup has to reach the cleanup too
     try {
       ensurePublishableAccount()
       await gotoDashboard(publisherPage)
-      wasPublished = await ensurePublishedRecord(publisherPage, BASE_RECORD)
+      // Read the prior state before mutating it - a publish that throws
+      // half-way still committed, and the cleanup must leave a pre-existing
+      // public record public
+      const before = await findDataviewRecord(publisherPage, BASE_RECORD)
+      unpublishAfter = before?.publish_status !== 1
+      await ensurePublishedRecord(publisherPage, BASE_RECORD)
+
+      // A record whose PNG generation failed falls back to its source TIFF,
+      // which the grid renders through ImagePlotSimpleWithLoading and never
+      // requests a thumbnail for. Without this the ladder below blames the ALB
+      // rule for a bad fixture.
+      const published = await findDataviewRecord(publisherPage, BASE_RECORD)
+      expect(
+        published?.thumbnails?.image_url ?? "",
+        `${BASE_RECORD} has no _thumb.png thumbnail - its PNG generation ` +
+          "failed at mint time, so the grid requests no thumbnails for it",
+      ).toContain("_thumb.png")
 
       // One anonymous load of the public grid, resolving to every thumbnail
       // status it requested. Buffer and listener are per attempt, so a
@@ -759,7 +776,7 @@ test.describe("Public Dataview", () => {
     } finally {
       // A failed assertion must not leave the record published, and a record
       // that was already public before the row must stay that way
-      if (!wasPublished) {
+      if (unpublishAfter) {
         await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
       }
       await publisher.close()
