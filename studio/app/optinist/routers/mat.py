@@ -11,6 +11,10 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageSimpleReader,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.utils.path_guard import (
+    secure_component,
+    secure_input_relpath,
+)
 from studio.app.common.routers.files import get_mat_structure_dict
 from studio.app.const import MetadataCacheFile
 from studio.app.dir_path import DIRPATH
@@ -97,6 +101,9 @@ async def get_matfiles(
     First checks for cached structure in .mat_structure.json (downloaded from S3
     if remote storage is available). Falls back to extracting from the file directly.
     """
+    workspace_id = secure_component(workspace_id)
+    file_path = secure_input_relpath(workspace_id, file_path)
+
     # Try to download cached structure from S3 first
     if RemoteStorageController.is_available():
         try:

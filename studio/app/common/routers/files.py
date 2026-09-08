@@ -34,6 +34,10 @@ from studio.app.common.core.utils.filepath_creater import (
     create_directory,
     join_filepath,
 )
+from studio.app.common.core.utils.path_guard import (
+    secure_component,
+    secure_input_relpath,
+)
 from studio.app.common.core.workspace.workspace_data_capacity_services import (
     WorkspaceDataCapacityService,
 )
@@ -471,6 +475,7 @@ def _build_tree_from_remote_files(
     dependencies=[Depends(is_workspace_available)],
 )
 async def get_files(workspace_id: str, file_type: str = None):
+    workspace_id = secure_component(workspace_id)
     if file_type == FILETYPE.IMAGE:
         return DirTreeGetter.get_tree(workspace_id, ACCEPT_FILE_EXT.TIFF_EXT.value)
     elif file_type == FILETYPE.CSV:
@@ -498,6 +503,7 @@ async def get_files_merged(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     """Get merged file tree from local filesystem and S3."""
+    workspace_id = secure_component(workspace_id)
     # 1. Download .image_shape.json from S3 if available (for shape data)
     if RemoteStorageController.is_available():
         try:
@@ -561,6 +567,8 @@ async def sync_input_file(
     background_tasks: BackgroundTasks,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    workspace_id = secure_component(workspace_id)
+    filename = secure_input_relpath(workspace_id, filename)
     """Download a specific input file from S3 to local storage.
 
     Used by config dialogs (CSV Settings, HDF5/MATLAB Structure) that need
@@ -603,6 +611,8 @@ async def sync_input_file(
     dependencies=[Depends(is_workspace_owner)],
 )
 async def set_shape(workspace_id: str, filepath: str):
+    workspace_id = secure_component(workspace_id)
+    filepath = secure_input_relpath(workspace_id, filepath)
     try:
         update_image_shape(workspace_id, filepath)
     except Exception as e:
@@ -624,6 +634,8 @@ async def create_file(
     db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    workspace_id = secure_component(workspace_id)
+    filename = secure_input_relpath(workspace_id, filename)
     try:
         # Check storage quota before allowing file upload
         # (use cached data to avoid timeout)
@@ -765,6 +777,8 @@ async def delete_file(
     db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    workspace_id = secure_component(workspace_id)
+    filename = secure_input_relpath(workspace_id, filename)
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filename])
     local_exists = os.path.exists(filepath)
     remote_exists = False
@@ -826,6 +840,8 @@ async def delete_file(
     dependencies=[Depends(is_workspace_available)],
 )
 async def get_download_status(workspace_id: str, file_name: str):
+    workspace_id = secure_component(workspace_id)
+    file_name = secure_input_relpath(workspace_id, file_name)
     filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, file_name])
     try:
         return DOWNLOAD_STATUS[filepath]
@@ -843,6 +859,7 @@ async def download_file(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    workspace_id = secure_component(workspace_id)
     path = PurePath(urlparse(file.url).path)
     if path.suffix not in ACCEPT_FILE_EXT.ALL_EXT.value:
         raise HTTPException(status_code=400, detail="Invalid url")

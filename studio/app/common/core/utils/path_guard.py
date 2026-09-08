@@ -2,7 +2,10 @@ import os
 
 from fastapi import HTTPException, status
 
-from studio.app.common.core.utils.filepath_creater import normalize_output_path
+from studio.app.common.core.utils.filepath_creater import (
+    join_filepath,
+    normalize_output_path,
+)
 from studio.app.dir_path import DIRPATH
 
 _INVALID_PATH_MESSAGE = "Invalid path parameter"
@@ -64,3 +67,13 @@ def secure_output_relpath(path: str) -> str:
     path relative to OUTPUT_DIR so callers can keep using join_filepath().
     """
     return secure_relpath(DIRPATH.OUTPUT_DIR, normalize_output_path(path))
+
+
+def secure_input_relpath(workspace_id: str, path: str) -> str:
+    """Validate a client-supplied input path, relative to the workspace.
+
+    `workspace_id` must already have passed secure_component(); it is part of
+    the base the path is checked against, so an unchecked value would let the
+    path land in another workspace.
+    """
+    return secure_relpath(join_filepath([DIRPATH.INPUT_DIR, workspace_id]), path)
