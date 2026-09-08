@@ -402,23 +402,43 @@ test.describe("Private Dataview @slow", () => {
     if (checked !== on) await setPublish(page, name, on)
   }
 
-  const publicNameCell = (page: Page, name: string) =>
-    page
-      .locator('.MuiDataGrid-cell[data-field="name"]')
-      .getByText(name, { exact: true })
+  // The public listing spans every account, and another account's Tutorial1
+  // is published there too, so the record is pinned by uid instead of by name
+  async function uidOf(page: Page, name: string) {
+    return (
+      await rowByName(page, name)
+        .locator('[data-field="uid"]')
+        .first()
+        .innerText()
+    ).trim()
+  }
+
+  // getByText, not :text-is - the uid sits in a span inside the cell, and the
+  // :text family only matches the smallest element holding the text
+  const publicRow = (page: Page, uid: string) =>
+    page.locator(".MuiDataGrid-row").filter({
+      has: page.locator('[data-field="uid"]').getByText(uid, { exact: true }),
+    })
+
+  // Filtered rather than scanned: the row is otherwise only on the page the
+  // public listing happens to open on
+  async function filterPublicByUid(page: Page, uid: string) {
+    await applyColumnFilter(page, "uid", uid)
+    await page.keyboard.press("Escape")
+  }
 
   test("DV-14 - Publish lists the record publicly; unpublish removes it", async ({
     page,
   }) => {
     await ensurePublish(page, "Tutorial1", false)
     await setPublish(page, "Tutorial1", true)
+    const uid = await uidOf(page, "Tutorial1")
 
     // Listed on the public dataview (S3 sync stays manual — the listing
     // gates on publish_status only)
     await page.goto("/public")
-    await expect(publicNameCell(page, "Tutorial1")).toBeVisible({
-      timeout: 15_000,
-    })
+    await filterPublicByUid(page, uid)
+    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
 
     // Unpublish removes it from the public page
     await page.goto(`/dataview/${dataviewId}`)
@@ -429,20 +449,20 @@ test.describe("Private Dataview @slow", () => {
     await expect(
       page.locator('.MuiDataGrid-columnHeader[data-field="name"]'),
     ).toBeVisible({ timeout: 15_000 })
-    await expect(publicNameCell(page, "Tutorial1")).toHaveCount(0)
+    await filterPublicByUid(page, uid)
+    await expect(publicRow(page, uid)).toHaveCount(0)
   })
 
   test("DV-17 - Public dataview filters by workspace", async ({ page }) => {
     await ensurePublish(page, "Tutorial1", true)
+    const uid = await uidOf(page, "Tutorial1")
     await page.goto("/public")
-    await expect(publicNameCell(page, "Tutorial1")).toBeVisible({
-      timeout: 15_000,
-    })
+    // Unfiltered: the uid match is already unambiguous, and opening the uid
+    // column's menu first leaves it in the DOM for the workspace one to hit
+    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
 
     await filterWorkspace(page, DATA_WS)
-    await expect(publicNameCell(page, "Tutorial1")).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
     // Re-read until the grid has re-fetched: the filter is applied
     // asynchronously, so a single read can still sample the pre-filter rows.
     // Iterating an empty list asserts nothing, so the rows are counted first
