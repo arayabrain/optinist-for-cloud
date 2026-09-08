@@ -114,8 +114,14 @@ test.describe("Workspace", () => {
   })
 
   test("WS-07 - Storage refresh fires once per session", async ({ page }) => {
-    // The gate is a sessionStorage flag the surrounding hook already set, so
-    // clear it and let this test own the session's first refresh
+    // Clear the gate so this test owns the session's first refresh - but wait
+    // for the surrounding hook's own refresh first, or it re-writes the flag
+    // after the clear
+    await page.waitForFunction(
+      () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
+      undefined,
+      { timeout: 30_000 },
+    )
     await page.evaluate(() =>
       sessionStorage.removeItem("storage-refreshed-on-login"),
     )
@@ -145,8 +151,11 @@ test.describe("Workspace", () => {
       await page.waitForFunction(
         () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
         undefined,
-        { timeout: 60_000 },
+        { timeout: 30_000 },
       )
+      // A gate that stopped holding refreshes a tick after /users/me, so give
+      // the route time to issue that POST for the count to see
+      await page.waitForTimeout(2_000)
     }
     expect(refreshes).toHaveLength(1)
   })

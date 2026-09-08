@@ -413,17 +413,25 @@ test.describe("Private Dataview @slow", () => {
     ).trim()
   }
 
-  // getByText, not :text-is - the uid sits in a span inside the cell, and the
-  // :text family only matches the smallest element holding the text
+  // .MuiDataGrid-row skips the header row; getByText, not :text-is, because
+  // the uid sits in a span and :text only matches the smallest element
   const publicRow = (page: Page, uid: string) =>
     page.locator(".MuiDataGrid-row").filter({
       has: page.locator('[data-field="uid"]').getByText(uid, { exact: true }),
     })
 
   // Filtered rather than scanned: the row is otherwise only on the page the
-  // public listing happens to open on
+  // listing happens to open on. The fill is debounced and toHaveCount settles
+  // on its first poll, so wait for the fetch, not the keystroke
   async function filterPublicByUid(page: Page, uid: string) {
+    const applied = page.waitForResponse(
+      (r) =>
+        r.url().includes("/api/public/dataview") &&
+        r.url().includes(`uid=${uid}`),
+      { timeout: 30_000 },
+    )
     await applyColumnFilter(page, "uid", uid)
+    await applied
     await page.keyboard.press("Escape")
   }
 
@@ -457,8 +465,9 @@ test.describe("Private Dataview @slow", () => {
     await ensurePublish(page, "Tutorial1", true)
     const uid = await uidOf(page, "Tutorial1")
     await page.goto("/public")
-    // Unfiltered: the uid match is already unambiguous, and opening the uid
-    // column's menu first leaves it in the DOM for the workspace one to hit
+    // Unfiltered: the uid match is already unambiguous, and the uid column's
+    // menu would still be in the DOM for the workspace one to hit. Reads page
+    // 1 only, which holds every published record today
     await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
 
     await filterWorkspace(page, DATA_WS)
