@@ -1,4 +1,4 @@
-import { test, expect, Page } from "@playwright/test"
+import { test, expect, Page, Response } from "@playwright/test"
 
 import {
   apiHeaders,
@@ -665,8 +665,10 @@ test.describe("Public Dataview", () => {
     browser,
   }) => {
     skipWithoutCreds()
-    // Publishing, and a reload ladder over a fresh publish's S3 sync
-    test.setTimeout(240_000)
+    // The publish, the reload ladder and the unpublish in finally each carry
+    // their own multi-minute timeout; the budget has to clear their sum, or a
+    // slow publish times the test out and takes the cleanup with it
+    test.setTimeout(10 * 60_000)
     // Row 813: the grid's thumbnails are served by /api/visualizations/*, which
     // only reaches the public tier through an ALB rule keyed on the
     // DATAVIEW_PUBLIC_REQUEST header the app sends. A broken rule leaves the
@@ -680,67 +682,86 @@ test.describe("Public Dataview", () => {
     })
     const publisherPage = await publisher.newPage()
 
+    let wasPublished = false
     // Inside the try: a publish whose response is lost still committed, so
     // setup has to reach the cleanup too
     try {
       ensurePublishableAccount()
       await gotoDashboard(publisherPage)
-      await ensurePublishedRecord(publisherPage, BASE_RECORD)
+      wasPublished = await ensurePublishedRecord(publisherPage, BASE_RECORD)
 
-      const thumbnails: number[] = []
-      page.on("response", (r) => {
-        if (r.url().includes("/api/visualizations/thumbnail/")) {
-          thumbnails.push(r.status())
-        }
-      })
-
-      // One anonymous load of the public grid, resolving to the thumbnail
-      // statuses that were not 200
+      // One anonymous load of the public grid, resolving to every thumbnail
+      // status it requested. Buffer and listener are per attempt, so a
+      // response landing between two attempts is dropped rather than counted
+      // against the next one.
       const loadPublicGrid = async () => {
-        thumbnails.length = 0
-        const response = await page.goto("/public")
-        expect(response?.status()).toBe(200)
-        await expect(
-          page.locator("text=OptiNiSt Public Repository").first(),
-        ).toBeVisible({ timeout: 15_000 })
-        await expect(page).not.toHaveURL(/\/login/)
+        const thumbnails: number[] = []
+        const collect = (r: Response) => {
+          if (r.url().includes("/api/visualizations/thumbnail/")) {
+            thumbnails.push(r.status())
+          }
+        }
+        page.on("response", collect)
+        try {
+          const response = await page.goto("/public")
+          expect(response?.status()).toBe(200)
+          await expect(
+            page.locator("text=OptiNiSt Public Repository").first(),
+          ).toBeVisible({ timeout: 15_000 })
+          await expect(page).not.toHaveURL(/\/login/)
 
-        await expect
-          .poll(() => thumbnails.length, {
-            timeout: 30_000,
-            message:
-              `the public grid requested no thumbnails - ${BASE_RECORD} was ` +
-              "published above, so an empty grid is the public listing " +
-              "failing, not a missing fixture",
-          })
-          .toBeGreaterThan(0)
-        // The poll returns on the FIRST response, so filtering here judged one
-        // or two thumbnails and let a partial regression through. Wait for the
-        // grid to stop requesting before reading the whole set.
-        let settled = 0
-        await expect
-          .poll(
-            () => {
-              const stable = thumbnails.length === settled
-              settled = thumbnails.length
-              return stable
-            },
-            { timeout: 30_000, intervals: [2_000] },
-          )
-          .toBe(true)
-        return thumbnails.filter((status) => status !== 200)
+          await expect
+            .poll(() => thumbnails.length, {
+              timeout: 30_000,
+              message:
+                `the public grid requested no thumbnails - ${BASE_RECORD} ` +
+                "was published above, so an empty grid is the public " +
+                "listing failing, not a missing fixture",
+            })
+            .toBeGreaterThan(0)
+          // The poll returns on the FIRST response, so filtering here judged
+          // one or two thumbnails and let a partial regression through. Wait
+          // for the grid to stop requesting before reading the whole set.
+          let settled = 0
+          await expect
+            .poll(
+              () => {
+                const stable = thumbnails.length === settled
+                settled = thumbnails.length
+                return stable
+              },
+              { timeout: 30_000, intervals: [2_000] },
+            )
+            .toBe(true)
+          return thumbnails
+        } finally {
+          page.off("response", collect)
+        }
       }
 
       // The record published above syncs from S3 on its first anonymous read
       // and its thumbnail 423s while that lock is held, which is what the
       // grid's own "Retry download" is for. A broken ALB rule never turns
       // into a 200, so reloading forgives the transient without the row.
-      await expect
-        .poll(loadPublicGrid, { timeout: 150_000, intervals: [5_000] })
-        .toEqual([])
+      // toPass, not poll: poll calls its function outside its own try, so a
+      // listing lag that throws inside loadPublicGrid would end the ladder on
+      // the first attempt with a message blaming the public listing for a
+      // condition it was given 30s of the ladder's 150s to settle.
+      await expect(async () => {
+        const seen = await loadPublicGrid()
+        expect(
+          seen.filter((status) => status !== 200),
+          `thumbnail responses that were not 200 (of ${seen.length}) - a ` +
+            "status that never clears means the ALB rule keyed on " +
+            "DATAVIEW_PUBLIC_REQUEST is not routing them to the public tier",
+        ).toEqual([])
+      }).toPass({ timeout: 150_000, intervals: [5_000] })
     } finally {
-      // A failed assertion must not leave the record published
-      await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
+      // A failed assertion must not leave the record published, and a record
+      // that was already public before the row must stay that way
+      if (!wasPublished) {
+        await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
+      }
       await publisher.close()
     }
   })

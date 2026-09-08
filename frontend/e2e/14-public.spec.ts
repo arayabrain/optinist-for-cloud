@@ -238,7 +238,7 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    await ensurePublishedRecord(page, "Tutorial4")
+    const wasPublished = await ensurePublishedRecord(page, "Tutorial4")
     const viewer = await anonymousPage(browser)
     try {
       const dialog = await openPublicInputs(viewer, "Tutorial4")
@@ -249,8 +249,11 @@ test.describe("Public input data loads @slow", () => {
       }
     } finally {
       await viewer.context().close()
-      // Best-effort: a cleanup failure must not mask the assertion that failed
-      await setPublished(page, "Tutorial4", false).catch(() => {})
+      // Best-effort: a cleanup failure must not mask the assertion that
+      // failed, and a record that was already public must stay that way
+      if (!wasPublished) {
+        await setPublished(page, "Tutorial4", false).catch(() => {})
+      }
     }
   })
 
@@ -258,7 +261,7 @@ test.describe("Public input data loads @slow", () => {
     page,
     browser,
   }) => {
-    await ensurePublishedRecord(page, "Tutorial1")
+    const wasPublished = await ensurePublishedRecord(page, "Tutorial1")
     const viewer = await anonymousPage(browser)
     try {
       const dialog = await openPublicInputs(viewer, "Tutorial1")
@@ -271,8 +274,11 @@ test.describe("Public input data loads @slow", () => {
       ).toBeVisible({ timeout: 120_000 })
     } finally {
       await viewer.context().close()
-      // Best-effort: a cleanup failure must not mask the assertion that failed
-      await setPublished(page, "Tutorial1", false).catch(() => {})
+      // Best-effort: a cleanup failure must not mask the assertion that
+      // failed, and a record that was already public must stay that way
+      if (!wasPublished) {
+        await setPublished(page, "Tutorial1", false).catch(() => {})
+      }
     }
   })
 })
