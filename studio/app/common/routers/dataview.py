@@ -28,6 +28,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.storage.s3_storage_controller import S3StorageController
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
 )
@@ -229,6 +230,10 @@ async def public_reproduce_experiment(
     db: Session = Depends(get_db),
 ):
     # Check target record accessibility
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     record = DataviewService.find_dataview_record(
         db, int(workspace_id), unique_id, published_only=True
     )
@@ -549,6 +554,10 @@ async def private_reproduce_experiment(
     db: Session = Depends(get_db),
 ):
     # Check target record accessibility
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     record = DataviewService.find_dataview_record(db, int(workspace_id), unique_id)
 
     if not record:
