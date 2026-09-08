@@ -465,8 +465,12 @@ resource "aws_ecs_cluster" "main" {
     Name = "${local.env_prefix}-cloud-cluster"
     # Terraform apply provenance (see deploy_info.tf). Traces the running
     # deployment back to the infrastructure/ git revision it was applied from.
+    # TfGitBranch is "-" when the apply ran from a detached HEAD (a tag
+    # checkout); TfGitTag is "-" when HEAD carried no tag. AWS accepts empty
+    # tag values, but "-" reads unambiguously in the console.
     TfGitCommit = data.external.tf_build_info.result.git_commit
-    TfGitBranch = data.external.tf_build_info.result.git_branch
+    TfGitBranch = coalesce(data.external.tf_build_info.result.git_branch, "-")
+    TfGitTag    = coalesce(data.external.tf_build_info.result.git_tag, "-")
   }
 }
 

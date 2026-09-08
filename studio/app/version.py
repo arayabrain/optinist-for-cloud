@@ -39,6 +39,52 @@ def _load_build_info() -> dict:
         return {}
 
 
+def _field(data: dict, key: str) -> str:
+    """Read a BUILD_INFO field, normalising 'not recorded' to an empty string.
+
+    A field can be missing (BUILD_INFO from an older image), empty (the build
+    genuinely had no branch or no tag) or the literal "unknown" (the Docker ARG
+    default, i.e. the build never passed the value in). All of these mean the
+    same thing to a reader, so they collapse to "".
+
+    "HEAD" collapses too: images built before the branch was resolved with
+    `git symbolic-ref` recorded that string for every tag checkout, and it
+    names no ref at all.
+    """
+    value = data.get(key, "")
+    return "" if value in ("", "unknown", "HEAD") else value
+
+
+def _derive_git_ref(commit: str, branch: str, tag: str) -> str:
+    """Summarise which git ref the image was built from.
+
+    A tag checkout leaves HEAD detached, so a tag-based build records a tag and
+    no branch, while a branch build usually records the opposite:
+
+        v1.1.10              built from a tag
+        develop-main         built from a branch
+        develop-main (v1.1.10)   built from a branch whose HEAD also has a tag
+        detached@0cf95d0d    detached HEAD with no tag on it
+
+    The third case is why the branch is not simply dropped when a tag exists:
+    reporting a bare "v1.1.10" there would misread as a tag checkout, which is
+    the exact confusion this whole field is meant to remove.
+
+    Derived on read rather than stored in BUILD_INFO on purpose: BUILD_INFO is
+    written once into an image and can never be corrected, so baking a derived
+    value in would freeze this rule alongside every image ever built.
+    """
+    if branch and tag:
+        return f"{branch} ({tag})"
+    if tag:
+        return tag
+    if branch:
+        return branch
+    if commit:
+        return f"detached@{commit[:8]}"
+    return "N/A"
+
+
 class Version:
     APP_VERSION = get_app_version_from_pyproject()
 
@@ -46,4 +92,7 @@ class Version:
 class BuildInfo:
     _data = _load_build_info()
     GIT_COMMIT = _data.get("git_commit", "N/A")
+    GIT_BRANCH = _field(_data, "git_branch")
+    GIT_TAG = _field(_data, "git_tag")
+    GIT_REF = _derive_git_ref(_field(_data, "git_commit"), GIT_BRANCH, GIT_TAG)
     BUILD_TIMESTAMP = _data.get("build_timestamp", "N/A")

@@ -3,6 +3,7 @@ set -e
 
 # Common Configuration
 REGION="ap-northeast-1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../terraform" && pwd)"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -77,10 +78,14 @@ fi
 
 REPO_NAME=$(echo "$ECR_URI" | sed 's|.*/||')
 
-# Generate version tag and full commit hash
-GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-GIT_COMMIT_FULL=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+# Generate version tag and git provenance (see git_ref_info.sh for why the
+# branch is resolved with symbolic-ref rather than rev-parse --abbrev-ref)
+. "$SCRIPT_DIR/git_ref_info.sh"
+resolve_git_ref_info "$REPO_ROOT"
+GIT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_COMMIT_FULL="$GIT_INFO_COMMIT"
+GIT_BRANCH="$GIT_INFO_BRANCH"
+GIT_TAG="$GIT_INFO_TAG"
 BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ -n "$CUSTOM_TAG" ]; then
     VERSION_TAG="$CUSTOM_TAG"
@@ -100,7 +105,8 @@ echo "  ECR Repo    : ${REPO_NAME}"
 echo "  ECR URI     : ${ECR_URI}"
 echo "  Tags        : latest, ${VERSION_TAG}"
 echo "  Git commit  : ${GIT_COMMIT_FULL} (${GIT_SHA})"
-echo "  Git branch  : ${GIT_BRANCH}"
+echo "  Git branch  : ${GIT_BRANCH:--}"
+echo "  Git tag     : ${GIT_TAG:--}"
 echo "  Build time  : ${BUILD_TIMESTAMP}"
 echo "============================================"
 echo ""
@@ -188,6 +194,7 @@ echo "Building autoscaling Docker image..."
 docker build -f studio/config/docker/Dockerfile \
     --build-arg GIT_COMMIT="${GIT_COMMIT_FULL}" \
     --build-arg GIT_BRANCH="${GIT_BRANCH}" \
+    --build-arg GIT_TAG="${GIT_TAG}" \
     --build-arg BUILD_TIMESTAMP="${BUILD_TIMESTAMP}" \
     -t $REPO_NAME:$IMAGE_TAG .
 

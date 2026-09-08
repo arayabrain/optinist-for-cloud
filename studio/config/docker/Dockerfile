@@ -78,11 +78,16 @@ RUN chmod +x cloud-startup.sh
 # Build metadata — placed last so the changing ARG values only
 # invalidate this layer, not the COPY layers above.
 ARG GIT_COMMIT=unknown
+# GIT_BRANCH is empty when the build ran from a detached HEAD (a tag checkout);
+# GIT_TAG is empty when HEAD carries no tag. Exactly one of the two identifies
+# the build in the usual case — see infrastructure/scripts/git_ref_info.sh.
 ARG GIT_BRANCH=unknown
+ARG GIT_TAG=unknown
 ARG BUILD_TIMESTAMP=unknown
 
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.version="${GIT_TAG}" \
       org.opencontainers.image.created="${BUILD_TIMESTAMP}" \
       org.opencontainers.image.source="https://github.com/arayabrain/araya-optinist"
 
-RUN python3 -c "import json,os,sys; json.dump({'git_commit':os.environ.get('GIT_COMMIT','unknown'),'git_branch':os.environ.get('GIT_BRANCH','unknown'),'build_timestamp':os.environ.get('BUILD_TIMESTAMP','unknown')}, sys.stdout)" > /app/BUILD_INFO
+RUN python3 -c "import json,os,sys; json.dump({k.lower():os.environ.get(k,'unknown') for k in ('GIT_COMMIT','GIT_BRANCH','GIT_TAG','BUILD_TIMESTAMP')}, sys.stdout)" > /app/BUILD_INFO

@@ -292,13 +292,23 @@ The script will display:
 ============================================
   Environment : development
   ECR Repo    : development-optinist-for-cloud
+  ECR URI     : 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/development-optinist-for-cloud
   Tags        : latest, 20260317-143022-a1b2c3d
+  Git commit  : a1b2c3d4e5f6... (a1b2c3d)
+  Git branch  : -
+  Git tag     : v1.1.10
+  Build time  : 2026-03-17T14:30:22Z
 ============================================
 
 Proceed with build and push? (y/N):
 ```
 
 For production, an additional **WARNING** banner is shown.
+
+The commit, branch, tag and build time shown here are baked into the image as
+`/app/BUILD_INFO` and echoed at container startup, so a running container can be traced
+back to its source. Building from a tag leaves HEAD detached, so `Git branch` reads `-`
+and `Git tag` carries the identity (and vice versa when building from a branch).
 
 - If initialized to **development** → pushes to `development-optinist-for-cloud:latest`
 - If initialized to **production** → pushes to `optinist-for-cloud:latest`
@@ -470,9 +480,18 @@ cat .terraform/terraform.tfstate | python3 -c "import sys,json; print(json.load(
 ### Check Which Git Revision Was Applied
 
 Every `terraform apply` stamps the applied `infrastructure/` git revision onto the ECS
-cluster as tags (`TfGitCommit` / `TfGitBranch`), so you can confirm which infrastructure
-version is actually running and detect deploy mistakes. The tag only changes when the git
-commit changes, so no-op applies produce no diff.
+cluster as tags (`TfGitCommit` / `TfGitBranch` / `TfGitTag`), so you can confirm which
+infrastructure version is actually running and detect deploy mistakes. The tags only change
+when the git commit changes, so no-op applies produce no diff.
+
+Branch and tag are recorded separately because checking out a tag leaves HEAD detached, so
+only one of the two is ever set; the other reads `-`:
+
+| Applied from | `TfGitBranch` | `TfGitTag` |
+| --- | --- | --- |
+| tag `v1.1.10` | `-` | `v1.1.10` |
+| branch `develop-main` | `develop-main` | `-` |
+| branch whose HEAD also carries a tag | `develop-main` | `v1.1.10` |
 
 > **Why only the ECS cluster is tagged:** the commit is deliberately *not* added to
 > `provider.default_tags`. A default tag would apply the value to every taggable resource,
