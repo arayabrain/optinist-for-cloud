@@ -50,9 +50,15 @@ def _field(data: dict, key: str) -> str:
     "HEAD" collapses too: images built before the branch was resolved with
     `git symbolic-ref` recorded that string for every tag checkout, and it
     names no ref at all.
+
+    Anything that is not a string collapses as well, so a hand-edited or
+    truncated BUILD_INFO cannot put a non-string onto a class attribute the
+    rest of the code treats as one.
     """
     value = data.get(key, "")
-    return "" if value in ("", "unknown", "HEAD") else value
+    if not isinstance(value, str) or value in ("", "unknown", "HEAD"):
+        return ""
+    return value
 
 
 def _derive_git_ref(commit: str, branch: str, tag: str) -> str:

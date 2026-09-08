@@ -19,6 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve against the infrastructure/ directory so git info reflects the IaC
 # repo, regardless of the caller's working directory.
+# shellcheck source=infrastructure/scripts/git_ref_info.sh
 . "$SCRIPT_DIR/git_ref_info.sh"
 resolve_git_ref_info "$SCRIPT_DIR/.."
 

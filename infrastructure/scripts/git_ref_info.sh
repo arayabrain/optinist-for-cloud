@@ -10,8 +10,11 @@
 #
 # Meant to be sourced, not executed:
 #
+#   # shellcheck source=infrastructure/scripts/git_ref_info.sh
 #   . "$(dirname "$0")/git_ref_info.sh"
 #   resolve_git_ref_info            # optionally: resolve_git_ref_info <dir>
+#
+# Not executable on purpose — running it directly does nothing.
 #
 # Only facts are resolved here. The "which ref was this deployed from?"
 # summary is derived where it is read (see studio/app/version.py BuildInfo),
@@ -38,13 +41,12 @@ resolve_git_ref_info() {
     # version (v1.1.10 over v1.1.9).
     # `|| true` keeps the pipeline non-fatal for callers running under
     # `set -e -o pipefail` (head closing the pipe early is not an error here).
+    #
+    # No `git describe --tags --exact-match` fallback: it reads the same
+    # refs/tags/* this does, so it cannot succeed where this returns nothing —
+    # including a shallow `git clone --depth 1 -b <tag>`, which creates the ref
+    # for the requested tag even under `--no-tags`. It would also answer
+    # *differently* on a commit carrying several tags, preferring the annotated
+    # one over the highest version and breaking the ordering above.
     GIT_INFO_TAG=$(git -C "$repo_dir" tag --points-at HEAD --sort=-v:refname 2>/dev/null | head -n1 || true)
-
-    # Fallback for worktrees without local tag refs (e.g. a shallow clone made
-    # with `git clone --depth 1 -b <tag>`). `--exact-match` is deliberate: the
-    # default `git describe` reports the *nearest* tag, which would record
-    # v1.1.10 for a commit 16 revisions past it.
-    if [ -z "$GIT_INFO_TAG" ]; then
-        GIT_INFO_TAG=$(git -C "$repo_dir" describe --tags --exact-match HEAD 2>/dev/null || echo "")
-    fi
 }

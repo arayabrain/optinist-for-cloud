@@ -4,8 +4,8 @@ set -e
 # Common Configuration
 REGION="ap-northeast-1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TERRAFORM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../terraform" && pwd)"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # ===========================================
 # Parse arguments
@@ -80,6 +80,7 @@ REPO_NAME=$(echo "$ECR_URI" | sed 's|.*/||')
 
 # Generate version tag and git provenance (see git_ref_info.sh for why the
 # branch is resolved with symbolic-ref rather than rev-parse --abbrev-ref)
+# shellcheck source=infrastructure/scripts/git_ref_info.sh
 . "$SCRIPT_DIR/git_ref_info.sh"
 resolve_git_ref_info "$REPO_ROOT"
 GIT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown")

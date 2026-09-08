@@ -310,6 +310,32 @@ The commit, branch, tag and build time shown here are baked into the image as
 back to its source. Building from a tag leaves HEAD detached, so `Git branch` reads `-`
 and `Git tag` carries the identity (and vice versa when building from a branch).
 
+There are three ways to read it back, in increasing order of how much access they need:
+
+```bash
+# 1. From the registry, without pulling — the standard OCI labels
+#    (image.version is the git tag, empty when the image was built from a branch)
+aws ecr batch-get-image --repository-name <REPO> --image-ids imageTag=latest \
+  --region ap-northeast-1 --query 'images[0].imageManifest' --output text
+docker inspect --format '{{json .Config.Labels}}' <IMAGE> | python3 -m json.tool
+
+# 2. From a running container — the raw record
+docker exec <CONTAINER> cat /app/BUILD_INFO
+
+# 3. From the application log — one line, written at every startup
+#    "Git Ref" is a summary: the tag if there is one, else the branch, else
+#    detached@<short sha>. A build from a branch whose HEAD also carries a tag
+#    reads "develop-main (v1.1.10)".
+```
+
+```
+"Studio" application startup complete.
+    # App Version: 1.1.10
+    # Git Commit: 0cf95d0dd37e4b9bda51601bbb12adf4d21173a4
+    # Git Ref: v1.1.10
+    # Build Time: 2026-09-07T02:23:37Z
+```
+
 - If initialized to **development** → pushes to `development-optinist-for-cloud:latest`
 - If initialized to **production** → pushes to `optinist-for-cloud:latest`
 
@@ -487,11 +513,18 @@ when the git commit changes, so no-op applies produce no diff.
 Branch and tag are recorded separately because checking out a tag leaves HEAD detached, so
 only one of the two is ever set; the other reads `-`:
 
-| Applied from | `TfGitBranch` | `TfGitTag` |
-| --- | --- | --- |
-| tag `v1.1.10` | `-` | `v1.1.10` |
-| branch `develop-main` | `develop-main` | `-` |
-| branch whose HEAD also carries a tag | `develop-main` | `v1.1.10` |
+| Applied from | `TfGitBranch` | `TfGitTag` | `TfGitCommit` |
+| --- | --- | --- | --- |
+| tag `v1.1.10` | `-` | `v1.1.10` | the commit |
+| branch `develop-main` | `develop-main` | `-` | the commit |
+| branch whose HEAD also carries a tag | `develop-main` | `v1.1.10` | the commit |
+| not a git checkout at all | `-` | `-` | `unknown` |
+
+The last row is the one to watch: `-` means "no such ref", which covers both a
+detached HEAD and a directory that is not a git checkout. `TfGitCommit =
+unknown` is what tells the two apart, and it means the apply ran from a source
+tree whose revision could not be determined — worth investigating rather than
+recording.
 
 > **Why only the ECS cluster is tagged:** the commit is deliberately *not* added to
 > `provider.default_tags`. A default tag would apply the value to every taggable resource,

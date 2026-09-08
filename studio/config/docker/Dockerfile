@@ -81,8 +81,12 @@ ARG GIT_COMMIT=unknown
 # GIT_BRANCH is empty when the build ran from a detached HEAD (a tag checkout);
 # GIT_TAG is empty when HEAD carries no tag. Exactly one of the two identifies
 # the build in the usual case — see infrastructure/scripts/git_ref_info.sh.
-ARG GIT_BRANCH=unknown
-ARG GIT_TAG=unknown
+# They default to empty rather than "unknown" because absence is a real state
+# for both, and because org.opencontainers.image.version below must not assert
+# a version of "unknown". A build that skipped ecr_build_push.sh is already
+# recognisable from GIT_COMMIT.
+ARG GIT_BRANCH=
+ARG GIT_TAG=
 ARG BUILD_TIMESTAMP=unknown
 
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
@@ -90,4 +94,4 @@ LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.created="${BUILD_TIMESTAMP}" \
       org.opencontainers.image.source="https://github.com/arayabrain/araya-optinist"
 
-RUN python3 -c "import json,os,sys; json.dump({k.lower():os.environ.get(k,'unknown') for k in ('GIT_COMMIT','GIT_BRANCH','GIT_TAG','BUILD_TIMESTAMP')}, sys.stdout)" > /app/BUILD_INFO
+RUN python3 -c "import json,os,sys; json.dump({'git_commit':os.environ.get('GIT_COMMIT','unknown'),'git_branch':os.environ.get('GIT_BRANCH',''),'git_tag':os.environ.get('GIT_TAG',''),'build_timestamp':os.environ.get('BUILD_TIMESTAMP','unknown')}, sys.stdout)" > /app/BUILD_INFO
