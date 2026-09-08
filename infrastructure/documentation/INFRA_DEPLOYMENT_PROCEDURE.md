@@ -310,16 +310,21 @@ The commit, branch, tag and build time shown here are baked into the image as
 back to its source. Building from a tag leaves HEAD detached, so `Git branch` reads `-`
 and `Git tag` carries the identity (and vice versa when building from a branch).
 
-There are three ways to read it back, in increasing order of how much access they need:
+There are three ways to read it back, depending on what you have access to:
 
 ```bash
-# 1. From the registry, without pulling — the standard OCI labels
-#    (image.version is the git tag, empty when the image was built from a branch)
-aws ecr batch-get-image --repository-name <REPO> --image-ids imageTag=latest \
-  --region ap-northeast-1 --query 'images[0].imageManifest' --output text
-docker inspect --format '{{json .Config.Labels}}' <IMAGE> | python3 -m json.tool
+# 1. From the registry, without pulling — the standard OCI labels.
+#    image.version is the git tag, and is empty for an image built from a
+#    branch; image.revision is always the commit.
+#    Needs `docker login` against ECR first (see the build step above).
+docker buildx imagetools inspect \
+  --format '{{json .Image.Config.Labels}}' <ECR_URI>:latest | python3 -m json.tool
 
-# 2. From a running container — the raw record
+#    `aws ecr batch-get-image ... --query 'images[0].imageManifest'` does NOT
+#    show these. It returns the manifest, which holds only the config digest
+#    and the layer list; the labels live in the config blob it points at.
+
+# 2. From a running container — the raw record, including the branch
 docker exec <CONTAINER> cat /app/BUILD_INFO
 
 # 3. From the application log — one line, written at every startup

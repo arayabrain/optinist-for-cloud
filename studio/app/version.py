@@ -27,11 +27,19 @@ def get_app_version_from_pyproject() -> str:
 
 
 def _load_build_info() -> dict:
-    """Load build metadata written by the Dockerfile at build time."""
+    """Load build metadata written by the Dockerfile at build time.
+
+    Always returns a mapping. `json.load` also succeeds on `[]`, `null` and a
+    bare string, and BuildInfo below reads its fields in the class body — which
+    runs on import, from __main_unit__, at startup. Letting a non-object
+    through would turn a damaged BUILD_INFO into an import-time crash of the
+    whole application rather than a degraded log line.
+    """
     build_info_path = os.path.join(DIRPATH.ROOT_DIR, "BUILD_INFO")
     try:
         with open(build_info_path, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
     except FileNotFoundError:
         return {}
     except Exception as e:

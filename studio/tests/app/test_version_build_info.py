@@ -9,6 +9,9 @@ The end-to-end path that produces those fields is covered separately by
 studio/tests/infrastructure/test_git_ref_info.py.
 """
 
+import pytest
+
+from studio.app.dir_path import DIRPATH
 from studio.app.version import BuildInfo, _derive_git_ref, _field, _load_build_info
 
 
@@ -72,11 +75,47 @@ class TestDeriveGitRef:
 
 
 class TestLoadBuildInfo:
-    """BUILD_INFO is absent outside a built image, and that is not an error."""
+    """Nothing a damaged BUILD_INFO contains may reach the caller as non-dict.
 
-    def test_missing_file_yields_an_empty_record(self):
-        # The source checkout has no BUILD_INFO; only the Docker build writes
-        # one. Running from source must not raise.
+    BuildInfo reads its fields in the class body, which runs on import from
+    __main_unit__ at startup, so anything this lets through becomes an
+    import-time crash of the application rather than a degraded log line.
+    """
+
+    @pytest.fixture
+    def build_info(self, tmp_path, monkeypatch):
+        """Point the loader at a directory this test controls.
+
+        Without this the assertions would really be about the ambient image:
+        the test image happens not to write /app/BUILD_INFO, but one built from
+        the production Dockerfile does.
+        """
+        monkeypatch.setattr(DIRPATH, "ROOT_DIR", str(tmp_path))
+
+        def write(content: str):
+            (tmp_path / "BUILD_INFO").write_text(content)
+
+        return write
+
+    def test_missing_file_yields_an_empty_record(self, build_info):
+        # Running from source, where only a Docker build writes the file.
+        assert _load_build_info() == {}
+
+    def test_reads_a_well_formed_record(self, build_info):
+        build_info('{"git_tag": "v1.1.10"}')
+        assert _load_build_info() == {"git_tag": "v1.1.10"}
+
+    def test_truncated_json_yields_an_empty_record(self, build_info):
+        build_info("{truncated")
+        assert _load_build_info() == {}
+
+    @pytest.mark.parametrize("content", ["[]", "null", '"just-a-string"', "17"])
+    def test_valid_json_that_is_not_an_object_yields_an_empty_record(
+        self, build_info, content
+    ):
+        # json.load succeeds on all of these, and BuildInfo would then call
+        # .get() on a list/None/str and raise at import time.
+        build_info(content)
         assert _load_build_info() == {}
 
 
