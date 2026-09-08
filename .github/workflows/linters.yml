@@ -7,6 +7,10 @@ on:
       - 'frontend/**'
       - 'sample_data/**'
 
+# Least-privilege default: jobs opt in to anything beyond reading the repo.
+permissions:
+  contents: read
+
 jobs:
   flake8:
     runs-on: ubuntu-latest

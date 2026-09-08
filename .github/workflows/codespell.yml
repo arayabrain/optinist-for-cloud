@@ -2,6 +2,10 @@ name: Codespell
 on:
   pull_request:
 
+# Least-privilege default: jobs opt in to anything beyond reading the repo.
+permissions:
+  contents: read
+
 jobs:
   codespell:
     runs-on: ubuntu-latest

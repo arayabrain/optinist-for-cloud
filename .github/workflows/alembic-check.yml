@@ -14,6 +14,10 @@ on:
       - "docker-compose.alembic-check.yml"
       - ".github/workflows/alembic-check.yml"
 
+# Least-privilege default: jobs opt in to anything beyond reading the repo.
+permissions:
+  contents: read
+
 jobs:
   alembic_check:
     runs-on: ubuntu-latest

@@ -15,6 +15,10 @@ on:
   # Called by the weekly regression workflow so its jobs are defined once.
   workflow_call:
 
+# Least-privilege default: jobs opt in to anything beyond reading the repo.
+permissions:
+  contents: read
+
 # Test jobs are separated for parallel execution and clearer failure identification
 jobs:
   # Backend and Lambda tests

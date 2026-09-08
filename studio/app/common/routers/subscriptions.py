@@ -718,16 +718,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         body = await request.body()
         sig_header = request.headers.get("stripe-signature")
 
-        logger.debug(f"Webhook received - Body length: {len(body)}")
+        # The signature header and the endpoint secret are credentials: log
+        # only whether they are present, never any part of their value.
         logger.debug(
-            f"Signature header: {sig_header[:50] if sig_header else 'None'}..."
+            f"Webhook received - Body length: {len(body)}, "
+            f"signature header present: {sig_header is not None}"
         )
 
         # Your webhook endpoint secret from Stripe Dashboard
         endpoint_secret = WebhookService.get_webhook_secret()
-
-        secret_display = "***" + endpoint_secret[-4:] if endpoint_secret else "None"
-        logger.debug(f"Using webhook secret: {secret_display}")
 
         # Verify the webhook signature
         try:

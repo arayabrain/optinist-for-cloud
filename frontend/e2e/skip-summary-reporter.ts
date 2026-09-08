@@ -140,5 +140,11 @@ function mappedId(title: string): string | undefined {
 }
 
 function sanitise(reason: string): string {
-  return reason.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim()
+  // Backslash first: escaping it after the pipe would re-escape the pipe's
+  // own backslash and break the markdown table cell.
+  return reason
+    .replace(/\s+/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .trim()
 }
