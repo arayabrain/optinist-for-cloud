@@ -9,12 +9,14 @@ import {
   ensurePublishableAccount,
   ensurePublishedRecord,
   findDataviewRecord,
-  filterWorkspace,
+  dataviewRecord,
+  filterPublicToRecord,
+  publicRow,
+  PublicRecordRef,
   freeStorageState,
   gotoDashboard,
   setPublished,
   skipWithoutCreds,
-  DATA_WS,
 } from "./helpers"
 
 // Public-instance behaviour a browser can observe on any tier: the SPA shell
@@ -186,8 +188,9 @@ async function anonymousPage(browser: Browser): Promise<Page> {
 }
 
 // Open the record's Workflow Inputs dialog from the public listing and
-// return the dialog locator
-async function openPublicInputs(page: Page, name: string) {
+// return the dialog locator. Takes the record rather than the name: the listing
+// spans every account, and a name match with .first() picks silently
+async function openPublicInputs(page: Page, record: PublicRecordRef) {
   await page.goto("/public")
   // Really anonymous: rows 815-818 are about a visitor with no session
   expect(
@@ -195,11 +198,8 @@ async function openPublicInputs(page: Page, name: string) {
   ).toBeNull()
   // Server-side filter first: the grid is virtualized, so an unfiltered
   // listing can hold the target row outside the DOM
-  await filterWorkspace(page, DATA_WS)
-  const row = page
-    .locator(".MuiDataGrid-row")
-    .filter({ has: page.getByText(name, { exact: true }) })
-    .first()
+  expect(await filterPublicToRecord(page, record)).toHaveLength(1)
+  const row = publicRow(page, record)
   await expect(row).toBeVisible({ timeout: 30_000 })
   await row
     .locator(
@@ -247,7 +247,10 @@ test.describe("Public input data loads @slow", () => {
     const viewer = await anonymousPage(browser)
     try {
       await ensurePublishedRecord(page, "Tutorial4")
-      const dialog = await openPublicInputs(viewer, "Tutorial4")
+      const dialog = await openPublicInputs(
+        viewer,
+        await dataviewRecord(page, "Tutorial4"),
+      )
       for (const dataType of ["hdf5", "matlab"]) {
         await expect(
           inputPanel(dialog, dataType).locator(".js-plotly-plot").first(),
@@ -275,7 +278,10 @@ test.describe("Public input data loads @slow", () => {
     const viewer = await anonymousPage(browser)
     try {
       await ensurePublishedRecord(page, "Tutorial1")
-      const dialog = await openPublicInputs(viewer, "Tutorial1")
+      const dialog = await openPublicInputs(
+        viewer,
+        await dataviewRecord(page, "Tutorial1"),
+      )
       // The CSV panel renders a data table, the TIFF one a plotly image
       await expect(
         inputPanel(dialog, "csv").locator(".MuiDataGrid-row").first(),

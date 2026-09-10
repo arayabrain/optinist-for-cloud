@@ -1620,6 +1620,7 @@ export function ensurePublishableAccount() {
 
 type DataviewItem = {
   id: number
+  uid?: string
   name?: string
   publish_status?: number
   thumbnails?: { image_url?: string | null }
@@ -1644,6 +1645,21 @@ export async function findDataviewRecord(
   }
   const { items } = await res.json()
   return (items as DataviewItem[]).find((record) => record.name === name)
+}
+
+// What identifies a public row. The uid alone does not: it is only indexed and
+// records are keyed (workspace_id, uid), so the imported tutorial1 carries the
+// same uid in every account that imports it. `id` is the record's primary key
+export type PublicRecordRef = { id: number; uid: string }
+
+// The private listing is where both halves are readable
+export async function dataviewRecord(
+  page: Page,
+  name: string,
+): Promise<PublicRecordRef> {
+  const record = await findDataviewRecord(page, name)
+  if (!record?.uid) throw new Error(`no dataview record named ${name}`)
+  return { id: record.id, uid: record.uid }
 }
 
 export async function setPublished(page: Page, name: string, on: boolean) {
@@ -1761,17 +1777,64 @@ export async function mockPremiumAssignment(
   )
 }
 
-// Server-side filter on the Workspace column, which is only offered where
-// DataviewRecords renders without a workspaceId: /dataview and /public
-export async function filterWorkspace(page: Page, value: string) {
+// Server-side filter on a column, driven through its header menu. The panel is
+// left open for the caller to close, so a caller that must see the filtered
+// rows can wait for them first.
+export async function filterColumn(page: Page, field: string, value: string) {
   const header = page.locator(
-    '.MuiDataGrid-columnHeader[data-field="workspace_name"]',
+    `.MuiDataGrid-columnHeader[data-field="${field}"]`,
   )
   await header.hover()
   await header.locator(".MuiDataGrid-menuIcon button").click()
   await page.getByRole("menuitem", { name: /^filter$/i }).click()
+  // MUI keeps the popper mounted through its closing transition, and a second
+  // column's menu then makes the Filter item above ambiguous. Scoped to the
+  // grid's own menu: the authed header keeps a hidden profile menu mounted, so
+  // a bare [role="menu"] never reaches zero on a private page
+  await expect(page.locator(".MuiDataGrid-menuList")).toHaveCount(0, {
+    timeout: 5_000,
+  })
   await page.locator(".MuiDataGrid-filterForm input").last().fill(value)
+}
+
+// The Workspace column is only filterable where DataviewRecords renders
+// without a workspaceId: /dataview and /public
+export async function filterWorkspace(page: Page, value: string) {
+  await filterColumn(page, "workspace_name", value)
   await page.keyboard.press("Escape")
+}
+
+// Never identify a row on /public by name, and never by uid alone: the listing
+// spans every account. MUI puts the row id on data-id, and with no custom
+// getRowId that is the record's primary key, so this is exact
+export const publicRow = (page: Page, record: PublicRecordRef) =>
+  page.locator(`.MuiDataGrid-row[data-id="${record.id}"]`)
+
+// Filtered rather than scanned: the row is otherwise only on whichever page of
+// the listing happens to be open. The fill is debounced and the row assertions
+// settle on their first poll, so wait for the fetch, not the keystroke, and
+// hand back what it answered - the rendered count alone rides on task ordering.
+// uid is the only filterable key and the server matches it with `contains` over
+// every account, so the answer is narrowed to the record itself
+export async function filterPublicToRecord(
+  page: Page,
+  record: PublicRecordRef,
+) {
+  const applied = page.waitForResponse(
+    (r) =>
+      r.url().includes("/api/public/dataview") &&
+      new URL(r.url()).searchParams.get("uid") === record.uid,
+    { timeout: 30_000 },
+  )
+  await filterColumn(page, "uid", record.uid)
+  const listed = (await (await applied).json()) as {
+    items?: { id?: number }[]
+  }
+  await page.keyboard.press("Escape")
+  if (!listed.items) {
+    throw new Error(`no items in the public listing for uid=${record.uid}`)
+  }
+  return listed.items.filter((item) => item.id === record.id)
 }
 
 export async function createWorkspace(page: Page, name: string) {

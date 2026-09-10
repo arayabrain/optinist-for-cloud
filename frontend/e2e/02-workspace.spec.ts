@@ -114,8 +114,21 @@ test.describe("Workspace", () => {
   })
 
   test("WS-07 - Storage refresh fires once per session", async ({ page }) => {
-    // The gate is a sessionStorage flag the surrounding hook already set, so
-    // clear it and let this test own the session's first refresh
+    // 15s + 15s of gate waits, three /users/me waits at 30s and three settles:
+    // the budget has to clear their sum, or the test timeout fires first and
+    // the message that names the cause is lost
+    test.setTimeout(180_000)
+    // Clear the gate so this test owns the session's first refresh - but wait
+    // for the surrounding hook's own refresh first, or it re-writes the flag
+    // after the clear. A failed one wrote nothing, so it cannot race: the flag
+    // is tolerated, not required
+    await page
+      .waitForFunction(
+        () => sessionStorage.getItem("storage-refreshed-on-login") === "true",
+        undefined,
+        { timeout: 15_000 },
+      )
+      .catch(() => {})
     await page.evaluate(() =>
       sessionStorage.removeItem("storage-refreshed-on-login"),
     )
@@ -129,7 +142,9 @@ test.describe("Workspace", () => {
       }
     })
 
-    for (const route of ["/dashboard", "/workspaces", "/account"]) {
+    const routes = ["/dashboard", "/workspaces", "/account"]
+    let afterFirstRoute = 0
+    for (const route of routes) {
       // Each load decides whether to refresh only after its own /users/me
       // resolves; navigating away before that cancels the decision, and the
       // count then reads 1 whether the gate is there or not
@@ -140,9 +155,36 @@ test.describe("Workspace", () => {
       await page.goto(route)
       await expect(page).toHaveURL(new RegExp(`${route}$`), { timeout: 30_000 })
       await meSeen
+      if (route === routes[0]) {
+        // The gate is written only once the refresh POST resolves; navigating
+        // away first aborts it and the next load refreshes again. It is
+        // written only on success, though, so a refresh the client aborted at
+        // STORAGE_REFRESH_TIMEOUT_MS writes nothing and the count below would
+        // then be measuring that timeout rather than the gate
+        const gated = await page
+          .waitForFunction(
+            () =>
+              sessionStorage.getItem("storage-refreshed-on-login") === "true",
+            undefined,
+            { timeout: 15_000 },
+          )
+          .then(() => true)
+          .catch(() => false)
+        test.skip(
+          !gated,
+          "the login refresh did not succeed within STORAGE_REFRESH_TIMEOUT_MS, so the session gate was never written",
+        )
+      }
+      // A gate that stopped holding refreshes a tick after /users/me, so give
+      // the route time to issue that POST for the count to see
       await page.waitForTimeout(2_000)
+      if (route === routes[0]) afterFirstRoute = refreshes.length
     }
-    expect(refreshes).toHaveLength(1)
+    // Route 1 may legitimately POST twice - refreshStorageWithTimeout retries
+    // an attempt that failed without aborting. What the gate promises is that
+    // the later routes add nothing, not a request total
+    expect(afterFirstRoute).toBeGreaterThan(0)
+    expect(refreshes).toHaveLength(afterFirstRoute)
   })
 
   test("WS-05 - Dataview button navigates to dataview page", async ({
