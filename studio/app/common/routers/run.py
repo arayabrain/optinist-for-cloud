@@ -27,6 +27,7 @@ from studio.app.common.core.utils.datetime_utils import (
     TIMEZONE_KEY,
     get_datetime_for_timezone,
 )
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.core.workflow.workflow import DataFilterParam, NodeItem, RunItem
 from studio.app.common.core.workflow.workflow_filter import WorkflowNodeDataFilter
 from studio.app.common.core.workflow.workflow_result import (
@@ -319,6 +320,12 @@ async def apply_filter(
     background_tasks: BackgroundTasks,
     params: Optional[DataFilterParam] = None,
 ):
+    # These three become output directory names, so validate them before any
+    # filesystem path is built from them.
+    workspace_id = secure_component(workspace_id)
+    uid = secure_component(uid)
+    node_id = secure_component(node_id)
+
     try:
         WorkflowNodeDataFilter(
             workspace_id=workspace_id, unique_id=uid, node_id=node_id

@@ -106,8 +106,11 @@ class TestCsvCallSiteSyncsOnDemand:
         from studio.app.common.routers.outputs import get_csv
 
         sync_call.return_value = True
-        csv_path = tmp_path / "measurements.csv"
-        csv_path.write_text("1,2\n3,4\n")
+        # Mirror the real layout, INPUT_DIR/<workspace_id>/<file>: get_csv now
+        # rejects a workspace_id that is not a plain path segment.
+        workspace_dir = tmp_path / WORKSPACE_ID
+        workspace_dir.mkdir()
+        (workspace_dir / "measurements.csv").write_text("1,2\n3,4\n")
 
         with patch(f"{MODULE}.DIRPATH") as dirpath, patch(
             f"{MODULE}.JsonWriter.write_as_split"
@@ -117,7 +120,7 @@ class TestCsvCallSiteSyncsOnDemand:
             dirpath.INPUT_DIR = str(tmp_path)
             result = await get_csv(
                 filepath="measurements.csv",
-                workspace_id="",
+                workspace_id=WORKSPACE_ID,
                 remote_bucket_name=REMOTE_BUCKET,
             )
 

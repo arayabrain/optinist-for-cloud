@@ -30,6 +30,11 @@ from studio.app.common.core.utils.filepath_creater import (
     normalize_output_path,
 )
 from studio.app.common.core.utils.json_writer import JsonWriter, save_tiff2json
+from studio.app.common.core.utils.path_guard import (
+    secure_component,
+    secure_output_relpath,
+    secure_relpath,
+)
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
@@ -607,7 +612,7 @@ async def get_inittimedata(
     remote_bucket_name: str = Depends(get_outputs_remote_bucket_name),
 ):
     # Normalize and convert to absolute path for filesystem operations
-    dirpath = normalize_output_path(dirpath)
+    dirpath = secure_output_relpath(dirpath)
     abs_dirpath = join_filepath([DIRPATH.OUTPUT_DIR, dirpath])
 
     # On-demand sync if files don't exist
@@ -664,7 +669,7 @@ async def get_timedata(
     remote_bucket_name: str = Depends(get_outputs_remote_bucket_name),
 ):
     # Normalize and convert to absolute path for filesystem operations
-    dirpath = normalize_output_path(dirpath)
+    dirpath = secure_output_relpath(dirpath)
     abs_dirpath = join_filepath([DIRPATH.OUTPUT_DIR, dirpath])
 
     # On-demand sync if files don't exist
@@ -694,7 +699,7 @@ async def get_alltimedata(
     remote_bucket_name: str = Depends(get_outputs_remote_bucket_name),
 ):
     # Normalize and convert to absolute path for filesystem operations
-    dirpath = normalize_output_path(dirpath)
+    dirpath = secure_output_relpath(dirpath)
     abs_dirpath = join_filepath([DIRPATH.OUTPUT_DIR, dirpath])
 
     # On-demand sync if files don't exist
@@ -755,7 +760,7 @@ async def get_file(
     remote_bucket_name: str = Depends(get_outputs_remote_bucket_name),
 ):
     # Normalize and convert to absolute path for filesystem operations
-    filepath = normalize_output_path(filepath)
+    filepath = secure_output_relpath(filepath)
     abs_filepath = join_filepath([DIRPATH.OUTPUT_DIR, filepath])
 
     # On-demand sync if files don't exist
@@ -769,7 +774,7 @@ async def get_file(
 @router.get("/html/{filepath:path}", response_model=OutputData)
 async def get_html(filepath: str):
     # Normalize and convert to absolute path for filesystem operations
-    filepath = normalize_output_path(filepath)
+    filepath = secure_output_relpath(filepath)
     abs_filepath = join_filepath([DIRPATH.OUTPUT_DIR, filepath])
     return Reader.read_as_output(abs_filepath)
 
@@ -786,7 +791,8 @@ async def get_image(
 ):
     # Normalize filepath for backward compatibility with existing DB records
     # that may contain absolute paths like /app/studio_data/output/...
-    filepath = normalize_output_path(filepath)
+    workspace_id = secure_component(workspace_id)
+    filepath = secure_output_relpath(filepath)
 
     # Convert to absolute path for filesystem operations
     abs_filepath = join_filepath([DIRPATH.OUTPUT_DIR, filepath])
@@ -870,6 +876,10 @@ async def get_csv(
     workspace_id: str,
     remote_bucket_name: str = Depends(get_outputs_remote_bucket_name),
 ):
+    workspace_id = secure_component(workspace_id)
+    filepath = secure_relpath(
+        join_filepath([DIRPATH.INPUT_DIR, workspace_id]), filepath
+    )
     original_filename = os.path.basename(filepath)
     abs_filepath = join_filepath([DIRPATH.INPUT_DIR, workspace_id, filepath])
 
