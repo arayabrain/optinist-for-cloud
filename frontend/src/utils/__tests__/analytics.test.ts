@@ -17,6 +17,7 @@ import {
   isGtmEnabled,
   normalizePath,
   setAnalyticsConsent,
+  subscribeAnalyticsConsent,
   trackEvent,
 } from "utils/analytics"
 import {
@@ -202,6 +203,31 @@ describe("analytics", () => {
       ])
 
       setItem.mockRestore()
+    })
+  })
+
+  describe("subscribeAnalyticsConsent", () => {
+    it("notifies a listener in the same document", () => {
+      // The banner and the Account page render side by side on a first visit,
+      // so the Account control has to hear a decision made in the banner.
+      const seen: string[] = []
+      subscribeAnalyticsConsent((decision) => seen.push(decision))
+
+      setAnalyticsConsent("granted")
+      setAnalyticsConsent("denied")
+
+      expect(seen).toEqual(["granted", "denied"])
+    })
+
+    it("stops notifying once unsubscribed", () => {
+      const seen: string[] = []
+      const unsubscribe = subscribeAnalyticsConsent((d) => seen.push(d))
+
+      setAnalyticsConsent("granted")
+      unsubscribe()
+      setAnalyticsConsent("denied")
+
+      expect(seen).toEqual(["granted"])
     })
   })
 

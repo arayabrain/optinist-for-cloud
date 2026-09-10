@@ -58,6 +58,7 @@ import { AppDispatch } from "store/store"
 import { convertBytes } from "utils"
 import {
   getAnalyticsConsent,
+  subscribeAnalyticsConsent,
   isGtmEnabled,
   setAnalyticsConsent,
 } from "utils/analytics"
@@ -81,6 +82,9 @@ const Account = () => {
   const [isName, setIsName] = useState<string>()
   const [analyticsConsent, setAnalyticsConsentState] =
     useState(getAnalyticsConsent)
+  // Keeps this control in step with the consent banner, which can be answered
+  // while the Account page is already mounted on a first visit.
+  useEffect(() => subscribeAnalyticsConsent(setAnalyticsConsentState), [])
 
   const ref = useRef<HTMLInputElement>(null)
 
@@ -504,8 +508,8 @@ const Account = () => {
             checked={analyticsConsent === "granted"}
             onChange={(e) => {
               const decision = e.target.checked ? "granted" : "denied"
+              // The subscription above applies the new value.
               setAnalyticsConsent(decision)
-              setAnalyticsConsentState(decision)
             }}
             inputProps={{ "aria-label": "Allow analytics cookies" }}
           />
