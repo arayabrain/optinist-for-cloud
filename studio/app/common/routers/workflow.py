@@ -28,6 +28,7 @@ from studio.app.common.core.utils.filepath_creater import (
     create_directory,
     join_filepath,
 )
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.core.workflow.workflow_reader import WorkflowConfigReader
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
@@ -57,6 +58,9 @@ async def fetch_last_experiment(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
     current_user: User = Depends(get_current_user),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+
     try:
         last_expt_config = ExperimentService.get_last_experiment(workspace_id)
 
@@ -138,6 +142,10 @@ async def reproduce_experiment(
     unique_id: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     try:
         # Ensure experiment yaml exists locally before accessing.
         # Downloads from S3 if not present (handles multi-instance scenarios).
@@ -193,6 +201,10 @@ async def reproduce_experiment(
     dependencies=[Depends(is_workspace_available)],
 )
 async def download_workspace_config(workspace_id: str, unique_id: str):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     config_filepath = WorkflowConfigReader.get_config_yaml_path(workspace_id, unique_id)
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath, filename=DIRPATH.WORKFLOW_YML)
@@ -224,6 +236,9 @@ async def import_sample_data(
     category: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+
     logger.info(
         f"Starting sample data import: workspace: {workspace_id}, category: {category}"
     )

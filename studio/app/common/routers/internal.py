@@ -32,6 +32,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageSimpleReader,
 )
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.db.database import get_db, get_session
 from studio.app.common.models.user import User
 from studio.app.common.models.workspace import Workspace
@@ -159,6 +160,10 @@ async def sync_single_experiment(
     them.
     """
     # Rate limiting per experiment
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     cache_key = f"{workspace_id}/{unique_id}"
     current_time = time.time()
     _cleanup_rate_limit_cache(

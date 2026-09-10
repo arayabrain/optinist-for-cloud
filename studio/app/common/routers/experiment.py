@@ -24,6 +24,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageSimpleReader,
     RemoteSyncStatusFileUtil,
 )
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -95,6 +96,9 @@ async def get_experiments(
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
     # search EXPERIMENT_YMLs
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+
     exp_config = {}
     config_paths = glob(ExptConfigReader.get_config_yaml_wild_path(workspace_id))
 
@@ -197,6 +201,10 @@ async def rename_experiment(
     item: RenameItem,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     try:
         # Ensure experiment yaml exists locally before accessing.
         # Downloads from S3 if not present (handles multi-instance scenarios).
@@ -239,6 +247,10 @@ async def delete_experiment(
     db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     try:
         # Ensure experiment yaml exists locally before accessing.
         # Downloads from S3 if not present (handles multi-instance scenarios).
@@ -286,6 +298,9 @@ async def delete_experiment_list(
     db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+
     try:
         deleted_statuses = {}
 
@@ -344,6 +359,9 @@ async def copy_experiment_list(
     db: Session = Depends(get_db),
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+
     try:
         # Ensure experiment yaml exists locally before accessing.
         # Downloads from S3 if not present (handles multi-instance scenarios).
@@ -370,6 +388,10 @@ async def copy_experiment_list(
     dependencies=[Depends(is_workspace_available)],
 )
 async def download_config_experiment(workspace_id: str, unique_id: str):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     config_filepath = SmkConfigReader.get_config_yaml_path(workspace_id, unique_id)
     if os.path.exists(config_filepath):
         return FileResponse(config_filepath)
@@ -389,6 +411,10 @@ async def sync_remote_experiment(
     unique_id: str,
     remote_bucket_name: str = Depends(get_user_remote_bucket_name),
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     try:
         result = False
 

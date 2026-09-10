@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.utils.path_guard import secure_component
 from studio.app.common.core.workflow.workflow_params import read_default_params
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
@@ -25,6 +26,10 @@ async def get_nwb_params():
     tags=["experiments"],
 )
 async def download_nwb_experiment(workspace_id: str, unique_id: str):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+
     nwb_path_list = glob(
         join_filepath([DIRPATH.OUTPUT_DIR, workspace_id, unique_id, "*.nwb"])
     )
@@ -44,6 +49,11 @@ async def download_nwb_experiment(workspace_id: str, unique_id: str):
 async def download_nwb_experiment_with_function_id(
     workspace_id: str, unique_id: str, function_id: str
 ):
+    # Becomes a directory name below, so validate it here.
+    workspace_id = secure_component(workspace_id)
+    unique_id = secure_component(unique_id)
+    function_id = secure_component(function_id)
+
     nwb_path_list = glob(
         join_filepath(
             [DIRPATH.OUTPUT_DIR, workspace_id, unique_id, function_id, "*.nwb"]
