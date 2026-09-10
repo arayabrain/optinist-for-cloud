@@ -343,7 +343,9 @@ class AppLogger:
         else:
             hash_source = uid
 
-        client_id = hashlib.md5(hash_source.encode()).hexdigest()
+        # SHA-256 rather than MD5: the digest is derived from a user id, and
+        # truncating to 16 hex chars keeps the existing id length.
+        client_id = hashlib.sha256(hash_source.encode()).hexdigest()
         client_id = client_id[0:16]
 
         return client_id
