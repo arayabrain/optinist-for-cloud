@@ -1620,6 +1620,7 @@ export function ensurePublishableAccount() {
 
 type DataviewItem = {
   id: number
+  uid?: string
   name?: string
   publish_status?: number
   thumbnails?: { image_url?: string | null }
@@ -1644,6 +1645,13 @@ export async function findDataviewRecord(
   }
   const { items } = await res.json()
   return (items as DataviewItem[]).find((record) => record.name === name)
+}
+
+// The private listing is where a record's uid is readable; publicRow needs it
+export async function dataviewUid(page: Page, name: string): Promise<string> {
+  const record = await findDataviewRecord(page, name)
+  if (!record?.uid) throw new Error(`no dataview record named ${name}`)
+  return record.uid
 }
 
 export async function setPublished(page: Page, name: string, on: boolean) {
@@ -1761,17 +1769,65 @@ export async function mockPremiumAssignment(
   )
 }
 
-// Server-side filter on the Workspace column, which is only offered where
-// DataviewRecords renders without a workspaceId: /dataview and /public
-export async function filterWorkspace(page: Page, value: string) {
+// Server-side filter on a column, driven through its header menu. The panel is
+// left open for the caller to close, so a caller that must see the filtered
+// rows can wait for them first.
+export async function filterColumn(page: Page, field: string, value: string) {
   const header = page.locator(
-    '.MuiDataGrid-columnHeader[data-field="workspace_name"]',
+    `.MuiDataGrid-columnHeader[data-field="${field}"]`,
   )
   await header.hover()
   await header.locator(".MuiDataGrid-menuIcon button").click()
   await page.getByRole("menuitem", { name: /^filter$/i }).click()
+  // MUI keeps the popper mounted through its closing transition, and a second
+  // column's menu then makes the Filter item above ambiguous. Scoped to the
+  // grid's own menu: the authed header keeps a hidden profile menu mounted, so
+  // a bare [role="menu"] never reaches zero on a private page
+  await expect(page.locator(".MuiDataGrid-menuList")).toHaveCount(0, {
+    timeout: 5_000,
+  })
   await page.locator(".MuiDataGrid-filterForm input").last().fill(value)
+}
+
+// The Workspace column is only filterable where DataviewRecords renders
+// without a workspaceId: /dataview and /public
+export async function filterWorkspace(page: Page, value: string) {
+  await filterColumn(page, "workspace_name", value)
   await page.keyboard.press("Escape")
+}
+
+// Never identify a row on /public by name: the listing spans every account,
+// and a record named Tutorial1 already sits there under another owner. The uid
+// is the identity the grid offers. getByText, not :text-is - the uid sits in a
+// span inside the cell, and the :text family only matches the smallest element
+export const publicRow = (page: Page, uid: string) =>
+  page.locator(".MuiDataGrid-row").filter({
+    has: page.locator('[data-field="uid"]').getByText(uid, { exact: true }),
+  })
+
+// Filtered rather than scanned: the row is otherwise only on whichever page of
+// the listing happens to be open. The fill is debounced and the row assertions
+// settle on their first poll, so wait for the fetch, not the keystroke, and
+// hand back what it answered - the rendered count alone rides on task ordering
+export async function filterPublicByUid(page: Page, uid: string) {
+  const applied = page.waitForResponse(
+    (r) =>
+      r.url().includes("/api/public/dataview") &&
+      new URL(r.url()).searchParams.get("uid") === uid,
+    { timeout: 30_000 },
+  )
+  await filterColumn(page, "uid", uid)
+  const listed = (await (await applied).json()) as {
+    items?: { uid?: string }[]
+  }
+  await page.keyboard.press("Escape")
+  if (!listed.items) {
+    throw new Error(`no items in the public listing for uid=${uid}`)
+  }
+  // The server filter is a substring match over every account's records, so
+  // narrow to the record itself: a count over what it returns would assert a
+  // global uniqueness the caller neither owns nor controls
+  return listed.items.filter((record) => record.uid === uid)
 }
 
 export async function createWorkspace(page: Page, name: string) {

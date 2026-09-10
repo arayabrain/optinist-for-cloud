@@ -13,8 +13,12 @@ import {
   ensurePublishableAccount,
   ensurePublishedRecord,
   findDataviewRecord,
+  dataviewUid,
   setPublished,
+  filterColumn,
   filterWorkspace,
+  filterPublicByUid,
+  publicRow,
   openWorkspace,
   apiUrl,
   RUN_TEST_TIMEOUT_MS,
@@ -167,21 +171,11 @@ test.describe("Private Dataview @slow", () => {
 
   // The grid filters server-side via per-column menus (no global search
   // box): header menu → Filter → debounced value input
-  async function applyColumnFilter(page: Page, field: string, value: string) {
-    const header = page.locator(
-      `.MuiDataGrid-columnHeader[data-field="${field}"]`,
-    )
-    await header.hover()
-    await header.locator(".MuiDataGrid-menuIcon button").click()
-    await page.getByRole("menuitem", { name: /^filter$/i }).click()
-    await page.locator(".MuiDataGrid-filterForm input").last().fill(value)
-  }
-
   const rowCount = (page: Page) =>
     page.locator('[role="grid"] [role="row"]').count()
 
   async function filterByColumn(page: Page, field: string, value: string) {
-    await applyColumnFilter(page, field, value)
+    await filterColumn(page, field, value)
     await expect(async () => {
       expect(await rowCount(page)).toBe(2) // header + 1 match
     }).toPass({ timeout: 15_000 })
@@ -402,47 +396,12 @@ test.describe("Private Dataview @slow", () => {
     if (checked !== on) await setPublish(page, name, on)
   }
 
-  // The public listing spans every account, and another account's Tutorial1
-  // is published there too, so the record is pinned by uid instead of by name
-  async function uidOf(page: Page, name: string) {
-    return (
-      await rowByName(page, name)
-        .locator('[data-field="uid"]')
-        .first()
-        .innerText()
-    ).trim()
-  }
-
-  // .MuiDataGrid-row skips the header row; getByText, not :text-is, because
-  // the uid sits in a span and :text only matches the smallest element
-  const publicRow = (page: Page, uid: string) =>
-    page.locator(".MuiDataGrid-row").filter({
-      has: page.locator('[data-field="uid"]').getByText(uid, { exact: true }),
-    })
-
-  // Filtered rather than scanned: the row is otherwise only on the page the
-  // listing happens to open on. The fill is debounced and toHaveCount settles
-  // on its first poll, so wait for the fetch, not the keystroke, and hand back
-  // what it answered - the rendered count alone rides on task ordering
-  async function filterPublicByUid(page: Page, uid: string) {
-    const applied = page.waitForResponse(
-      (r) =>
-        r.url().includes("/api/public/dataview") &&
-        new URL(r.url()).searchParams.get("uid") === uid,
-      { timeout: 30_000 },
-    )
-    await applyColumnFilter(page, "uid", uid)
-    const listed = (await (await applied).json()) as { items?: unknown[] }
-    await page.keyboard.press("Escape")
-    return listed.items ?? []
-  }
-
   test("DV-14 - Publish lists the record publicly; unpublish removes it", async ({
     page,
   }) => {
     await ensurePublish(page, "Tutorial1", false)
     await setPublish(page, "Tutorial1", true)
-    const uid = await uidOf(page, "Tutorial1")
+    const uid = await dataviewUid(page, "Tutorial1")
 
     // Listed on the public dataview (S3 sync stays manual — the listing
     // gates on publish_status only)
@@ -465,13 +424,13 @@ test.describe("Private Dataview @slow", () => {
 
   test("DV-17 - Public dataview filters by workspace", async ({ page }) => {
     await ensurePublish(page, "Tutorial1", true)
-    const uid = await uidOf(page, "Tutorial1")
+    const uid = await dataviewUid(page, "Tutorial1")
     await page.goto("/public")
-    // Unfiltered: the uid match is already unambiguous, and the uid column's
-    // menu would still be in the DOM for the workspace one to hit. Reads page
-    // 1 only, which holds every published record today
+    expect(await filterPublicByUid(page, uid)).toHaveLength(1)
     await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
 
+    // The workspace filter replaces the uid one - the grid holds a single
+    // filter item
     await filterWorkspace(page, DATA_WS)
     await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
     // Re-read until the grid has re-fetched: the filter is applied
