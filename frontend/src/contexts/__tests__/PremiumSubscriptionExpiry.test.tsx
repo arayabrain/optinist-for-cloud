@@ -44,7 +44,10 @@ const mockDispatchFn = jest.fn(() => Promise.resolve())
 
 jest.mock("react-redux", () => ({
   useSelector: (selector: (s: unknown) => unknown) =>
-    selector({ user: { currentUser: mockUser, logoutGeneration: 0 } }),
+    selector({
+      user: { currentUser: mockUser, logoutGeneration: 0 },
+      pipeline: { run: { status: "StartUninitialized" } },
+    }),
   useDispatch: () => mockDispatchFn,
 }))
 
@@ -155,7 +158,6 @@ const tree = (ctxRef: { current: Ctx | null }) => (
 )
 
 const dedicatedStatus: PremiumStatusResult = {
-  user_id: 1,
   subscription_type: UserTier.PREMIUM,
   is_premium: true,
   assignment: {
@@ -292,7 +294,6 @@ describe("PremiumAssignmentProvider — subscription expiry auto-logout", () => 
   test("does NOT auto-logout when there is no active assignment", async () => {
     // Status with no assignment → goes through the assign path.
     mockGetPremiumStatus.mockResolvedValue({
-      user_id: 1,
       subscription_type: UserTier.PREMIUM,
       is_premium: true,
     } as PremiumStatusResult)

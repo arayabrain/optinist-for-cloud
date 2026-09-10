@@ -18,7 +18,11 @@ from studio.app.common.core.cloud.s3_storage_monitor import (
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.datetime_utils import get_current_datetime
 from studio.app.common.db.database import get_db
-from studio.app.common.schemas.storage import LimitWarning, LimitWarningStatus
+from studio.app.common.schemas.storage import (
+    LimitWarning,
+    LimitWarningStatus,
+    StorageAlertResponse,
+)
 from studio.app.common.schemas.users import User
 
 router = APIRouter(prefix="/storage-limit-alerts", tags=["storage-limit-alerts"])
@@ -35,7 +39,11 @@ def _get_storage_utilities():
     return S3StorageMonitor("dummy")  # Bucket name not used for utilities
 
 
-@router.get("/me", response_model=Dict)
+@router.get(
+    "/me",
+    response_model=StorageAlertResponse,
+    response_model_exclude_unset=True,
+)
 async def get_my_storage_alert(
     current_user: User = Depends(get_current_user),
 ):
@@ -70,7 +78,6 @@ async def get_my_storage_alert(
 
             if alert_level:
                 alert = {
-                    "user_id": current_user.id,
                     "alert_level": alert_level,
                     "storage_usage_bytes": current_usage,
                     "storage_quota_bytes": storage_quota,
@@ -325,7 +332,6 @@ async def check_limit_warning_status(
             has_alert=warning is not None,
             alert_type=warning.alert_type if warning else None,
             days_remaining=warning.days_remaining if warning else None,
-            user_id=current_user.uid,
         )
 
     except Exception as e:

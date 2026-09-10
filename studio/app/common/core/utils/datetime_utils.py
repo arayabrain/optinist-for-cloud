@@ -98,6 +98,34 @@ def get_datetime_for_timezone_formatted(
     return dt.strftime(format_string)
 
 
+def parse_datetime_for_timezone(
+    value: str, format_string: str, timezone_str: str = None
+) -> datetime:
+    """
+    Inverse of get_datetime_for_timezone_formatted.
+
+    The stored string carries no offset, so reading it back naively resolves it
+    against the container's TZ instead of the zone it was written in - which
+    skews the result by that offset wherever the two differ.
+
+    Args:
+        value: the formatted timestamp to parse
+        format_string: the strftime format it was written with
+        timezone_str: the IANA timezone it was written in. Falls back to UTC,
+            matching get_datetime_for_timezone.
+    """
+    tz = TZ_UTC
+    if timezone_str:
+        try:
+            tz = ZoneInfo(timezone_str)
+        except (ZoneInfoNotFoundError, KeyError) as e:
+            logger.warning(
+                f"Invalid timezone '{timezone_str}', "
+                f"falling back to {TIMEZONE_UTC}: {e}"
+            )
+    return datetime.strptime(value, format_string).replace(tzinfo=tz)
+
+
 def format_date_for_display(dt: datetime, format_string: str = "%Y-%m-%d") -> str:
     """
     Format a datetime for display, appending "(UTC)" indicator.

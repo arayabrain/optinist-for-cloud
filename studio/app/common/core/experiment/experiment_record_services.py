@@ -22,6 +22,19 @@ class ExperimentRecordService:
         return available
 
     @classmethod
+    def record_exists(cls, workspace_id: str, unique_id: str) -> bool:
+        with session_scope() as db:
+            return (
+                db.query(ExperimentRecord.id)
+                .filter(
+                    ExperimentRecord.workspace_id == workspace_id,
+                    ExperimentRecord.uid == unique_id,
+                )
+                .first()
+                is not None
+            )
+
+    @classmethod
     def regist_record_on_workflow_completed(
         cls, workspace_id: str, unique_id: str, generate_thumbnails: bool = True
     ):

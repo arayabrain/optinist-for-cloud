@@ -10,6 +10,7 @@ import os
 import requests
 from firebase_admin import auth as firebase_auth
 
+from studio.app.common.core.auth.auth import _extract_firebase_error
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.utils.file_reader import JsonReader
 from studio.app.dir_path import DIRPATH
@@ -104,44 +105,31 @@ def send_verification_email_via_firebase(email: str) -> bool:
         return True
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Firebase REST API error: {e}", exc_info=True)
-        error_message = str(e)
+        # str(e) and the chained traceback embed the request URL with the API
+        # key, so log the parsed body message and re-raise with "from None".
+        error_message = _extract_firebase_error(e)
+        logger.error(f"Firebase REST API error: {error_message}")
 
-        if hasattr(e, "response") and e.response is not None:
+        if e.response is not None:
             logger.error(f"Response status: {e.response.status_code}")
             logger.error(f"Response body: {e.response.text}")
 
-            try:
-                error_data = e.response.json()
-                logger.error(f"Response JSON: {error_data}")
-
-                if "error" in error_data:
-                    error_details = error_data["error"]
-                    error_message = error_details.get("message", str(e))
-                    logger.error(f"Firebase error message: {error_message}")
-
-                    # Check for specific error codes
-                    if (
-                        "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message
-                        or "quota" in error_message.lower()
-                        or "rate" in error_message.lower()
-                    ):
-                        raise ValueError(
-                            "Too many verification emails sent. Please wait a few "
-                            "minutes before trying again."
-                        )
-                    elif "EMAIL_NOT_FOUND" in error_message:
-                        raise ValueError(
-                            f"User with email {email} not found in Firebase"
-                        )
-                    elif "INVALID_ID_TOKEN" in error_message:
-                        raise ValueError(f"Invalid or expired ID token for {email}")
-
-            except ValueError:
-                # Re-raise ValueError with user-friendly messages
-                raise
-            except Exception as json_err:
-                logger.error(f"Could not parse error response as JSON: {json_err}")
+            # Check for specific error codes
+            if (
+                "TOO_MANY_ATTEMPTS_TRY_LATER" in error_message
+                or "quota" in error_message.lower()
+                or "rate" in error_message.lower()
+            ):
+                raise ValueError(
+                    "Too many verification emails sent. Please wait a few "
+                    "minutes before trying again."
+                ) from None
+            elif "EMAIL_NOT_FOUND" in error_message:
+                raise ValueError(
+                    f"User with email {email} not found in Firebase"
+                ) from None
+            elif "INVALID_ID_TOKEN" in error_message:
+                raise ValueError(f"Invalid or expired ID token for {email}") from None
 
             # If it's a 400 error and we couldn't determine the specific cause,
             # it's likely rate limiting
@@ -149,11 +137,11 @@ def send_verification_email_via_firebase(email: str) -> bool:
                 raise ValueError(
                     "Unable to send verification email. This may be due to rate "
                     "limiting. Please wait a few minutes before trying again."
-                )
+                ) from None
 
         raise Exception(
             f"Failed to send verification email via Firebase: {error_message}"
-        )
+        ) from None
     except Exception as e:
         logger.error(f"Failed to send verification email: {e}", exc_info=True)
         raise
@@ -189,10 +177,15 @@ def send_password_reset_email_via_firebase(email: str) -> bool:
         return True
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Firebase REST API error: {e}", exc_info=True)
-        if hasattr(e, "response") and e.response:
+        # str(e) and the chained traceback embed the request URL with the API
+        # key, so log the parsed body message and re-raise with "from None".
+        error_message = _extract_firebase_error(e)
+        logger.error(f"Firebase REST API error: {error_message}")
+        if e.response is not None:
             logger.error(f"Response: {e.response.text}")
-        raise Exception(f"Failed to send password reset email via Firebase: {e}")
+        raise Exception(
+            f"Failed to send password reset email via Firebase: {error_message}"
+        ) from None
     except Exception as e:
         logger.error(f"Failed to send password reset email: {e}", exc_info=True)
         raise

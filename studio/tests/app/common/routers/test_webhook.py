@@ -2,8 +2,11 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from studio.__main_unit__ import app
 from studio.app.common.core.subscription.checkout_service import CheckoutService
 from studio.app.common.core.subscription.constants import (
     SubscriptionPlanIds,
@@ -11,7 +14,11 @@ from studio.app.common.core.subscription.constants import (
 )
 from studio.app.common.core.subscription.subscription_service import SubscriptionService
 from studio.app.common.core.subscription.webhook_service import WebhookService
-from studio.app.common.core.utils.datetime_utils import get_current_datetime
+from studio.app.common.core.utils.datetime_utils import (
+    datetime_from_timestamp,
+    get_current_datetime,
+)
+from studio.app.common.db.database import get_db
 
 
 class TestInvoicePaymentSucceeded:
@@ -70,7 +77,14 @@ class TestInvoicePaymentSucceeded:
 
     @pytest.fixture
     def invoice_data_subscription_cycle(self):
-        """Create mock invoice data for subscription renewal"""
+        """Create mock invoice data for subscription renewal.
+
+        The period end sits beyond the fixture subscription's seeded
+        expiration (now + 5 days): a renewal extends, and the handler
+        refuses a period end that does not advance the stored value.
+        """
+        period_start = int((get_current_datetime() + timedelta(days=29)).timestamp())
+        period_end = int((get_current_datetime() + timedelta(days=30)).timestamp())
         return {
             "id": "in_test123",
             "customer": "cus_test123",
@@ -79,14 +93,14 @@ class TestInvoicePaymentSucceeded:
             "status": "paid",
             "amount_paid": 2999,  # $29.99 in cents
             "billing_reason": "subscription_cycle",
-            "period_start": 1699999999,
-            "period_end": 1702678399,
+            "period_start": period_start,
+            "period_end": period_end,
             "lines": {
                 "object": "list",
                 "data": [
                     {
                         "id": "il_test123",
-                        "period": {"end": 1702678399, "start": 1699999999},
+                        "period": {"end": period_end, "start": period_start},
                     }
                 ],
             },
@@ -167,6 +181,137 @@ class TestInvoicePaymentSucceeded:
             # Verify subscription was updated
             assert mock_subscription.expiration is not None
             assert mock_subscription.updated_at is not None
+
+    @pytest.mark.parametrize("period_end_days_out", [30, 60])
+    def test_renewal_writes_the_invoice_period_end_and_leaves_the_plan_alone(
+        self,
+        period_end_days_out,
+        mock_db,
+        mock_user_account,
+        mock_subscription,
+        mock_plan,
+        mock_user,
+        invoice_data_subscription_cycle,
+    ):
+        """The renewal's only job is to move ``expiration`` to the invoice's
+        period end.
+
+        The fixture pre-seeds ``expiration`` five days out, so
+        ``expiration is not None`` holds even if the write is deleted. Two
+        distinct period ends make the seeded value unable to satisfy either run.
+        """
+        period_end = int(
+            (get_current_datetime() + timedelta(days=period_end_days_out)).timestamp()
+        )
+        invoice_data_subscription_cycle["lines"]["data"][0]["period"][
+            "end"
+        ] = period_end
+        invoice_data_subscription_cycle["period_end"] = period_end
+        seeded_expiration = mock_subscription.expiration
+
+        mock_db.query.side_effect = [
+            Mock(
+                filter=Mock(
+                    return_value=Mock(first=Mock(return_value=mock_user_account))
+                )
+            ),
+            Mock(
+                filter=Mock(
+                    return_value=Mock(
+                        order_by=Mock(
+                            return_value=Mock(
+                                first=Mock(return_value=mock_subscription)
+                            )
+                        )
+                    )
+                )
+            ),
+            Mock(filter=Mock(return_value=Mock(first=Mock(return_value=mock_user)))),
+        ]
+
+        with patch.object(
+            CheckoutService, "get_subscription_plan", return_value=mock_plan
+        ), patch.object(
+            SubscriptionService,
+            "get_current_datetime",
+            return_value=get_current_datetime(),
+        ):
+            result = WebhookService.handle_subscription_payment_succeeded(
+                mock_db, invoice_data_subscription_cycle
+            )
+
+        expected = datetime_from_timestamp(period_end)
+        assert mock_subscription.expiration == expected
+        assert mock_subscription.expiration != seeded_expiration
+        assert result["new_expiration"] == expected.isoformat()
+        assert result["old_expiration"] == seeded_expiration.isoformat()
+        assert mock_subscription.plan_id == "plan_123"
+
+    @pytest.mark.parametrize("stored_is_naive", [False, True])
+    def test_a_stale_invoice_event_never_rewinds_the_expiration(
+        self,
+        stored_is_naive,
+        mock_db,
+        mock_user_account,
+        mock_subscription,
+        mock_plan,
+        mock_user,
+        invoice_data_subscription_cycle,
+    ):
+        """Stripe delivers invoice events out of period order (retries, late
+        settlements): on 2026-08-24 a redelivered three-day-old invoice event
+        arrived 33s after the fresh renewal and rewound the stored expiration
+        behind ``now``, turning the account expired. An older period end must
+        be skipped - expiration untouched and no duplicate purchase row.
+
+        Parametrized over the stored value's awareness: MySQL hands back a
+        naive datetime while the invoice's period end is UTC-aware, and
+        comparing the two without normalising raises.
+        """
+        if stored_is_naive:
+            mock_subscription.expiration = mock_subscription.expiration.replace(
+                tzinfo=None
+            )
+        stale_end = int((get_current_datetime() - timedelta(days=3)).timestamp())
+        invoice_data_subscription_cycle["lines"]["data"][0]["period"]["end"] = stale_end
+        invoice_data_subscription_cycle["period_end"] = stale_end
+        seeded_expiration = mock_subscription.expiration
+
+        mock_db.query.side_effect = [
+            Mock(
+                filter=Mock(
+                    return_value=Mock(first=Mock(return_value=mock_user_account))
+                )
+            ),
+            Mock(
+                filter=Mock(
+                    return_value=Mock(
+                        order_by=Mock(
+                            return_value=Mock(
+                                first=Mock(return_value=mock_subscription)
+                            )
+                        )
+                    )
+                )
+            ),
+        ]
+
+        with patch.object(
+            CheckoutService, "get_subscription_plan", return_value=mock_plan
+        ), patch.object(
+            SubscriptionService,
+            "get_current_datetime",
+            return_value=get_current_datetime(),
+        ):
+            result = WebhookService.handle_subscription_payment_succeeded(
+                mock_db, invoice_data_subscription_cycle
+            )
+
+        assert result["skipped"] is True
+        assert result["reason"] == "stale_period_end"
+        assert mock_subscription.expiration == seeded_expiration
+        mock_db.add.assert_not_called()
+        mock_db.commit.assert_not_called()
 
     def test_skip_initial_payment(self, mock_db, invoice_data_initial_payment):
         """Test that initial subscription payments are skipped"""
@@ -343,79 +488,6 @@ class TestInvoicePaymentSucceeded:
                 )
 
             mock_db.rollback.assert_called()
-
-
-# Additional integration test with real-like webhook payload
-def test_full_webhook_payload():
-    """Test with a full realistic Stripe webhook payload"""
-    full_invoice_payload = {
-        "id": "in_1QLzTh2eZvKYlo2C1234abcd",
-        "object": "invoice",
-        "account_country": "US",
-        "account_name": "Your Company",
-        "amount_due": 2999,
-        "amount_paid": 2999,
-        "amount_remaining": 0,
-        "application_fee_amount": None,
-        "attempt_count": 1,
-        "attempted": True,
-        "billing_reason": "subscription_cycle",
-        "charge": "ch_1QLzTh2eZvKYlo2C5678efgh",
-        "collection_method": "charge_automatically",
-        "created": 1699999999,
-        "currency": "usd",
-        "customer": "cus_test123456",
-        "customer_email": "customer@example.com",
-        "customer_name": "Test Customer",
-        "customer_phone": None,
-        "description": None,
-        "hosted_invoice_url": "https://invoice.stripe.com/i/acct_test/test_link",
-        "invoice_pdf": "https://pay.stripe.com/invoice/test/pdf",
-        "lines": {
-            "object": "list",
-            "data": [
-                {
-                    "id": "il_1QLzTh2eZvKYlo2C9999",
-                    "object": "line_item",
-                    "amount": 2999,
-                    "currency": "usd",
-                    "description": "1 × Premium Plan (at $29.99 / month)",
-                    "period": {"end": 1702678399, "start": 1699999999},
-                    "plan": {
-                        "id": "price_1234567890",
-                        "object": "plan",
-                        "active": True,
-                        "interval": "month",
-                        "interval_count": 1,
-                    },
-                    "quantity": 1,
-                }
-            ],
-        },
-        "paid": True,
-        "payment_intent": "pi_1QLzTh2eZvKYlo2C1111",
-        "period_end": 1702678399,
-        "period_start": 1699999999,
-        "status": "paid",
-        "parent": {
-            "subscription_details": {"subscription": "sub_1QLzTh2eZvKYlo2C2222"}
-        },
-        "subtotal": 2999,
-        "total": 2999,
-    }
-
-    # This payload structure matches what your webhook service expects
-    assert full_invoice_payload["billing_reason"] == "subscription_cycle"
-    assert full_invoice_payload["status"] == "paid"
-    assert full_invoice_payload["amount_paid"] == 2999
-
-    # Test extraction using the same logic as webhook_service.py
-    subscription_id = (
-        full_invoice_payload.get("parent", {})
-        .get("subscription_details", {})
-        .get("subscription")
-    )
-    assert subscription_id == "sub_1QLzTh2eZvKYlo2C2222"
 
 
 class TestSubscriptionLookbackWindow:
@@ -613,6 +685,9 @@ class TestWebhookCacheInvalidation:
         mock_plan = Mock()
         mock_plan.id = 1
 
+        # Beyond the fixture's seeded expiration, or the stale-period guard
+        # skips the renewal before the cache is ever touched
+        future_end = int((get_current_datetime() + timedelta(days=30)).timestamp())
         invoice_data = {
             "id": "in_test123",
             "customer": "cus_test123",
@@ -620,7 +695,7 @@ class TestWebhookCacheInvalidation:
             "status": "paid",
             "amount_paid": 2999,
             "billing_reason": "subscription_cycle",
-            "lines": {"data": [{"period": {"end": 1702678399}}]},
+            "lines": {"data": [{"period": {"end": future_end}}]},
         }
 
         # Setup query chain
@@ -792,14 +867,8 @@ class TestCheckoutStorageQuotaUpdate:
         }
         return patches
 
-    def test_existing_storage_record_updated_via_execute(
-        self, mock_db, session_data, mock_user
-    ):
-        """When storage record exists, db.execute(update) should be called"""
+    def _run_checkout(self, mock_db, session_data, mock_user):
         patches = self._setup_checkout_mocks(mock_db, mock_user)
-        # db.execute returns a result with rowcount=1 (existing record updated)
-        mock_db.execute.return_value.rowcount = 1
-
         with (
             patches["plan"],
             patches["provider"],
@@ -811,53 +880,52 @@ class TestCheckoutStorageQuotaUpdate:
             patches["cache"],
             patches["datetime"],
         ):
-            result = WebhookService.handle_checkout_completed(mock_db, session_data)
+            return WebhookService.handle_checkout_completed(mock_db, session_data)
 
-        assert result["success"] is True
-        # Verify db.execute was called (the update statement)
-        mock_db.execute.assert_called_once()
-        # Verify db.add was NOT called for storage (no new record needed)
-        mock_db.add.assert_not_called()
-        # Verify single atomic commit
-        mock_db.commit.assert_called_once()
-
-    def test_no_storage_record_creates_new_via_add(
+    def test_storage_quota_written_as_single_upsert(
         self, mock_db, session_data, mock_user
     ):
-        """When no storage record exists, db.add(UserStorageUsage) should be called"""
-        from studio.app.common.models.subscription import UserStorageUsage
-
-        patches = self._setup_checkout_mocks(mock_db, mock_user)
-        # db.execute returns rowcount=0 (no existing record)
-        mock_db.execute.return_value.rowcount = 0
-
-        with (
-            patches["plan"],
-            patches["provider"],
-            patches["account"],
-            patches["payment"],
-            patches["subscription"],
-            patches["purchase"],
-            patches["stripe"],
-            patches["cache"],
-            patches["datetime"],
-        ):
-            result = WebhookService.handle_checkout_completed(mock_db, session_data)
-
-        assert result["success"] is True
-        # Verify db.add was called with a UserStorageUsage instance
-        mock_db.add.assert_called_once()
-        added_obj = mock_db.add.call_args[0][0]
-        assert isinstance(added_obj, UserStorageUsage)
-        assert added_obj.user_id == 42
-        assert added_obj.storage_usage_bytes == 0
+        """Quota write is one statement, whether or not the row already exists."""
         from studio.app.common.core.subscription.constants import (
             StorageQuota,
             SubscriptionPlanIds,
         )
 
-        expected_quota = StorageQuota.bytes_for_plan(SubscriptionPlanIds.PREMIUM)
-        assert added_obj.storage_quota_bytes == expected_quota
+        result = self._run_checkout(mock_db, session_data, mock_user)
+
+        assert result["success"] is True
+        mock_db.execute.assert_called_once()
+        # No separate INSERT path to get out of sync with the UPDATE path.
+        mock_db.add.assert_not_called()
+        mock_db.commit.assert_called_once()
+
+        stmt = mock_db.execute.call_args[0][0]
+        params = stmt.compile().params
+        assert params["user_id"] == 42
+        assert params["storage_usage_bytes"] == 0
+        assert params["storage_quota_bytes"] == StorageQuota.bytes_for_plan(
+            SubscriptionPlanIds.PREMIUM
+        )
+
+    def test_quota_write_is_idempotent_for_an_existing_row(
+        self, mock_db, session_data, mock_user
+    ):
+        """
+        Re-upgrading a user whose quota already equals the target must not
+        attempt a fresh INSERT. MySQL reports 0 affected rows both for "no
+        such row" and for "row matched but value unchanged", so a rowcount
+        check cannot tell them apart and raises a duplicate-key error here.
+        """
+        from sqlalchemy.dialects import mysql
+
+        self._run_checkout(mock_db, session_data, mock_user)
+
+        sql = str(
+            mock_db.execute.call_args[0][0].compile(dialect=mysql.dialect())
+        ).upper()
+        assert "INSERT INTO USER_STORAGE_USAGE" in sql
+        assert "ON DUPLICATE KEY UPDATE" in sql
+        assert "ROWCOUNT" not in sql
 
 
 class TestCustomerSubscriptionDeleted:
@@ -1401,5 +1469,278 @@ class TestSubscriptionLifecycleWebhooks:
         mock_db.execute.assert_called_once()
 
 
+class TestWebhookErrorDetailPassthrough:
+    """
+    Webhook handlers used to collapse every inner HTTPException into
+    400 "Invalid webhook data", at up to four nesting levels, without
+    logging any of them. The originating status and detail must now
+    survive to the caller, and be logged exactly once at the dispatch
+    boundary.
+    """
+
+    @pytest.fixture
+    def mock_db(self):
+        db = Mock(spec=Session)
+        db.query = Mock()
+        db.add = Mock()
+        db.commit = Mock()
+        db.rollback = Mock()
+        db.execute = Mock()
+        return db
+
+    @pytest.mark.asyncio
+    async def test_inner_detail_survives_dispatch(self, mock_db):
+        """A handler's own 404 is not rewritten into 400 Invalid webhook data."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            side_effect=HTTPException(
+                status_code=404, detail="Subscription plan not found: 3"
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await WebhookService.dispatch_webhook_event(
+                    mock_db, "checkout.session.completed", {}
+                )
+
+        assert exc.value.status_code == 404
+        assert exc.value.detail == "Subscription plan not found: 3"
+
+    @pytest.mark.asyncio
+    async def test_server_error_is_not_downgraded_to_400(self, mock_db):
+        """A 5xx must not be relabelled as a client-side 400."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            side_effect=HTTPException(
+                status_code=500, detail="Failed to update subscription"
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await WebhookService.dispatch_webhook_event(
+                    mock_db, "checkout.session.completed", {}
+                )
+
+        assert exc.value.status_code == 500
+        assert exc.value.detail == "Failed to update subscription"
+
+    @pytest.mark.asyncio
+    async def test_client_error_logged_once_as_warning(self, mock_db, caplog):
+        """4xx logs at WARNING with the event type, status and detail."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            side_effect=HTTPException(status_code=404, detail="Nope"),
+        ):
+            with caplog.at_level("WARNING"):
+                with pytest.raises(HTTPException):
+                    await WebhookService.dispatch_webhook_event(
+                        mock_db, "checkout.session.completed", {}
+                    )
+
+        matches = [r for r in caplog.records if "Webhook checkout" in r.getMessage()]
+        assert len(matches) == 1
+        assert matches[0].levelname == "WARNING"
+        assert "404" in matches[0].getMessage()
+        assert "Nope" in matches[0].getMessage()
+
+    @pytest.mark.asyncio
+    async def test_server_error_logged_as_error(self, mock_db, caplog):
+        """5xx must page at ERROR, not hide at WARNING with the 4xx traffic."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            side_effect=HTTPException(status_code=500, detail="Boom"),
+        ):
+            with caplog.at_level("WARNING"):
+                with pytest.raises(HTTPException):
+                    await WebhookService.dispatch_webhook_event(
+                        mock_db, "checkout.session.completed", {}
+                    )
+
+        matches = [r for r in caplog.records if "Webhook checkout" in r.getMessage()]
+        assert len(matches) == 1
+        assert matches[0].levelname == "ERROR"
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_still_becomes_500(self, mock_db):
+        """The generic arm is untouched: non-HTTP errors still surface as 500."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            side_effect=RuntimeError("kaboom"),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await WebhookService.dispatch_webhook_event(
+                    mock_db, "checkout.session.completed", {}
+                )
+
+        assert exc.value.status_code == 500
+        assert "kaboom" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_success_path_logs_no_failure(self, mock_db, caplog):
+        """A healthy event must not emit a failure line."""
+        with patch.object(
+            WebhookService,
+            "handle_checkout_completed",
+            return_value={"success": True},
+        ):
+            with caplog.at_level("WARNING"):
+                result = await WebhookService.dispatch_webhook_event(
+                    mock_db, "checkout.session.completed", {}
+                )
+
+        assert result["success"] is True
+        assert not [r for r in caplog.records if "failed" in r.getMessage()]
+
+
+class TestWebhookRouteErrorStatusPassthrough:
+    """
+    The route arm used to rewrite every inner HTTPException to 400. It now
+    keeps the inner status and masks the detail, so a handler's 500 stays out
+    of the malformed-request bucket without naming which check failed. The
+    other tests in this file call dispatch_webhook_event directly, so only an
+    HTTP-level request covers what Stripe actually receives.
+    """
+
+    WEBHOOK_URL = "/api/subsc/webhooks/stripe"
+    CONSTRUCT_EVENT = (
+        "studio.app.common.routers.subscriptions.stripe.Webhook.construct_event"
+    )
+
+    @pytest.fixture
+    def webhook_client(self):
+        original_overrides = app.dependency_overrides.copy()
+        app.dependency_overrides[get_db] = lambda: Mock(spec=Session)
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+
+    def _post(self, client, dispatch_exc):
+        with (
+            patch.object(
+                WebhookService, "get_webhook_secret", return_value="whsec_test"
+            ),
+            patch(
+                self.CONSTRUCT_EVENT,
+                return_value={
+                    "type": "checkout.session.completed",
+                    "data": {"object": {}},
+                },
+            ),
+            patch.object(
+                WebhookService,
+                "dispatch_webhook_event",
+                new_callable=AsyncMock,
+                side_effect=dispatch_exc,
+            ),
+        ):
+            return client.post(
+                self.WEBHOOK_URL,
+                content=b"{}",
+                headers={"stripe-signature": "t=1,v1=sig"},
+            )
+
+    def test_inner_status_survives_the_route(self, webhook_client):
+        response = self._post(
+            webhook_client,
+            HTTPException(status_code=404, detail="Subscription plan not found: 3"),
+        )
+
+        assert response.status_code == 404
+        # Masked on purpose: the plan id must not reach Stripe's delivery log
+        assert response.json()["detail"] == "Webhook processing failed"
+
+    def test_server_error_keeps_its_status_at_the_route(self, webhook_client):
+        response = self._post(
+            webhook_client,
+            HTTPException(status_code=500, detail="Failed to update subscription"),
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Webhook processing failed"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestInvoiceFinalizedPaymentOutcomes:
+    """invoice.finalized separates outcomes that are not our failure.
+
+    One `except stripe.error.StripeError` used to log all three at ERROR, which
+    made an already-settled invoice and a customer's declined card look like a
+    broken integration and left ERROR-based alerting unusable.
+    """
+
+    INVOICE = {
+        "id": "in_test_finalized",
+        "status": "open",
+        "default_payment_method": "pm_card_visa",
+        "amount_due": 2000,
+    }
+
+    def test_already_paid_invoice_is_success_not_failure(self):
+        """Stripe's auto-collection can win the race; the end state is what counts."""
+        import stripe
+
+        error = stripe.error.InvalidRequestError("Invoice is already paid", None)
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve", return_value={"status": "paid"}
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is True
+        assert result["new_status"] == "paid"
+        assert "payment_failed" not in result
+
+    def test_declined_card_is_reported_without_claiming_our_fault(self):
+        import stripe
+
+        error = stripe.error.CardError("Your card was declined.", None, "card_declined")
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True
+        assert result["card_declined"] is True
+
+    def test_a_genuine_stripe_failure_still_fails(self):
+        """The read-back must not turn every refused pay into a success."""
+        import stripe
+
+        error = stripe.error.APIConnectionError("connection reset")
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve", return_value={"status": "open"}
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True
+
+    def test_a_failed_read_back_does_not_escalate_to_a_500(self):
+        """A read-back that itself fails must leave the outcome a plain failure."""
+        import stripe
+
+        error = stripe.error.InvalidRequestError("Invoice is already paid", None)
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve",
+            side_effect=stripe.error.RateLimitError("slow down"),
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True

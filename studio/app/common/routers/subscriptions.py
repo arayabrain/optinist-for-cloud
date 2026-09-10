@@ -255,6 +255,7 @@ async def cancel_user_subscription(
     - User retains access until then
     - Database updates handled via webhook
     """
+    user_id = getattr(user, "id", None)
     try:
         result = await StripeService.handle_cancel_user_subscription(db, user)
         return result
@@ -264,10 +265,15 @@ async def cancel_user_subscription(
         raise HTTPException(
             status_code=400, detail=f"Payment processing error: {str(e)}"
         )
-    except HTTPException:
-        raise HTTPException(status_code=404, detail="Subscription not found")
+    except HTTPException as e:
+        log_fn = logger.error if e.status_code >= 500 else logger.warning
+        log_fn(
+            f"Cancel subscription failed for user {user_id}: "
+            f"{e.status_code} {e.detail}"
+        )
+        raise
     except Exception as e:
-        logger.error(f"Error cancelling subscription for user {user.id}: {str(e)}")
+        logger.error(f"Error cancelling subscription for user {user_id}: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Failed to cancel subscription: {str(e)}"
         )
@@ -745,9 +751,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Successfully processed {event_type}")
         return {"received": True, "processed": event_type}
 
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise HTTPException(status_code=400, detail="Webhook processing failed")
+    except HTTPException as e:
+        # Generic detail so the response cannot name which check failed, but the
+        # inner status is kept. Stripe retries every non-2xx alike, so this is not
+        # about redelivery: a masked 400 reports our own failures as malformed
+        # requests, which keeps them out of the 5xx alarm and sends whoever reads
+        # the delivery log to debug the wrong side.
+        # Logged at the raise site (dispatch, signature checks), not again here
+        raise HTTPException(
+            status_code=e.status_code, detail="Webhook processing failed"
+        )
     except Exception as e:
         logger.error(f"Webhook processing error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Webhook processing failed")

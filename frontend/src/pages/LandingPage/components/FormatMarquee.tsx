@@ -1,11 +1,6 @@
 import { Box, styled, Typography, keyframes } from "@mui/material"
 
-import {
-  FONT_SIZE,
-  FONT_WEIGHT,
-  TEXT_COLOR,
-  BG_COLOR,
-} from "pages/LandingPage/constants"
+import { FONT_SIZE, FONT_WEIGHT, TEXT_COLOR, BG_COLOR } from "const/Style"
 
 const formats = [
   "HDF5",

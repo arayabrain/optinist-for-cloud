@@ -29,13 +29,15 @@ import {
   RoutingInfo,
 } from "api/premium/PremiumAssignmentApi"
 import { BASE_URL } from "const/API"
-import { PlanName, SubscriptionStatus } from "const/Subscription"
+import { PlanName, PremiumTiming, SubscriptionStatus } from "const/Subscription"
 import { shouldPoll } from "contexts/premium/unreachableMachine"
 import {
   InstanceUnreachableHandle,
   useInstanceUnreachableMachine,
 } from "contexts/premium/useInstanceUnreachableMachine"
 import { useSleepDetection } from "hooks/useSleepDetection"
+import { selectPipelineStatus } from "store/slice/Pipeline/PipelineSelectors"
+import { RUN_STATUS } from "store/slice/Pipeline/PipelineType"
 import { getMe } from "store/slice/User/UserActions"
 import { selectLogoutGeneration } from "store/slice/User/UserSelector"
 import { AppDispatch, RootState } from "store/store"
@@ -121,6 +123,10 @@ function ssRemove(key: string): void {
 const HEARTBEAT_MAX_RETRIES = 3
 const HEARTBEAT_RETRY_DELAY_MS = 1000
 
+// Throttle for the passive activity listener: genuine user interaction
+// advances the inactivity clock at most once per this interval.
+const ACTIVITY_MARK_THROTTLE_MS = 60 * 1000
+
 interface PremiumAssignmentState {
   isAssigning: boolean
   isReleasing: boolean
@@ -168,6 +174,17 @@ export const PremiumAssignmentProvider: React.FC<{
   // Track logout generation to detect stale closures
   const logoutGeneration = useSelector(selectLogoutGeneration)
 
+  // A running workflow counts as activity even without direct user input,
+  // so a long unattended analysis is never falsely auto-released.
+  const pipelineStatus = useSelector(selectPipelineStatus)
+  const isWorkflowRunning =
+    pipelineStatus === RUN_STATUS.START_PENDING ||
+    pipelineStatus === RUN_STATUS.START_SUCCESS
+  const isWorkflowRunningRef = useRef(isWorkflowRunning)
+  useEffect(() => {
+    isWorkflowRunningRef.current = isWorkflowRunning
+  }, [isWorkflowRunning])
+
   const [state, setState] = useState<PremiumAssignmentState>({
     isAssigning: false,
     isReleasing: false,
@@ -194,7 +211,11 @@ export const PremiumAssignmentProvider: React.FC<{
   const [autoAssignGeneration, setAutoAssignGeneration] = useState(0)
   const needsReassignAfterReleaseRef = useRef(false)
 
-  // Polling state with backoff
+  // Polling state with backoff.
+  // NOTE: pollAttempts is dual-purpose — it's the attempt counter (MAX_POLL_ATTEMPTS
+  // stop, re-trigger threshold) AND a keep-alive tick: it's in the poll effect's
+  // dependency array, so incrementing it every cycle re-runs the effect and
+  // reschedules the next poll even after pollInterval saturates (needed for shared).
   const [pollInterval, setPollInterval] = useState(INITIAL_POLL_INTERVAL_MS)
   const [pollAttempts, setPollAttempts] = useState(() => {
     const stored = ssRead(SS_POLL_ATTEMPTS)
@@ -236,6 +257,10 @@ export const PremiumAssignmentProvider: React.FC<{
   // Refs for values that inactivity check needs but shouldn't trigger re-renders
   const lastActivityTimeRef = useRef(state.lastActivityTime)
   const showInactivityWarningRef = useRef(state.showInactivityWarning)
+  // Last time we broadcast activity to other tabs, shared by the passive
+  // activity listener and the running-workflow guard to throttle cross-tab
+  // writes to once per ACTIVITY_MARK_THROTTLE_MS.
+  const lastActivityMarkRef = useRef(0)
   // Track previous premium status to detect subscription expiry transition
   const prevIsPremiumRef = useRef(false)
 
@@ -409,6 +434,31 @@ export const PremiumAssignmentProvider: React.FC<{
   }, [isPremiumUser, sleep])
 
   /**
+   * Mark genuine user interaction as activity.
+   * Advances the frontend inactivity clock (and syncs it across tabs) so the
+   * 1h warning / 2h auto-release only fire on a truly idle session. Throttled
+   * and frontend-local — it does not send a backend heartbeat (normal API
+   * traffic already keeps the backend's last_activity fresh).
+   */
+  const markLocalActivity = useCallback(() => {
+    if (!isPremiumUser) return
+    const now = Date.now()
+    // Throttled early-return does not dismiss the warning, but this is safe:
+    // a warning only appears after >=1h of no activity, so the last mark is
+    // also >=1h old and any interaction while it shows always passes the
+    // throttle and reaches the dismissal below.
+    if (now - lastActivityMarkRef.current < ACTIVITY_MARK_THROTTLE_MS) return
+    lastActivityMarkRef.current = now
+    lastActivityTimeRef.current = now
+    setState((prev) => ({
+      ...prev,
+      lastActivityTime: now,
+      showInactivityWarning: false,
+    }))
+    syncActivityAcrossTabs(now)
+  }, [isPremiumUser])
+
+  /**
    * Assign premium instance
    */
   const assign =
@@ -443,6 +493,7 @@ export const PremiumAssignmentProvider: React.FC<{
         if (result.assigned) {
           routingService.setPremiumAssigned(true)
           routingService.setPremiumInstanceId(result.instance_id_hash ?? null)
+          routingService.setPremiumShared(result.is_shared ?? false)
           try {
             const tokenRes = await getBeaconTokenApi()
             beaconTokenRef.current = tokenRes.data.token
@@ -498,7 +549,7 @@ export const PremiumAssignmentProvider: React.FC<{
       // Defensive — covers refs outside the reducer that the hook's mirror effect doesn't touch.
       unreachable.reset()
 
-      routingService.setPremiumAssigned(false)
+      routingService.resetForRelease()
       // Notify other tabs about premium release
       tabSync.broadcastPremiumReleased()
 
@@ -584,6 +635,7 @@ export const PremiumAssignmentProvider: React.FC<{
         routingService.setPremiumInstanceId(
           assignmentResult.instance_id_hash ?? null,
         )
+        routingService.setPremiumShared(assignmentResult.is_shared ?? false)
         try {
           const tokenRes = await getBeaconTokenApi()
           beaconTokenRef.current = tokenRes.data.token
@@ -612,6 +664,7 @@ export const PremiumAssignmentProvider: React.FC<{
         routingService.setPremiumInstanceId(
           assignmentResponse.instance_id_hash ?? null,
         )
+        routingService.setPremiumShared(assignmentResponse.is_shared ?? false)
         try {
           const tokenRes = await getBeaconTokenApi()
           beaconTokenRef.current = tokenRes.data.token
@@ -708,6 +761,26 @@ export const PremiumAssignmentProvider: React.FC<{
 
     const checkInactivity = () => {
       const now = Date.now()
+
+      // A running workflow keeps the instance active even with no direct
+      // input. Advance the clock so the 1h/2h countdown only starts once the
+      // workflow finishes, and clear any warning already shown.
+      if (isWorkflowRunningRef.current) {
+        lastActivityTimeRef.current = now
+        // Throttle the cross-tab broadcast to once per minute (same rationale
+        // as markLocalActivity) — a long-running workflow otherwise writes
+        // localStorage every 30s for its whole duration. Other tabs still see
+        // fresh activity well within the 1h idle threshold.
+        if (now - lastActivityMarkRef.current >= ACTIVITY_MARK_THROTTLE_MS) {
+          lastActivityMarkRef.current = now
+          syncActivityAcrossTabs(now)
+        }
+        if (showInactivityWarningRef.current) {
+          setState((prev) => ({ ...prev, showInactivityWarning: false }))
+        }
+        return
+      }
+
       // Check activity from any tab, not just this one
       const lastActivityAnyTab = getLastActivityFromAnyTab()
       const effectiveLastActivity = Math.max(
@@ -716,15 +789,15 @@ export const PremiumAssignmentProvider: React.FC<{
       )
       const timeSinceLastActivity = now - effectiveLastActivity
 
-      const oneHourMs = 60 * 60 * 1000 // 1 hour
-      const twoHoursMs = 2 * 60 * 60 * 1000 // 2 hours
+      const warningMs = PremiumTiming.INACTIVITY_WARNING_MINUTES * 60 * 1000
+      const releaseMs = PremiumTiming.INACTIVITY_RELEASE_MINUTES * 60 * 1000
       // eslint-disable-next-line no-console
       console.log(
         `Inactivity check: ${Math.round(timeSinceLastActivity / 1000 / 60)}min ` +
           "since last activity (any tab)",
       )
 
-      if (timeSinceLastActivity >= twoHoursMs) {
+      if (timeSinceLastActivity >= releaseMs) {
         // eslint-disable-next-line no-console
         console.warn(
           "2 hours of inactivity detected - auto-releasing premium instance",
@@ -739,7 +812,7 @@ export const PremiumAssignmentProvider: React.FC<{
         // Flag that the next user gesture should trigger reassignment.
         needsReassignAfterReleaseRef.current = true
       } else if (
-        timeSinceLastActivity >= oneHourMs &&
+        timeSinceLastActivity >= warningMs &&
         !showInactivityWarningRef.current
       ) {
         // eslint-disable-next-line no-console
@@ -767,6 +840,44 @@ export const PremiumAssignmentProvider: React.FC<{
       unsubscribe()
     }
   }, [isPremiumUser, currentUser, state.assignmentResult, autoReleaseOnLogout])
+
+  // Genuine user interaction (pointer/keyboard/scroll) resets the inactivity
+  // clock; a pointer/keyboard gesture also re-fires auto-assign once after an
+  // inactivity auto-release. Both concerns share a single set of window
+  // listeners. Throttled via markLocalActivity so a busy session does not spam
+  // state updates or cross-tab writes.
+  useEffect(() => {
+    if (!isPremiumUser) return
+
+    const onGesture = () => {
+      // Re-fire auto-assign after an inactivity auto-release when the user
+      // resumes activity. Guarded by needsReassignAfterReleaseRef (not
+      // hasAttemptedRef) so normal initial-mount clicks never bump the
+      // counter — avoiding a duplicate /assign.
+      if (needsReassignAfterReleaseRef.current) {
+        needsReassignAfterReleaseRef.current = false
+        setAutoAssignGeneration((g) => g + 1)
+      }
+      markLocalActivity()
+    }
+    // Scroll counts as activity but must not trigger reassignment: it can be
+    // code-driven (e.g. the auto-scrolling log panel in ScrollLogs), so it only
+    // marks activity. A code-driven scroll therefore still resets the idle
+    // clock, but in practice that autoscroll coincides with a running workflow,
+    // which the inactivity guard already keeps alive. capture:true so scrolls
+    // inside inner containers (which don't bubble to window) also count.
+    const onScroll = () => markLocalActivity()
+    const scrollOpts = { passive: true, capture: true } as const
+    window.addEventListener("pointerdown", onGesture)
+    window.addEventListener("keydown", onGesture)
+    window.addEventListener("scroll", onScroll, scrollOpts)
+
+    return () => {
+      window.removeEventListener("pointerdown", onGesture)
+      window.removeEventListener("keydown", onGesture)
+      window.removeEventListener("scroll", onScroll, scrollOpts)
+    }
+  }, [isPremiumUser, markLocalActivity])
 
   // Sleep/wake detection callback (Cases 50-51)
   // Send a backend heartbeat to keep the instance alive, but do NOT reset
@@ -812,26 +923,6 @@ export const PremiumAssignmentProvider: React.FC<{
     return unsubscribe
   }, [])
 
-  // Re-fire auto-assign after inactivity auto-release when user resumes activity.
-  // Guarded by needsReassignAfterReleaseRef (not hasAttemptedRef) so that
-  // normal initial-mount clicks never bump the counter — avoiding the
-  // duplicate-/assign.
-  useEffect(() => {
-    if (!isPremiumUser) return
-    const onActivity = () => {
-      if (needsReassignAfterReleaseRef.current) {
-        needsReassignAfterReleaseRef.current = false
-        setAutoAssignGeneration((g) => g + 1)
-      }
-    }
-    window.addEventListener("pointerdown", onActivity)
-    window.addEventListener("keydown", onActivity)
-    return () => {
-      window.removeEventListener("pointerdown", onActivity)
-      window.removeEventListener("keydown", onActivity)
-    }
-  }, [isPremiumUser])
-
   // Auto-assign when premium user is detected
   useEffect(() => {
     if (isPremiumUser && currentUser) {
@@ -870,6 +961,9 @@ export const PremiumAssignmentProvider: React.FC<{
     }))
     routingService.setPremiumAssigned(true)
     routingService.setPremiumInstanceId(result.instance_id_hash ?? null)
+    // Dedicated by definition (only reached for !is_shared), but set explicitly
+    // so the upgrade from a prior shared assignment clears the shared flag.
+    routingService.setPremiumShared(result.is_shared ?? false)
     try {
       const tokenRes = await getBeaconTokenApi()
       beaconTokenRef.current = tokenRes.data.token
@@ -986,6 +1080,16 @@ export const PremiumAssignmentProvider: React.FC<{
                 statusResult: status,
               }
             })
+            // Reached only for a shared assignment (dedicated returns above).
+            // Keep the flag consistent with the polled assignment so the
+            // teardown gate holds even for a shared state seen only via polling.
+            // Refresh the instance hash too: a dedicated→shared transition seen
+            // only via polling would otherwise leave the stale dedicated hash,
+            // skewing routing telemetry.
+            routingService.setPremiumInstanceId(
+              assignment.instance_id_hash ?? null,
+            )
+            routingService.setPremiumShared(true)
           } else {
             setState((prev) => ({ ...prev, statusResult: status }))
 
@@ -1063,10 +1167,11 @@ export const PremiumAssignmentProvider: React.FC<{
           console.warn(
             "Still on temporary instance, will retry with backoff...",
           )
-          const isOnShared = assignment?.is_shared === true
-          if (!isOnShared) {
-            setPollAttempts((prev) => prev + 1)
-          }
+          // Increment for shared too — a changing dep re-runs the effect and
+          // reschedules the next poll once pollInterval saturates at the cap.
+          // The MAX_POLL_ATTEMPTS stop still excludes shared (!isOnShared), and
+          // the re-trigger check runs only in the null-assignment branch.
+          setPollAttempts((prev) => prev + 1)
           // Exponential backoff capped at MAX_POLL_INTERVAL_MS
           setPollInterval((prev) =>
             Math.min(prev * BACKOFF_MULTIPLIER, MAX_POLL_INTERVAL_MS),

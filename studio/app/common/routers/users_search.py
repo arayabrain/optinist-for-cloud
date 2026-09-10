@@ -33,8 +33,8 @@ def search_share_users(
         )
         .filter(
             or_(
-                UserModel.name.like("%{0}%".format(keyword)),
-                UserModel.email.like("%{0}%".format(keyword)),
+                UserModel.name.contains(keyword, autoescape=True),
+                UserModel.email.contains(keyword, autoescape=True),
             )
         )
         .order_by(UserModel.id)

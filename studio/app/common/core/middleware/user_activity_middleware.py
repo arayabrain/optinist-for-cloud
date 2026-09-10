@@ -22,7 +22,6 @@ See: https://github.com/encode/starlette/issues/1012
 """
 
 import asyncio
-import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -41,6 +40,7 @@ from studio.app.common.core.middleware.constants import (
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.subscription.constants import SubscriptionPlanIds
 from studio.app.common.core.utils.datetime_utils import get_current_datetime
+from studio.app.common.core.utils.instance_utils import resolve_instance_id
 from studio.app.common.db.database import session_scope
 from studio.app.common.models import FreeUserAssignment
 from studio.app.common.models.instance_usage import InstanceUsageLog
@@ -426,10 +426,18 @@ def _update_free_user_activity_sync(user_id: int) -> bool:
         with session_scope() as session:
             now = get_current_datetime()
 
-            # Try UPDATE first (common path for existing users)
+            # UPDATE first (common path); instance_id is refreshed to the
+            # serving instance. The ``logged_out_at IS NULL`` guard stops a
+            # stray still-authenticated request (in-flight call after logout, a
+            # second tab) from resurrecting a logged-out assignment — a
+            # cross-process guard, unlike the short-lived in-memory logout map.
+            # (instance_id write-ownership rework: separate follow-up.)
+            from sqlalchemy import select
+
             stmt = (
                 update(FreeUserAssignment)
                 .where(FreeUserAssignment.user_id == user_id)
+                .where(FreeUserAssignment.logged_out_at.is_(None))
                 .values(
                     last_activity=now,
                     instance_id=instance_id,
@@ -437,6 +445,17 @@ def _update_free_user_activity_sync(user_id: int) -> bool:
             )
             result = session.execute(stmt)
             if result.rowcount == 0:
+                # UPDATE matched nothing: either no assignment exists yet (new
+                # user → INSERT below) or one exists but is logged out (excluded
+                # by the guard). Never resurrect a logged-out assignment.
+                existing = session.execute(
+                    select(FreeUserAssignment.user_id).where(
+                        FreeUserAssignment.user_id == user_id
+                    )
+                ).first()
+                if existing is not None:
+                    return False
+
                 # No existing row — insert new record
                 assignment = FreeUserAssignment(
                     user_id=user_id,
@@ -459,8 +478,6 @@ def _update_free_user_activity_sync(user_id: int) -> bool:
                 # session exists.  After a logout/re-login cycle the
                 # previous InstanceUsageLog has ended_at set, so we
                 # need to start a new one for the current session.
-                from sqlalchemy import select
-
                 open_session = session.execute(
                     select(InstanceUsageLog.id)
                     .where(
@@ -643,74 +660,15 @@ def _get_instance_id() -> Optional[str]:
     """
     Get current EC2 instance ID (cached).
 
-    In ECS with EC2 launch type, containers run on EC2 instances.
-    We need to get the underlying EC2 instance ID via metadata service.
-
-    Priority:
-    1. Cached value (from previous fetch)
-    2. Environment variable INSTANCE_ID (if manually set)
-    3. EC2 metadata service (IMDSv2 with token)
-    4. EC2 metadata service (IMDSv1 fallback)
-    5. Return "local" for local development
-
-    Result is cached to avoid repeated metadata service calls.
+    Delegates resolution to the shared ``resolve_instance_id`` (env →
+    IMDSv2 → IMDSv1 → "local") and caches the result to avoid repeated
+    metadata-service calls on every request.
     """
     global _instance_id_cache
 
-    # Return cached value if available
     with _instance_id_lock:
         if _instance_id_cache is not None:
             return _instance_id_cache
 
-        # Check environment variable first (faster)
-        instance_id = os.environ.get("INSTANCE_ID")
-        if instance_id:
-            _instance_id_cache = instance_id
-            return instance_id
-
-        # Try EC2 metadata service (IMDSv2 - requires token)
-        try:
-            import urllib.request
-
-            # Get session token first (IMDSv2 requirement)
-            token_url = "http://169.254.169.254/latest/api/token"
-            token_req = urllib.request.Request(
-                token_url,
-                headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
-                method="PUT",
-            )
-            with urllib.request.urlopen(token_req, timeout=1) as response:
-                token = response.read().decode("utf-8")
-
-            # Get instance ID using token
-            metadata_url = "http://169.254.169.254/latest/meta-data/instance-id"
-            metadata_req = urllib.request.Request(
-                metadata_url, headers={"X-aws-ec2-metadata-token": token}
-            )
-            with urllib.request.urlopen(metadata_req, timeout=1) as response:
-                instance_id = response.read().decode("utf-8")
-                _instance_id_cache = instance_id
-                return instance_id
-        except Exception:
-            pass
-
-        # Fallback to IMDSv1 (without token)
-        try:
-            import urllib.request
-
-            metadata_url = "http://169.254.169.254/latest/meta-data/instance-id"
-            with urllib.request.urlopen(metadata_url, timeout=1) as response:
-                instance_id = response.read().decode("utf-8")
-                _instance_id_cache = instance_id
-                return instance_id
-        except Exception:
-            pass
-
-        # Local development or metadata service unavailable
-        logger.warning(
-            "Could not retrieve EC2 instance ID from metadata service. "
-            "Using 'local' as instance ID. This is OK for local development "
-            "but indicates a problem in production."
-        )
-        _instance_id_cache = "local"
-        return "local"
+        _instance_id_cache = resolve_instance_id()
+        return _instance_id_cache

@@ -593,8 +593,15 @@ class TestClearFreeUserLoggedOutAt:
             mock_session.commit.assert_called_once()
 
     def test_clear_logged_out_at_updates_last_activity(self):
-        """clear_free_user_logged_out_at should include last_activity in UPDATE"""
+        """The UPDATE has to clear ``logged_out_at`` and bump ``last_activity``.
+
+        This case was a copy of the one above and asserted nothing about either
+        column: without the ``last_activity`` bump the stale-assignment sweep
+        still sees the returning user as idle and reclaims their instance.
+        """
         from unittest.mock import MagicMock, patch
+
+        from sqlalchemy.dialects import mysql
 
         from studio.app.common.core.middleware.user_activity_middleware import (
             clear_free_user_logged_out_at,
@@ -611,9 +618,18 @@ class TestClearFreeUserLoggedOutAt:
 
             result = clear_free_user_logged_out_at(TEST_USER_ID)
 
-            assert result is True
-            mock_session.execute.assert_called_once()
-            mock_session.commit.assert_called_once()
+        assert result is True
+        compiled = mock_session.execute.call_args.args[0].compile(
+            dialect=mysql.dialect()
+        )
+        sql = " ".join(str(compiled).split())
+        assert sql.startswith("UPDATE free_user_assignments SET ")
+        assert "logged_out_at=%s" in sql
+        assert "last_activity=%s" in sql
+        assert "free_user_assignments.logged_out_at IS NOT NULL" in sql
+        assert compiled.params["logged_out_at"] is None
+        assert compiled.params["last_activity"] is not None
+        assert compiled.params["user_id_1"] == TEST_USER_ID
 
     def test_clear_logged_out_at_returns_true_if_no_assignment(self):
         """Should return True even if no rows matched (no assignment)"""
@@ -886,3 +902,99 @@ class TestPremiumActivityRestoresPendingRelease:
         """rowcount == 0 → returns False (no row, or escape valve blocked)."""
         result, _ = self._execute_sync_update(rowcount=0)
         assert result is False
+
+
+class TestFreeUserActivityInstanceIdWrite:
+    """instance_id is refreshed to the serving instance on UPDATE and set on
+    INSERT, so it tracks where the user is currently active.
+
+    (Reworking instance_id write ownership to a single authoritative writer is
+    deferred to a separate follow-up issue.)
+    """
+
+    def _run_sync_update(self, rowcount):
+        from unittest.mock import MagicMock, patch
+
+        from studio.app.common.core.middleware.user_activity_middleware import (
+            _update_free_user_activity_sync,
+        )
+
+        mock_session = MagicMock()
+        exec_result = MagicMock()
+        exec_result.rowcount = rowcount
+        exec_result.scalar.return_value = 1  # open usage session already exists
+        # rowcount==0 path does an existence SELECT; None → treat as a new user
+        # and take the INSERT branch (a returned row would mean "logged out").
+        exec_result.first.return_value = None
+        mock_session.execute.return_value = exec_result
+
+        with patch(
+            "studio.app.common.core.middleware.user_activity_middleware."
+            "is_user_logged_out",
+            return_value=False,
+        ), patch(
+            "studio.app.common.core.middleware.user_activity_middleware."
+            "_get_instance_id",
+            return_value="i-current",
+        ), patch(
+            "studio.app.common.core.middleware."
+            "user_activity_middleware.session_scope"
+        ) as mock_scope:
+            mock_scope.return_value.__enter__.return_value = mock_session
+            _update_free_user_activity_sync(TEST_USER_ID)
+
+        return mock_session
+
+    def test_update_refreshes_instance_id(self):
+        """Existing-row UPDATE sets both last_activity and instance_id."""
+        mock_session = self._run_sync_update(rowcount=1)
+
+        update_stmt = mock_session.execute.call_args_list[0][0][0]
+        compiled = str(update_stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "last_activity" in compiled
+        assert "instance_id" in compiled
+
+    def test_insert_sets_instance_id(self):
+        """New-row INSERT path sets instance_id via session.add()."""
+        mock_session = self._run_sync_update(rowcount=0)
+
+        added = [c.args[0] for c in mock_session.add.call_args_list]
+        assignments = [a for a in added if hasattr(a, "instance_id")]
+        assert assignments, "expected a FreeUserAssignment to be added"
+        assert any(a.instance_id == "i-current" for a in assignments)
+
+    def test_logged_out_user_is_not_resurrected(self):
+        """The logged_out_at IS NULL guard makes the UPDATE match nothing; with
+        an existing (logged-out) row present, the write must NOT INSERT/resurrect
+        — it returns without adding anything. Cross-process, no reliance on the
+        short-lived in-memory logout map."""
+        from unittest.mock import MagicMock, patch
+
+        from studio.app.common.core.middleware.user_activity_middleware import (
+            _update_free_user_activity_sync,
+        )
+
+        mock_session = MagicMock()
+        update_result = MagicMock()
+        update_result.rowcount = 0  # guarded UPDATE matched no row (logged out)
+        select_result = MagicMock()
+        select_result.first.return_value = (TEST_USER_ID,)  # assignment exists
+        mock_session.execute.side_effect = [update_result, select_result]
+
+        with patch(
+            "studio.app.common.core.middleware.user_activity_middleware."
+            "is_user_logged_out",
+            return_value=False,  # in-memory map already expired (10s TTL)
+        ), patch(
+            "studio.app.common.core.middleware.user_activity_middleware."
+            "_get_instance_id",
+            return_value="i-current",
+        ), patch(
+            "studio.app.common.core.middleware."
+            "user_activity_middleware.session_scope"
+        ) as mock_scope:
+            mock_scope.return_value.__enter__.return_value = mock_session
+            result = _update_free_user_activity_sync(TEST_USER_ID)
+
+        assert result is False
+        mock_session.add.assert_not_called()  # no INSERT / no usage-log resurrect

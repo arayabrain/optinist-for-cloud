@@ -32,3 +32,6 @@ infrastructure/terraform/*/aws_constants.py
 infrastructure/terraform/aws_constants_layer/
 infrastructure/terraform/*_package/pymysql/
 infrastructure/terraform/*_package/pymysql-*.dist-info/
+
+# Playwright artifacts
+test-results/

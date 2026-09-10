@@ -10,7 +10,7 @@ import {
   BG_COLOR,
   BUTTON_BASE,
   ICON_BOX,
-} from "pages/LandingPage/constants"
+} from "const/Style"
 
 interface Benefit {
   icon: string

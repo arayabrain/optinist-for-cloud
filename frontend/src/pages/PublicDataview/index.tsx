@@ -1,13 +1,18 @@
+import { useEffect } from "react"
+
 import { Box, styled } from "@mui/material"
 
 import DataviewRecords from "components/Dataview/DataviewRecords"
 import PublicDataviewWrapper from "components/Dataview/PublicDataviewWrapper"
-import PublicHeader from "components/PublicLayout/PublicHeader"
+import { trackEvent } from "utils/analytics"
 
 const PublicDataview = () => {
+  useEffect(() => {
+    trackEvent("view_public_data")
+  }, [])
+
   return (
     <>
-      <PublicHeader />
       <PageWrapper>
         <Title>OptiNiSt Public Repository</Title>
         <PublicDataviewWrapper>

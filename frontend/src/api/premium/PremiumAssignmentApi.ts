@@ -8,7 +8,6 @@ import { UserTier } from "const/Subscription"
 import axios from "utils/axios"
 
 export interface RoutingInfo {
-  user_id: string
   user_tier: UserTier
   requires_premium_routing: boolean
   routing_headers: Record<string, string>
@@ -41,7 +40,6 @@ export interface PremiumAssignment {
 }
 
 export interface PremiumStatusResult {
-  user_id: number
   subscription_type: UserTier
   is_premium: boolean
   assignment: PremiumAssignment | null
@@ -53,7 +51,6 @@ export interface PremiumStatusResult {
 export interface PremiumHeartbeatResult {
   message: string
   updated: boolean
-  user_id: number
   user_tier: UserTier
   assignment_active: boolean
   activity_update?: boolean

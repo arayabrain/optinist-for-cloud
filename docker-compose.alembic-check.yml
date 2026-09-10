@@ -1,0 +1,48 @@
+# Brings up a throwaway MySQL, migrates it to head, then runs `alembic check`
+# to assert the SQLAlchemy models and the migrations describe the same schema.
+# Credentials are inline (not from studio/config/.env, which is gitignored) so
+# this runs unchanged in CI. Invoked via `make alembic_check`.
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: studio
+      MYSQL_USER: studio_db_user
+      MYSQL_PASSWORD: studio_db_password
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  alembic_check:
+    image: test_studio_backend
+    build:
+      context: .
+      dockerfile: studio/config/docker/Dockerfile.test
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PYTHONPATH: .
+      TZ: UTC
+      MYSQL_SERVER: db:3306
+      MYSQL_USER: studio_db_user
+      MYSQL_PASSWORD: studio_db_password
+      MYSQL_DATABASE: studio
+      MYSQL_SSL_MODE: ""
+      # Dummy Stripe values: importing the app config / models requires them,
+      # same as docker-compose.test.yml. Not used by the check itself.
+      STRIPE_CALLBACK_URL: http://localhost:8000
+      STRIPE_SECRET_KEY: sk_test_dummy_123
+      STRIPE_WEBHOOK_SECRET: whsec_dummy_123
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "
+        alembic upgrade head &&
+        alembic check
+      "

@@ -35,6 +35,19 @@ export const filesTreeSlice = createSlice({
         state[fileType].isLatest = true
         state[fileType].isLoading = false
       })
+      .addCase(getFilesTree.rejected, (state, action) => {
+        const { fileType } = action.meta.arg
+        // isLatest goes to true even though nothing was fetched, because
+        // useFileTree refetches on `!isLatest && !isLoading` - leaving it false
+        // would turn a failed fetch into a request loop. The Select File button
+        // dispatches unconditionally, so retrying is still one click.
+        state[fileType] = {
+          ...state[fileType],
+          isLoading: false,
+          isLatest: true,
+        }
+        enqueueSnackbar("Failed to load files", { variant: "error" })
+      })
       .addCase(deleteFile.pending, (state, action) => {
         const { fileType } = action.meta.arg
         state[fileType] = {

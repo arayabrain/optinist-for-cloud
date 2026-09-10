@@ -1,8 +1,8 @@
 /**
  * Inactivity Warning Component
  *
- * Shows a warning snackbar when premium users have been inactive for 1 hour.
- * Warns that their instance will be released after another hour of inactivity.
+ * Shows a warning snackbar when premium users have been idle for the warning
+ * threshold, counting down the remaining time to the auto-release threshold.
  */
 
 import React, { useEffect, useRef, useState } from "react"
@@ -15,18 +15,20 @@ import { PremiumTiming } from "const/Subscription"
 import { usePremiumAssignment } from "contexts/PremiumAssignmentContext"
 import { useLogout } from "hooks/useLogout"
 
+const IDLE_MINUTES = PremiumTiming.INACTIVITY_WARNING_MINUTES
+const COUNTDOWN_MINUTES =
+  PremiumTiming.INACTIVITY_RELEASE_MINUTES - IDLE_MINUTES
+
 const InactivityWarning: React.FC = () => {
   const { showInactivityWarning, dismissInactivityWarning, recordActivity } =
     usePremiumAssignment()
   const { performLogout } = useLogout()
-  const [countdown, setCountdown] = useState<number>(
-    PremiumTiming.INACTIVITY_WARNING_DURATION_MINUTES,
-  )
+  const [countdown, setCountdown] = useState<number>(COUNTDOWN_MINUTES)
 
   // Countdown timer for the warning
   useEffect(() => {
     if (!showInactivityWarning) {
-      setCountdown(PremiumTiming.INACTIVITY_WARNING_DURATION_MINUTES)
+      setCountdown(COUNTDOWN_MINUTES)
       return
     }
 
@@ -81,7 +83,7 @@ const InactivityWarning: React.FC = () => {
     const hours = Math.floor(minutes / 60)
     const mins = minutes % 60
     if (hours > 0) {
-      return `${hours}h ${mins}m`
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
     }
     return `${mins}m`
   }
@@ -125,9 +127,9 @@ const InactivityWarning: React.FC = () => {
           <>
             <strong>Premium Instance Inactivity Warning</strong>
             <br />
-            You&apos;ve been inactive for 1 hour. Your premium instance will be
-            automatically released in {formatTime(countdown)} if no activity is
-            detected.
+            You&apos;ve been inactive for {formatTime(IDLE_MINUTES)}. Your
+            premium instance will be automatically released in{" "}
+            {formatTime(countdown)} if no activity is detected.
             <br />
             <small>
               Click &quot;Stay Active&quot; or interact with the page to keep

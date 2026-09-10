@@ -140,6 +140,65 @@ class TestProactiveDownloadTrigger:
             assert result is False
 
     @pytest.mark.asyncio
+    async def test_trigger_uses_internal_base_url(self):
+        """INTERNAL_API_BASE_URL, when set, overrides the scheme/port.
+
+        Dev has no HTTPS:443 listener, so the base URL is injected as
+        http://{dns}:8080 (see issue #719). Verify the request targets it.
+        """
+        env = {
+            "ALB_DNS_NAME": "test-alb.example.com",
+            "INTERNAL_API_SECRET": "secret-123",
+            "INTERNAL_API_BASE_URL": "http://test-alb.example.com:8080",
+        }
+        with patch.dict(os.environ, env):
+            with patch("requests.post") as mock_post:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_post.return_value = mock_resp
+
+                result = await PublishedExperimentSyncJob._trigger_proactive_download(
+                    "ws1", "uid1", "bucket1"
+                )
+
+                assert result is True
+                call_url = mock_post.call_args[0][0]
+                assert call_url == (
+                    "http://test-alb.example.com:8080"
+                    "/system-internal/sync-experiment/ws1/uid1"
+                )
+
+    @pytest.mark.asyncio
+    async def test_trigger_falls_back_to_https(self):
+        """Without INTERNAL_API_BASE_URL, fall back to https://{alb_dns}.
+
+        Preserves the pre-#719 prod behavior so the code change is safe to
+        roll out before the env var reaches every environment.
+        """
+        env = {
+            "ALB_DNS_NAME": "test-alb.example.com",
+            "INTERNAL_API_SECRET": "secret-123",
+        }
+        # clear=True guarantees INTERNAL_API_BASE_URL is absent even if the
+        # host environment happens to define it.
+        with patch.dict(os.environ, env, clear=True):
+            with patch("requests.post") as mock_post:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_post.return_value = mock_resp
+
+                result = await PublishedExperimentSyncJob._trigger_proactive_download(
+                    "ws1", "uid1", "bucket1"
+                )
+
+                assert result is True
+                call_url = mock_post.call_args[0][0]
+                assert call_url == (
+                    "https://test-alb.example.com"
+                    "/system-internal/sync-experiment/ws1/uid1"
+                )
+
+    @pytest.mark.asyncio
     async def test_trigger_connection_error(self):
         """ConnectionError returns False"""
         import requests

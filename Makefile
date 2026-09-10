@@ -73,6 +73,46 @@ test_contract:
 	# build/run
 	@$(call run_test_service, test_studio_backend, $(PYTEST) studio/tests/app/common/routers/test_*_contract.py -v)
 
+.PHONY: alembic_check
+alembic_check:
+	# Migrate a fresh DB to head, then run `alembic check` to assert the
+	# SQLAlchemy models and the migrations describe the same schema.
+	# Run in a single shell with an EXIT trap so the DB stack is always torn
+	# down, even when `alembic check` exits non-zero (expected while models
+	# drift). set -e still propagates that non-zero status out to CI.
+	@bash -euc '\
+		compose="docker compose -f docker-compose.alembic-check.yml"; \
+		trap "$$compose down -v" EXIT; \
+		$$compose down -v; \
+		$$compose build alembic_check; \
+		$$compose run --rm alembic_check'
+
+.PHONY: premium_lock_it
+premium_lock_it:
+	# Real-MySQL GET_LOCK integration test proving distributed_lock
+	# serializes concurrent sessions.
+	# Opt-in: needs a real database, so it is not part of per-PR CI.
+	# Single shell with an EXIT trap so the throwaway DB is always torn down.
+	@bash -euc '\
+		compose="docker compose -f docker-compose.premium-lock-it.yml"; \
+		trap "$$compose down -v" EXIT; \
+		$$compose down -v; \
+		$$compose build premium_lock_it; \
+		$$compose run --rm premium_lock_it'
+
+.PHONY: workflow_count_it
+workflow_count_it:
+	# Concurrent workflow-count integration test proving increments and
+	# decrements serialize on the row over real connections.
+	# Opt-in: needs a real database, so it is not part of per-PR CI.
+	# Single shell with an EXIT trap so the throwaway DB is always torn down.
+	@bash -euc '\
+		compose="docker compose -f docker-compose.workflow-count-it.yml"; \
+		trap "$$compose down -v" EXIT; \
+		$$compose down -v; \
+		$$compose build workflow_count_it; \
+		$$compose run --rm workflow_count_it'
+
 
 ############################## For Building ##############################
 

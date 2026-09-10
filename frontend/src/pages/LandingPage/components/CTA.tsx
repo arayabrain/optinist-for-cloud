@@ -10,7 +10,7 @@ import {
   BORDER_COLOR,
   ACCENT_COLOR,
   BUTTON_BASE,
-} from "pages/LandingPage/constants"
+} from "const/Style"
 
 export const CTA = () => {
   const navigate = useNavigate()

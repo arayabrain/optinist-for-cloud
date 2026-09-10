@@ -25,6 +25,8 @@ export const Z_INDEX = {
   PLOT_OVERLAY: 999,
   /** Header, floating buttons */
   HEADER: 1000,
+  /** Cookie consent notice - below modals and snackbars so both stay clickable */
+  CONSENT_BANNER: 1200,
   /** Loading overlay - high but below MUI modals */
   LOADING_OVERLAY: 1250,
 } as const

@@ -1,2 +1,6 @@
 1/.image_shape.json
 1/test/test_*.json
+
+# InputFileLock (remote_storage_controller.py) creates <workspace>/.locks/<file>.lock
+# per input file it guards. Runtime only; the fixtures beside them are tracked.
+.locks/

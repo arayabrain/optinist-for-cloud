@@ -133,55 +133,40 @@ resource "aws_ssm_association" "app_setup" {
 resource "null_resource" "deploy_to_ecs" {
   depends_on = [null_resource.build_and_deploy]
 
+  triggers = {
+    git_branch = var.git_branch
+    ecr_repo   = local.ecr_repository_url
+  }
+
   provisioner "local-exec" {
     command = <<-EOT
       set -e
       echo "=== Starting ECS deployment ==="
 
-      # Force ECS deployment
-      echo "Forcing ECS service deployment..."
-      aws ecs update-service \
+      # Force a new deployment on EVERY service in the cluster (main, premium,
+      # public, background) so all tiers re-pull the just-pushed :latest, not
+      # only the main service.
+      echo "Forcing ECS deployment on all services in ${aws_ecs_cluster.main.name}..."
+      SERVICES=$(aws ecs list-services \
         --cluster ${aws_ecs_cluster.main.name} \
-        --service ${aws_ecs_service.autoscaling.name} \
-        --force-new-deployment \
-        --region ${var.aws_region}
+        --region ${var.aws_region} \
+        --query 'serviceArns[]' --output text)
+      for svc in $SERVICES; do
+        echo "  -> $${svc##*/}"
+        aws ecs update-service \
+          --cluster ${aws_ecs_cluster.main.name} \
+          --service "$svc" \
+          --force-new-deployment \
+          --region ${var.aws_region} >/dev/null
+      done
 
-      echo "Waiting for ECS service to stabilize..."
-            # Check if service is already running first
-            SERVICE_STATUS=$(aws ecs describe-services \
-              --cluster ${aws_ecs_cluster.main.name} \
-              --services ${aws_ecs_service.autoscaling.name} \
-              --region ${var.aws_region} \
-              --query 'services[0].status' --output text)
-
-            if [ "$SERVICE_STATUS" = "ACTIVE" ]; then
-              echo "Service is already active, checking running count..."
-              RUNNING_COUNT=$(aws ecs describe-services \
-                --cluster ${aws_ecs_cluster.main.name} \
-                --services ${aws_ecs_service.autoscaling.name} \
-                --region ${var.aws_region} \
-                --query 'services[0].runningCount' --output text)
-
-              if [ "$RUNNING_COUNT" -gt "0" ]; then
-                echo "Service already has $RUNNING_COUNT running tasks"
-              else
-                echo "Waiting for service to stabilize..."
-                timeout 1800 aws ecs wait services-stable \
-                  --cluster ${aws_ecs_cluster.main.name} \
-                  --services ${aws_ecs_service.autoscaling.name} \
-                  --region ${var.aws_region} \
-                  --cli-read-timeout 1800 \
-                  --cli-connect-timeout 120 || echo "Warning: Service stabilization timed out, but continuing..."
-              fi
-            else
-              echo "Service not active, waiting..."
-              timeout 1800 aws ecs wait services-stable \
-                --cluster ${aws_ecs_cluster.main.name} \
-                --services ${aws_ecs_service.autoscaling.name} \
-                --region ${var.aws_region} \
-                --cli-read-timeout 1800 \
-                --cli-connect-timeout 120 || echo "Warning: Service stabilization timed out, but continuing..."
-            fi
+      echo "Waiting for all services to stabilize..."
+      timeout 1800 aws ecs wait services-stable \
+        --cluster ${aws_ecs_cluster.main.name} \
+        --services $SERVICES \
+        --region ${var.aws_region} \
+        --cli-read-timeout 1800 \
+        --cli-connect-timeout 120 || echo "Warning: service stabilization timed out, but continuing..."
 
       echo "=== DEPLOYMENT COMPLETE ==="
       echo "Application is ready at: http://${aws_lb.autoscaling.dns_name}"

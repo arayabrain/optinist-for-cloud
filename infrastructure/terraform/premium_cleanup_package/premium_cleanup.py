@@ -440,24 +440,40 @@ def cleanup_orphaned_alb_resources() -> Dict[str, Any]:
 
         print(f"Found {len(premium_rules)} premium user ALB rules")
 
-        # Get all active assignments from database
+        # Keep-set: ACTIVE/MIGRATING/TERMINATING (statuses that can own a live
+        # rule) plus any row touched within the grace window. TERMINATING
+        # aliases PENDING_RELEASE, so an ACTIVE-only filter would reap a rule
+        # mid soft-release grace; the recency guard covers rows mid-transition.
+        grace_seconds = PremiumAssignment.PENDING_RELEASE_GRACE_SECONDS
         with get_db_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """SELECT alb_rule_arn, target_group_arn, user_id
                        FROM premium_user_assignments
-                       WHERE status = %s AND is_standby = 0""",
-                    (PremiumAssignment.ACTIVE,),
+                       WHERE is_standby = 0
+                         AND (
+                             status IN (%s, %s, %s)
+                             OR last_activity >= DATE_SUB(
+                                 NOW(), INTERVAL %s SECOND
+                             )
+                         )""",
+                    (
+                        PremiumAssignment.ACTIVE,
+                        PremiumAssignment.MIGRATING,
+                        PremiumAssignment.TERMINATING,
+                        grace_seconds,
+                    ),
                 )
                 db_assignments = cursor.fetchall()
 
+        # Filter to real ARNs: marker rows (RESERVING/AUTOSCALING_POOL) carry
+        # placeholder strings, not rule ARNs, so they must not enter the keep-set.
         db_rule_arns = {
             a["alb_rule_arn"]
             for a in db_assignments
-            if a["alb_rule_arn"]
-            and a["alb_rule_arn"].lower() != PremiumAssignment.STANDBY
+            if a["alb_rule_arn"] and a["alb_rule_arn"].startswith("arn:")
         }
-        print(f"Found {len(db_rule_arns)} active assignments in database")
+        print(f"Found {len(db_rule_arns)} keep-set assignments in database")
 
         # Find orphaned rules (in ALB but not in database)
         orphaned_rules = [

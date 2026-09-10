@@ -10,6 +10,13 @@
 
 # testing
 /coverage
+/e2e/.env
+/e2e/.env.*
+!/e2e/.env.*.example
+/e2e/.auth
+/playwright-report
+/test-results
+/results.json
 
 # production
 build/

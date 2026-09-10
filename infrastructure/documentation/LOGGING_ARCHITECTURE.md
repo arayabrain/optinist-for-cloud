@@ -364,14 +364,18 @@ All ECS task definitions use the `awslogs` driver with non-blocking mode:
     "awslogs-region": "ap-northeast-1",
     "awslogs-stream-prefix": "ecs",
     "awslogs-create-group": "true",
-    "awslogs-multiline-pattern": "^\\[\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}",
+    "awslogs-multiline-pattern": "^\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}",
     "mode": "non-blocking",
     "max-buffer-size": "25m"
   }
 }
 ```
 
-The multiline pattern groups stack traces with the preceding log entry.
+The multiline pattern groups stack traces with the preceding log entry. It must
+match the application's own line prefix, which starts with a bare date: a
+pattern that never matches leaves every event in the group stamped with the
+task's start time, so `filter-log-events --start-time` reports the tier silent
+however live it is.
 
 ### CloudWatch Metric Filters
 

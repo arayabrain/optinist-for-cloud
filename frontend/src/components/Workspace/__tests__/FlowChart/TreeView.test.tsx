@@ -14,10 +14,12 @@ import { AlgorithmTreeView } from "components/Workspace/FlowChart/TreeView"
 import { getAlgoList } from "store/slice/AlgorithmList/AlgorithmListActions"
 import { addAlgorithmNode } from "store/slice/FlowElement/FlowElementActions"
 
-// TODO: Fix the following error
-// jest.mock("store/slice/AlgorithmList/AlgorithmListActions", () => ({
-//   getAlgoList: jest.fn(),
-// }))
+// The mount effect dispatches the real thunk, so the API it calls is stubbed
+// rather than the action creator: comparing thunks by identity cannot work, as
+// createAsyncThunk returns a fresh function on every call.
+jest.mock("api/algolist/AlgoList", () => ({
+  getAlgoListApi: jest.fn(),
+}))
 
 jest.mock("react-dnd", () => ({
   ...jest.requireActual("react-dnd"),
@@ -83,14 +85,42 @@ describe("AlgorithmTreeView", () => {
     expect(screen.getByText("optinist")).toBeInTheDocument()
   })
 
-  it.skip("dispatches getAlgoList action when component mounts", () => {
-    render(
-      <Provider store={store}>
-        <AlgorithmTreeView />
-      </Provider>,
-    )
+  // These two use the store's real dispatch rather than the jest.fn() the other
+  // tests install, so the thunk reaches the middleware and its lifecycle action
+  // lands in getActions(). Asserting on the action type is the only workable
+  // check: `getAlgoList()` builds a new function on every call, so comparing what
+  // was dispatched against a second call can never match.
+  describe("fetching the algorithm list on mount", () => {
+    const renderWith = (algorithmList: Record<string, unknown>) => {
+      const realStore = mockStore({ ...mockStoreData, algorithmList })
+      render(
+        <Provider store={realStore}>
+          <AlgorithmTreeView />
+        </Provider>,
+      )
+      return realStore
+    }
 
-    expect(store.dispatch).toHaveBeenCalledWith(getAlgoList())
+    const fetchActions = (realStore: ReturnType<typeof mockStore>) =>
+      realStore
+        .getActions()
+        .filter((action: { type: string }) =>
+          action.type.startsWith(`${getAlgoList.typePrefix}/`),
+        )
+
+    it("fetches when the cached list is not the latest", () => {
+      const realStore = renderWith({ tree: {}, isLatest: false })
+
+      expect(fetchActions(realStore)).not.toHaveLength(0)
+    })
+
+    it("does not fetch again when the cached list is already the latest", () => {
+      // Without the isLatest guard every mount of the drawer refetches the whole
+      // algorithm list
+      const realStore = renderWith({ tree: {}, isLatest: true })
+
+      expect(fetchActions(realStore)).toHaveLength(0)
+    })
   })
 
   it("dispatches the correct action when the Image node add button is clicked", async () => {

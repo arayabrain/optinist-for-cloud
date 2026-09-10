@@ -1,10 +1,19 @@
 import { FC, MouseEvent, useState } from "react"
 import { useDispatch, useSelector } from "react-redux"
+import { Link } from "react-router-dom"
 
 import { useSnackbar } from "notistack"
 
-import { Addchart, GitHub, MenuBook, OpenInNew } from "@mui/icons-material"
 import {
+  Addchart,
+  Description,
+  GitHub,
+  MenuBook,
+  OpenInNew,
+  PrivacyTip,
+} from "@mui/icons-material"
+import {
+  Divider,
   ListItemIcon,
   ListItemText,
   Menu,
@@ -17,7 +26,11 @@ import { ConfirmDialog } from "components/common/ConfirmDialog"
 import { getExperiments } from "store/slice/Experiments/ExperimentsActions"
 import { reset } from "store/slice/VisualizeItem/VisualizeItemSlice"
 import { importSampleData } from "store/slice/Workflow/WorkflowActions"
-import { selectCurrentWorkspaceId } from "store/slice/Workspace/WorkspaceSelector"
+import {
+  selectActiveTab,
+  selectCurrentWorkspaceId,
+} from "store/slice/Workspace/WorkspaceSelector"
+import { WORKSPACE_TABS } from "store/slice/Workspace/WorkspaceType"
 import { AppDispatch } from "store/store"
 
 const Tooltips: FC = () => {
@@ -39,10 +52,13 @@ const Tooltips: FC = () => {
   const dispatch: AppDispatch = useDispatch()
   const { enqueueSnackbar } = useSnackbar()
   const workspaceId = useSelector(selectCurrentWorkspaceId)
+  const activeTab = useSelector(selectActiveTab)
+  const isRecordTab = activeTab === WORKSPACE_TABS.RECORD
   const category = "tutorial"
+  const workspaceReady = typeof workspaceId === "number"
 
   const handleImportSampleDataClick = () => {
-    if (typeof workspaceId === "number") {
+    if (workspaceReady) {
       dispatch(importSampleData({ workspaceId, category }))
         .unwrap()
         .then(() => {
@@ -85,17 +101,32 @@ const Tooltips: FC = () => {
           <ListItemIcon>
             <OpenInNew />
           </ListItemIcon>
-          <ListItemText>Go to documentation page</ListItemText>
+          <ListItemText>User Guide</ListItemText>
         </MenuItem>
         <MenuItem
+          disabled={!isRecordTab}
           onClick={() => {
+            handleClose()
             setDialogOpen(true)
           }}
         >
           <ListItemIcon>
             <Addchart />
           </ListItemIcon>
-          <ListItemText>Import sample data</ListItemText>
+          <ListItemText>Import Sample Data</ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem component={Link} to="/privacy" onClick={handleClose}>
+          <ListItemIcon>
+            <PrivacyTip />
+          </ListItemIcon>
+          <ListItemText>Privacy Policy</ListItemText>
+        </MenuItem>
+        <MenuItem component={Link} to="/terms" onClick={handleClose}>
+          <ListItemIcon>
+            <Description />
+          </ListItemIcon>
+          <ListItemText>Terms of Service</ListItemText>
         </MenuItem>
       </Menu>
       <ConfirmDialog

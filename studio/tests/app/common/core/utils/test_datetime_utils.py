@@ -22,6 +22,7 @@ from studio.app.common.core.utils.datetime_utils import (
     get_datetime_for_timezone,
     get_datetime_for_timezone_formatted,
     is_datetime_aware,
+    parse_datetime_for_timezone,
 )
 
 
@@ -264,3 +265,43 @@ class TestIsDatetimeAware:
 
         ny_dt = datetime(2024, 1, 15, 10, 30, 45, tzinfo=ZoneInfo("America/New_York"))
         assert is_datetime_aware(ny_dt) is True
+
+
+class TestParseDatetimeForTimezone:
+    """Tests for parse_datetime_for_timezone (inverse of the formatted writer)."""
+
+    FORMAT = "%Y-%m-%d %H:%M:%S"
+
+    def test_parse_is_aware_and_utc_by_default(self):
+        """No timezone means UTC, matching get_datetime_for_timezone."""
+        parsed = parse_datetime_for_timezone("2024-01-15 10:30:45", self.FORMAT)
+        assert is_datetime_aware(parsed)
+        assert parsed.utcoffset().total_seconds() == 0
+
+    def test_parse_honours_the_recorded_timezone(self):
+        """A Tokyo string resolves to Tokyo, not to the host's zone."""
+        parsed = parse_datetime_for_timezone(
+            "2024-01-15 10:30:45", self.FORMAT, "Asia/Tokyo"
+        )
+        assert parsed.utcoffset().total_seconds() == 9 * 3600
+
+    def test_invalid_timezone_falls_back_to_utc(self):
+        parsed = parse_datetime_for_timezone(
+            "2024-01-15 10:30:45", self.FORMAT, "Not/AZone"
+        )
+        assert parsed.utcoffset().total_seconds() == 0
+
+    def test_roundtrip_elapsed_is_not_skewed_by_the_host_zone(self):
+        """The regression: a UTC-written stamp read back must not gain the host's
+        offset, which expired the workflow startup grace on the first poll."""
+        written = get_datetime_for_timezone_formatted(None, self.FORMAT)
+        parsed = parse_datetime_for_timezone(written, self.FORMAT)
+        elapsed = get_current_timestamp() - parsed.timestamp()
+        assert abs(elapsed) < 60, f"elapsed skewed by {elapsed} sec"
+
+    def test_roundtrip_elapsed_for_a_non_utc_writer(self):
+        """Same guarantee when the stamp was written in the user's own zone."""
+        written = get_datetime_for_timezone_formatted("Asia/Tokyo", self.FORMAT)
+        parsed = parse_datetime_for_timezone(written, self.FORMAT, "Asia/Tokyo")
+        elapsed = get_current_timestamp() - parsed.timestamp()
+        assert abs(elapsed) < 60, f"elapsed skewed by {elapsed} sec"

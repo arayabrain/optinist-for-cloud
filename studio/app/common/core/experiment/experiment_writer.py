@@ -8,6 +8,7 @@ from dataclasses import asdict
 from typing import Dict
 
 import numpy as np
+import yaml
 from filelock import FileLock
 
 from studio.app.common.core.experiment.experiment import ExptConfig, ExptFunction
@@ -71,9 +72,18 @@ class ExptConfigWriter:
             self.workspace_id, self.unique_id
         )
         if os.path.exists(expt_filepath):
-            expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
-            self.builder.set_config(expt_config)
-            self.add_run_info()
+            try:
+                expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+                self.builder.set_config(expt_config)
+                self.add_run_info()
+            except (AssertionError, ValueError, KeyError, yaml.YAMLError):
+                # An existing but empty/corrupt experiment.yaml would otherwise
+                # abort the run; recreate it from scratch instead.
+                logger.warning(
+                    f"experiment.yaml for {self.workspace_id}/{self.unique_id} "
+                    f"is empty or invalid; recreating it"
+                )
+                self.create_config()
         else:
             self.create_config()
 
@@ -136,6 +146,8 @@ class ExptConfigWriter:
                 get_datetime_for_timezone_formatted(self.timezone, DATE_FORMAT)
             )  # Update time
             .set_success(WorkflowRunStatus.RUNNING.value)
+            # rewritten with started_at above, or the pair disagrees on a rerun
+            .set_timezone(self.timezone)
             .build()
         )
 

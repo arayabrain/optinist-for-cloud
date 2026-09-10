@@ -343,6 +343,21 @@ For background sync metrics (`ExperimentsSynced`, `SyncErrors`, `SyncErrorRate`,
 | `RDS_DATABASE` | Database name | Required |
 | `S3_DEFAULT_BUCKET_NAME` | Fallback S3 bucket when user has no assigned bucket | Required |
 
+### Firebase / Auth Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `USE_FIREBASE_TOKEN` | `True` → authenticate with `Authorization: Bearer <Firebase ID token>`. `False` → use the locally-signed `ExToken` JWT and bypass Firebase | `True` (`auth_config.py`); `studio/config/.env.example` sets `False` for local dev |
+| `USE_FIREBASE_EMAIL` | Send verification / reset mail via the Firebase Identity Toolkit REST API | `True` |
+| `IS_STANDALONE` | Tolerates a missing `firebase_config.json` | `True` locally |
+| `FRONTEND_URL` | Only used in the `else` branch of `auth_email_service.py` commented "Development/Testing: Just log the link", where it builds `action_code_settings`. On the live path, `sendOobCode` is posted with no `continueUrl`, so the real action-link target comes from the **Firebase console email template**, not this variable | `http://localhost:3000`, set by `FRONTEND_URL` in `app/const.py` |
+| `SECRET_KEY` | Signs the app-level JWT that wraps the Firebase refresh token, and the `ExToken` | Required |
+| `REFRESH_TOKEN_EXPIRE_MINUTES` | Lifetime of the app-level refresh JWT | `1440` |
+
+All set in `studio/config/.env.example`; `app_setup.sh` overrides `USE_FIREBASE_TOKEN` to `True` on AWS. `INITIAL_FIREBASE_UID` is set on the ECS task definitions in Terraform (`public_service.tf`, `background_service.tf`, `compute.tf`) but, as of this writing, read by nothing in `studio/`. Re-check with `grep -rn INITIAL_FIREBASE_UID studio/` before relying on that.
+
+For the Terraform-side secrets (`firebase_config_json`, `firebase_private_json`, `optinist_admin_uid`, `test_users[].firebase_uid`) and how they flow into Secrets Manager, see [TERRAFORM_ARCHITECTURE.md](TERRAFORM_ARCHITECTURE.md#how-firebase-configuration-flows).
+
 ### Frontend Constants
 
 | Constant | Value | File | Purpose |
@@ -431,3 +446,4 @@ For background sync metrics (`ExperimentsSynced`, `SyncErrors`, `SyncErrorRate`,
 |----------|--------|
 | [BACKGROUND_JOB_ARCHITECTURE.md](BACKGROUND_JOB_ARCHITECTURE.md) | Background sync jobs, cleanup jobs, scheduler configuration |
 | [ALB_ROUTING_ARCHITECTURE.md](ALB_ROUTING_ARCHITECTURE.md) | Secure routing IDs, ALB rule matching, premium routing |
+| [FIREBASE_AUTH_ARCHITECTURE.md](FIREBASE_AUTH_ARCHITECTURE.md) | Firebase setup, credential files, UID to database linkage, console and access management, runbooks |

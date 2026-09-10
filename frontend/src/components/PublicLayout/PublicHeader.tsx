@@ -5,6 +5,14 @@ import { Link, useLocation } from "react-router-dom"
 import { Box, styled, Typography } from "@mui/material"
 
 import { Z_INDEX } from "const/Layout"
+import {
+  BG_COLOR,
+  BORDER_COLOR,
+  FONT_SIZE,
+  FONT_WEIGHT,
+  NAV_LINK,
+  TEXT_COLOR,
+} from "const/Style"
 import { selectCurrentUser } from "store/slice/User/UserSelector"
 
 const PublicHeader: FC = () => {
@@ -31,10 +39,10 @@ const PublicHeader: FC = () => {
       )}
       <NavSection>
         {user ? (
-          <DashboardButton to="/dashboard">Dashboard</DashboardButton>
+          <NavButton to="/dashboard">Dashboard</NavButton>
         ) : (
           !isLoginPage &&
-          !isRegisterPage && <LoginButton to="/login">Login</LoginButton>
+          !isRegisterPage && <NavButton to="/login">Login</NavButton>
         )}
       </NavSection>
     </HeaderContainer>
@@ -44,8 +52,8 @@ const PublicHeader: FC = () => {
 const HeaderContainer = styled(Box)({
   width: "98%",
   height: 64,
-  backgroundColor: "#E1DEDB",
-  borderBottom: "1px solid #e5e7eb",
+  backgroundColor: BG_COLOR.HEADER,
+  borderBottom: `1px solid ${BORDER_COLOR.DEFAULT}`,
   boxShadow:
     "0px 2px 4px -1px rgba(0,0,0,0.2), 0px 4px 5px 0px rgba(0,0,0,0.14), 0px 1px 10px 0px rgba(0,0,0,0.12)",
   display: "flex",
@@ -79,9 +87,9 @@ const HeaderLogo = styled("img")({
 })
 
 const HeaderTitle = styled(Typography)({
-  fontSize: 20,
-  fontWeight: 600,
-  color: "#000000",
+  fontSize: FONT_SIZE.CARD_TITLE,
+  fontWeight: FONT_WEIGHT.SEMIBOLD,
+  color: TEXT_COLOR.BLACK,
 })
 
 const NavSection = styled(Box)({
@@ -91,33 +99,20 @@ const NavSection = styled(Box)({
   gap: 16,
 })
 
-const DashboardButton = styled(Link)({
-  display: "inline-block",
-  padding: "8px 16px",
-  fontSize: 14,
-  fontWeight: 500,
-  color: "#ffffff",
-  backgroundColor: "#000000c4",
-  borderRadius: 6,
-  textDecoration: "none",
-  transition: "background-color 0.2s",
-  ":hover": {
-    backgroundColor: "#00000090",
-  },
-})
+const NavLink = styled(Link)(NAV_LINK)
 
-const LoginButton = styled(Link)({
+const NavButton = styled(Link)({
   display: "inline-block",
   padding: "8px 16px",
-  fontSize: 14,
-  fontWeight: 500,
-  color: "#ffffff",
-  backgroundColor: "#000000c4",
+  fontSize: FONT_SIZE.SMALL,
+  fontWeight: FONT_WEIGHT.MEDIUM,
+  color: BG_COLOR.WHITE,
+  backgroundColor: BG_COLOR.BUTTON_DARK,
   borderRadius: 6,
   textDecoration: "none",
   transition: "background-color 0.2s",
   ":hover": {
-    backgroundColor: "#00000090",
+    backgroundColor: BG_COLOR.BUTTON_DARK_HOVER,
   },
 })
 

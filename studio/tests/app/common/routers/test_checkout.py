@@ -8,128 +8,337 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from studio.app.common.core.subscription.constants import SubscriptionPlanIds
 from studio.app.common.core.subscription.subscription_service import SubscriptionService
 
 
-class TestCheckoutEndpoints:
-    """Test checkout-related endpoints"""
-
-    @pytest.fixture
-    def mock_stripe(self):
-        """Mock Stripe API calls"""
-        with patch("stripe.checkout.Session.retrieve") as mock_retrieve:
-            yield mock_retrieve
-
-    def test_checkout_session_validation_invalid(self, mock_stripe):
-        """Test checkout session validation with invalid session"""
-        # Mock Stripe to raise an error for invalid session
-        mock_stripe.side_effect = Exception("No such checkout session")
-
-        # This test would need a test client to actually call the endpoint
-        # For now, just test that the mock is set up correctly
-        assert mock_stripe.side_effect is not None
-
-    def test_checkout_session_validation_valid(self, mock_stripe):
-        """Test checkout session validation with valid session"""
-        mock_session = Mock()
-        mock_session.id = "cs_test_valid"
-        mock_session.payment_status = "paid"
-        mock_stripe.return_value = mock_session
-
-        result = mock_stripe("cs_test_valid")
-        assert result.id == "cs_test_valid"
-
-
 class TestWebhookData:
-    """Test webhook data structure"""
+    """The ``parent.subscription_details`` fallback for ``subscription_id``.
 
-    def test_invoice_data_structure(self):
-        """Test that invoice data has correct structure for subscription_id"""
-        # The correct Stripe invoice structure for subscription_id
-        invoice_data = {
+    Every other renewal test sends a top-level ``subscription``, so the fallback
+    branch is only reachable from here. These cases drive
+    ``handle_subscription_payment_succeeded`` rather than re-implementing the
+    extraction: the previous version asserted its own dict comprehension and
+    omitted the ``type`` discriminator production actually requires.
+    """
+
+    @staticmethod
+    def _invoice(parent):
+        return {
             "id": "in_test123",
             "customer": "cus_test123",
-            "parent": {"subscription_details": {"subscription": "sub_test123"}},
+            "parent": parent,
             "status": "paid",
             "amount_paid": 2999,
             "billing_reason": "subscription_cycle",
         }
 
-        # Test extraction using the same logic as webhook_service.py
-        subscription_id = (
-            invoice_data.get("parent", {})
-            .get("subscription_details", {})
-            .get("subscription")
+    def test_subscription_id_is_read_from_parent_when_absent_at_top_level(self):
+        from studio.app.common.core.subscription.webhook_service import WebhookService
+
+        db = Mock()
+        db.query.return_value.filter.return_value.first.return_value = None
+
+        result = WebhookService.handle_subscription_payment_succeeded(
+            db,
+            self._invoice(
+                {
+                    "type": "subscription_details",
+                    "subscription_details": {"subscription": "sub_test123"},
+                }
+            ),
         )
-        assert subscription_id == "sub_test123"
-        assert subscription_id is not None
+
+        assert result["reason"] == "missing_user_account"
+
+    def test_parent_without_the_type_discriminator_is_rejected(self):
+        from studio.app.common.core.subscription.webhook_service import WebhookService
+
+        db = Mock()
+        db.query.return_value.filter.return_value.first.return_value = None
+
+        with pytest.raises(HTTPException) as exc:
+            WebhookService.handle_subscription_payment_succeeded(
+                db,
+                self._invoice(
+                    {"subscription_details": {"subscription": "sub_test123"}}
+                ),
+            )
+
+        assert exc.value.status_code == 400
 
 
-# Integration tests (these require the API to be running)
-@pytest.mark.integration
-class TestCheckoutIntegration:
-    """Integration tests that require running API"""
+class TestCheckoutRoutes:
+    """Route-level assertions for the checkout and webhook endpoints.
 
-    @pytest.fixture(scope="class")
-    def api_url(self):
-        return SubscriptionService.get_base_url()
+    These three cases were previously ``@pytest.mark.integration`` and driven
+    with live ``requests`` calls against ``SubscriptionService.get_base_url()``,
+    behind a ``check_api_running`` fixture that called ``pytest.skip()`` unless
+    a server answered ``/docs``. No lane runs a server alongside pytest, so
+    they were the routers lane's three skips, while the coverage map credited the
+    signature check. None of the three needs a server: the
+    assertions are about our own routing and error mapping, so they run against
+    ``TestClient`` with Stripe patched at the boundary.
+    """
 
-    @pytest.fixture(scope="class")
-    def check_api_running(self, api_url):
-        """Check if API is running before running integration tests"""
-        import requests
+    @pytest.fixture
+    def client(self):
+        """TestClient with the DB dependency stubbed.
 
+        The webhook rejects an unsigned body before touching the session, but
+        FastAPI resolves ``get_db`` before entering the handler, and the test
+        container has no MySQL.
+        """
+        from fastapi.testclient import TestClient
+
+        from studio.__main_unit__ import app
+        from studio.app.common.db.database import get_db
+
+        app.dependency_overrides[get_db] = lambda: Mock()
         try:
-            response = requests.get(f"{api_url}/docs", timeout=3)
-            if response.status_code != 200:
-                pytest.skip("API is not running")
-        except Exception:
-            pytest.skip("Cannot connect to API")
+            with TestClient(app) as c:
+                yield c
+        finally:
+            app.dependency_overrides.pop(get_db, None)
 
-    def test_get_subscription_plans(self, api_url, check_api_running):
-        """Test getting available subscription plans"""
-        import requests
+    def test_get_subscription_plans(self, client):
+        """The plans route is mounted and returns a list, not a 500.
 
-        response = requests.get(f"{api_url}/api/subsc/mgmts/plans")
+        ``get_active_plans`` returning nothing is a legitimate state (an
+        unseeded environment); the route logs a warning and must still answer
+        200 with an empty list, because the SPA renders the plan cards from it.
+        """
+        with patch.object(SubscriptionService, "get_active_plans", return_value=[]):
+            response = client.get("/api/subsc/mgmts/plans")
+
         assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
+        assert response.json() == []
 
-    def test_checkout_session_validation(self, api_url, check_api_running):
-        """Test checkout session validation endpoint"""
-        import requests
+    def test_checkout_session_validation_rejects_an_unknown_session(self, client):
+        """A session id Stripe does not recognise maps to 400, not 500.
 
-        payload = {"session_id": "cs_test_fake_session"}
+        ``InvalidRequestError`` is a ``StripeError``, so it must be caught by
+        the 400 branch rather than falling through to the generic 500 handler -
+        the SPA's ``/subscription/thanks`` page distinguishes the two.
+        """
+        import stripe
 
-        response = requests.post(
-            f"{api_url}/api/subsc/checkout/validate-checkout-session",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-        )
+        with patch(
+            "stripe.checkout.Session.retrieve",
+            side_effect=stripe.error.InvalidRequestError(
+                "No such checkout session", param="session_id"
+            ),
+        ):
+            response = client.post(
+                "/api/subsc/checkout/validate-checkout-session",
+                json={"session_id": "cs_test_fake_session"},
+            )
 
-        # Should return 400 for fake session
         assert response.status_code == 400
 
-    def test_webhook_requires_signature(self, api_url, check_api_running):
-        """Test webhook requires signature verification"""
-        import requests
+    @staticmethod
+    def _post_unverified(client, headers=None):
+        """POST a plausible ``checkout.session.completed`` with the dispatcher
+        spied on rather than mocked out of existence.
 
-        payload = {
+        The status alone is not the whole assertion. The invariant that matters
+        is that an unverified event never reaches the dispatcher at all - that
+        dispatcher is what writes the premium row and the 200GB quota - and a
+        status check cannot distinguish "rejected before dispatch" from
+        "dispatched and then failed with a 4xx".
+        """
+        from studio.app.common.core.subscription.webhook_service import WebhookService
+
+        with patch.object(WebhookService, "dispatch_webhook_event") as dispatch:
+            dispatch.return_value = None
+            response = client.post(
+                "/api/subsc/webhooks/stripe",
+                json={
+                    "type": "checkout.session.completed",
+                    "data": {"object": {"id": "cs_test"}},
+                },
+                headers=headers or {},
+            )
+        return response, dispatch
+
+    def test_webhook_requires_signature(self, client):
+        """An unsigned webhook body is rejected and not processed.
+
+        The only thing standing between the public webhook route and a forged
+        ``checkout.session.completed`` - which grants premium and a 200GB quota -
+        is ``construct_event``'s signature check.
+        """
+        response, dispatch = self._post_unverified(client)
+
+        assert response.status_code == 400
+        dispatch.assert_not_called()
+
+    def test_webhook_rejects_a_forged_signature(self, client):
+        """A syntactically valid but wrong signature is rejected too.
+
+        A missing header and a wrong signature take different branches inside
+        ``construct_event`` (``ValueError`` vs ``SignatureVerificationError``),
+        so the missing-header case alone would still pass if verification were
+        degraded to a presence check.
+        """
+        response, dispatch = self._post_unverified(
+            client, headers={"stripe-signature": "t=1,v1=" + "0" * 64}
+        )
+
+        assert response.status_code == 400
+        dispatch.assert_not_called()
+
+    def test_webhook_dispatches_a_verified_event(self, client):
+        """The negative cases above must not be passing because the route is
+        broken for every input. With verification satisfied, the event reaches
+        the dispatcher and the route answers 200."""
+        from studio.app.common.core.subscription.webhook_service import WebhookService
+
+        event = {
             "type": "checkout.session.completed",
             "data": {"object": {"id": "cs_test"}},
         }
 
-        response = requests.post(
-            f"{api_url}/api/subsc/webhooks/stripe",
-            json=payload,
-            headers={"Content-Type": "application/json"},
+        with patch("stripe.Webhook.construct_event", return_value=event), patch.object(
+            WebhookService, "dispatch_webhook_event"
+        ) as dispatch:
+            dispatch.return_value = None
+            response = client.post(
+                "/api/subsc/webhooks/stripe",
+                json=event,
+                headers={"stripe-signature": "t=1,v1=" + "0" * 64},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["processed"] == "checkout.session.completed"
+        assert dispatch.call_args.args[1] == "checkout.session.completed"
+
+
+class TestWebhookStatusReportsWhoseFaultItWas:
+    """The webhook's status must say whether a failure was ours or the caller's.
+
+    Two layers used to replace every inner ``HTTPException`` with a hardcoded
+    400 - the route, and ``dispatch_webhook_event`` one level deeper. Both were
+    written to stop the response naming which verification failed, and at the
+    time every raise they saw was already a 400, so the status was unchanged for
+    those. What neither accounted for is the 500s ``WebhookService`` raises, such
+    as ``HTTPException(500, "Error retrieving subscription from Stripe: ...")``
+    when the Stripe call inside ``handle_checkout_completed`` fails.
+
+    This is *not* about redelivery. Stripe treats every non-2xx alike, retrying
+    with exponential backoff for up to three days in live mode, so the old 400
+    did not abandon the delivery. What it did was report our own outage as a
+    malformed request: the failure stayed out of the 5xx alarm, and the delivery
+    log pointed whoever read it at Stripe's payload instead of at our stack
+    trace.
+
+    The detail-suppression intent is preserved - the body is still the generic
+    string - so these tests assert the status, which is the part that carries the
+    diagnosis.
+    """
+
+    @staticmethod
+    def _post_verified_but_failing(client, error):
+        """A correctly signed event whose *handler* raises ``error``.
+
+        Patched at ``handle_checkout_completed``, deliberately not at
+        ``dispatch_webhook_event``: the dispatcher had its own
+        ``except HTTPException -> 400`` flattener, so patching it would replace
+        the code under test and the assertions below would pass whether or not
+        the status actually survives to the client.
+        """
+        from studio.app.common.core.subscription.webhook_service import WebhookService
+
+        event = {
+            "type": "checkout.session.completed",
+            "data": {"object": {"id": "cs_test"}},
+        }
+
+        with patch("stripe.Webhook.construct_event", return_value=event), patch.object(
+            WebhookService, "handle_checkout_completed", side_effect=error
+        ):
+            return client.post(
+                "/api/subsc/webhooks/stripe",
+                json=event,
+                headers={"stripe-signature": "t=1,v1=" + "0" * 64},
+            )
+
+    def test_an_internal_failure_during_dispatch_is_5xx(self, client):
+        """Our own half, using the real error ``WebhookService`` raises when the
+        Stripe subscription lookup fails mid-processing."""
+        response = self._post_verified_but_failing(
+            client,
+            HTTPException(
+                status_code=500,
+                detail="Error retrieving subscription from Stripe: connection reset",
+            ),
         )
 
-        # Should fail signature verification
+        assert response.status_code >= 500, (
+            f"an internal failure answered {response.status_code}, reporting our "
+            "own outage as the caller's fault and keeping it out of the 5xx alarm"
+        )
+
+    def test_an_unexpected_exception_during_dispatch_is_5xx(self, client):
+        """A bug that raises something other than HTTPException must also be
+        retryable rather than reported as the caller's fault."""
+        response = self._post_verified_but_failing(
+            client, RuntimeError("unhandled bug in the handler")
+        )
+
+        assert response.status_code >= 500
+
+    def test_a_caller_side_problem_stays_4xx(self, client):
+        """The converse direction. An unpaid session is a fact about the event,
+        not a fault of ours, so it must not be promoted to a 5xx and page
+        somebody. Preserving the status has to work both ways or it is just a
+        different constant."""
+        response = self._post_verified_but_failing(
+            client,
+            HTTPException(
+                status_code=400, detail="Payment not completed. Status: unpaid"
+            ),
+        )
+
         assert response.status_code == 400
+
+    def test_a_lookup_race_is_not_reported_as_a_client_error(self, client):
+        """``checkout.session.completed`` can arrive before the user row is
+        visible. Stripe will retry regardless, so what this pins is the reported
+        status: today the race surfaces as 404, and this records that rather than
+        leaving it to be discovered from a delivery log."""
+        response = self._post_verified_but_failing(
+            client,
+            HTTPException(status_code=404, detail="No active user found for customer"),
+        )
+
+        assert response.status_code == 404, (
+            "a not-yet-visible user currently surfaces as 404; if this ever "
+            "needs to be retryable it must be mapped to 5xx at the raise site"
+        )
+
+    def test_the_inner_detail_is_not_leaked(self, client):
+        """The intent of the original change is preserved: the response body must
+        not name which check failed or echo an internal error string."""
+        response = self._post_verified_but_failing(
+            client,
+            HTTPException(
+                status_code=500,
+                detail="Error retrieving subscription from Stripe: connection reset",
+            ),
+        )
+
+        assert response.json()["detail"] == "Webhook processing failed"
+
+    def test_the_signature_rejection_detail_is_not_leaked(self, client):
+        """Same for the 400 path: "Invalid signature" and "Invalid payload" tell a
+        forger which check they failed."""
+        response, _ = TestCheckoutRoutes._post_unverified(client)
+
+        assert response.json()["detail"] == "Webhook processing failed"
 
 
 class TestCreateOrUpdateSubscriptionConcurrency:

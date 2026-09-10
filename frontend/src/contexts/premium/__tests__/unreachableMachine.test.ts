@@ -11,7 +11,6 @@ import {
   computeNextProbeDelayMs,
   computeProbeFailure,
   hasReachedProbeCap,
-  isStaleFailure,
   shouldClearUnreachableForAssignment,
   shouldFlipToUnreachable,
   shouldHydrateFromSnapshot,
@@ -88,25 +87,23 @@ describe("shouldFlipToUnreachable", () => {
 })
 
 describe("computeNextProbeDelayMs", () => {
-  it("starts at the initial delay for zero prior failures", () => {
-    expect(computeNextProbeDelayMs(0)).toBe(INITIAL_PROBE_DELAY_MS)
+  // Literals, not expressions over the constants: the sign-off sheet quotes a
+  // wall clock ("~T0+30s, ~T0+90s"), and a derived expectation stays green
+  // with the initial delay set to 3s.
+  it("pins the constants the ladder is built from", () => {
+    expect(INITIAL_PROBE_DELAY_MS).toBe(30_000)
+    expect(MAX_PROBE_DELAY_MS).toBe(300_000)
+    expect(PROBE_BACKOFF_MULTIPLIER).toBe(2)
   })
 
-  it("doubles with each failure up to the cap", () => {
-    expect(computeNextProbeDelayMs(1)).toBe(
-      INITIAL_PROBE_DELAY_MS * PROBE_BACKOFF_MULTIPLIER,
-    )
-    expect(computeNextProbeDelayMs(2)).toBe(
-      INITIAL_PROBE_DELAY_MS * PROBE_BACKOFF_MULTIPLIER ** 2,
-    )
-  })
-
-  it("caps the delay at MAX_PROBE_DELAY_MS", () => {
-    expect(computeNextProbeDelayMs(100)).toBe(MAX_PROBE_DELAY_MS)
+  it("walks 30s, 60s, 120s, 240s and then holds at the 300s cap", () => {
+    expect([0, 1, 2, 3, 4, 5].map(computeNextProbeDelayMs)).toEqual([
+      30_000, 60_000, 120_000, 240_000, 300_000, 300_000,
+    ])
   })
 
   it("treats negative counts as zero rather than shrinking the delay", () => {
-    expect(computeNextProbeDelayMs(-5)).toBe(INITIAL_PROBE_DELAY_MS)
+    expect(computeNextProbeDelayMs(-5)).toBe(30_000)
   })
 })
 
@@ -122,33 +119,6 @@ describe("hasReachedProbeCap", () => {
 
   it("returns true beyond the cap", () => {
     expect(hasReachedProbeCap(MAX_FAILED_PROBES + 10)).toBe(true)
-  })
-})
-
-describe("isStaleFailure", () => {
-  it("suppresses a failure whose request predates the last reachable", () => {
-    expect(isStaleFailure(100, 200, 300)).toBe(true)
-  })
-
-  it("does not suppress a failure newer than the last reachable", () => {
-    expect(isStaleFailure(300, 200, 400)).toBe(false)
-  })
-
-  it("does not suppress when detail.sentAt equals lastReachable", () => {
-    // Equal sentAt means the failure is no older than the success — treat
-    // as current evidence rather than stale.
-    expect(isStaleFailure(200, 200, 300)).toBe(false)
-  })
-
-  it("falls back to now when sentAt is undefined (treat event as current)", () => {
-    // Undefined sentAt should behave as a fresh event — no suppression.
-    expect(isStaleFailure(undefined, 200, 300)).toBe(false)
-  })
-
-  it("suppresses undefined-sentAt event only if now predates lastReachable", () => {
-    // Contrived: a listener fires with now < lastReachable (clock went back
-    // or tests inject explicit timestamps). Still the defined semantics.
-    expect(isStaleFailure(undefined, 500, 400)).toBe(true)
   })
 })
 

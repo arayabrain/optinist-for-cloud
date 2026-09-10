@@ -1,0 +1,64 @@
+# Brings up a throwaway MySQL, migrates it to head, then runs the concurrent
+# workflow-count integration test, proving increments and decrements serialize
+# on the row over real connections.
+# Opt-in: needs a real database, so it is not part of the per-PR test job.
+# Credentials are inline (not from studio/config/.env, which is gitignored) so
+# this runs unchanged in CI. Invoked via `make workflow_count_it`.
+#
+# Own compose project: without it this file inherits `araya-optinist` from the
+# directory and the make target's `down -v` cleanup would stop a dev or test
+# lane running concurrently.
+name: workflow-count-it
+
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: studio
+      MYSQL_USER: studio_db_user
+      MYSQL_PASSWORD: studio_db_password
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  workflow_count_it:
+    image: test_studio_backend
+    build:
+      context: .
+      dockerfile: studio/config/docker/Dockerfile.test
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PYTHONPATH: .
+      TZ: UTC
+      RUN_WORKFLOW_COUNT_IT: "1"
+      MYSQL_SERVER: db:3306
+      MYSQL_USER: studio_db_user
+      MYSQL_PASSWORD: studio_db_password
+      MYSQL_DATABASE: studio
+      MYSQL_SSL_MODE: ""
+      STRIPE_CALLBACK_URL: http://localhost:8000
+      STRIPE_SECRET_KEY: sk_test_dummy_123
+      STRIPE_WEBHOOK_SECRET: whsec_dummy_123
+    depends_on:
+      db:
+        condition: service_healthy
+    # Fail (not skip) if any test is skipped: under this harness the opt-in
+    # flag and the database are wired, so a skip means the env didn't reach the
+    # runner and the "green" would be hollow. set -e/pipefail also propagate
+    # real pytest failures.
+    command:
+      - bash
+      - -c
+      - |
+        set -eo pipefail
+        alembic upgrade head
+        poetry run python -m pytest \
+          studio/tests/app/common/core/workflow/test_workflow_count_integration.py \
+          -v -rs | tee /tmp/wfcount.out
+        ! grep -qE '[0-9]+ skipped' /tmp/wfcount.out

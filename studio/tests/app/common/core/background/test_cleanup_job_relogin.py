@@ -106,7 +106,10 @@ class TestCleanupUserDataReloginCheck:
         self, mock_exists, mock_check_relogin
     ):
         """Should abort cleanup if user logs back in during processing."""
-        from studio.app.common.core.background.cleanup_job import DataCleanupJob
+        from studio.app.common.core.background.cleanup_job import (
+            CleanupOutcome,
+            DataCleanupJob,
+        )
 
         # User logs back in after first check
         mock_check_relogin.side_effect = [False, True]
@@ -117,8 +120,8 @@ class TestCleanupUserDataReloginCheck:
             workspace_ids=["ws1", "ws2", "ws3"],
         )
 
-        # Should return False (cleanup aborted)
-        assert result is False
+        # Cleanup aborted because the user returned → KEPT (not an error)
+        assert result == CleanupOutcome.KEPT
 
 
 class TestVerifyNoActiveWorkflows:

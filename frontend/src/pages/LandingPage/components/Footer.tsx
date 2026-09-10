@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom"
+
 import { Box, styled, Typography } from "@mui/material"
 
 import {
@@ -8,7 +10,7 @@ import {
   TEXT_COLOR,
   BG_COLOR,
   BORDER_COLOR,
-} from "pages/LandingPage/constants"
+} from "const/Style"
 
 export const Footer = () => {
   return (
@@ -51,13 +53,17 @@ export const Footer = () => {
         <FooterBottom>
           <FooterAttribution>
             ARAYA OptiNiSt is based on OptiNiSt. OptiNiSt was developed by{" "}
-            <FooterLink
-              href="https://www.araya.org/en/"
+            <LogoLink
+              href="https://www.araya.org/"
               target="_blank"
               rel="noopener noreferrer"
             >
-              ARAYA
-            </FooterLink>{" "}
+              <img
+                src="/static/araya_logo.png"
+                alt="Araya Inc"
+                style={{ height: 20, width: "auto", verticalAlign: "middle" }}
+              />
+            </LogoLink>{" "}
             and{" "}
             <FooterLink
               href="https://www.oist.jp/"
@@ -67,22 +73,12 @@ export const Footer = () => {
               OIST
             </FooterLink>
           </FooterAttribution>
-          <CompanyLine>
-            <CompanyLink
-              href="https://www.araya.org/en/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <img
-                src="/static/araya_logo.png"
-                alt="ARAYA"
-                style={{ height: 20, width: "auto" }}
-              />
-              <span>Araya Inc.</span>
-            </CompanyLink>
-          </CompanyLine>
+          <FooterLegal>
+            <LegalLink to="/terms">Terms of Service</LegalLink>
+            <LegalLink to="/privacy">Privacy Policy</LegalLink>
+          </FooterLegal>
           <FooterCopyright>
-            &copy; 2025 ARAYA OptiNiSt. Built for Science.
+            &copy; {`${new Date().getFullYear()}`} ARAYA Inc.
           </FooterCopyright>
         </FooterBottom>
       </Container>
@@ -178,26 +174,36 @@ const FooterLink = styled("a")({
   },
 })
 
-const CompanyLine = styled(Box)({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-})
-
-const CompanyLink = styled("a")({
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "0.5rem",
-  color: TEXT_COLOR.SECONDARY,
-  fontSize: FONT_SIZE.SMALL,
+// Logo link: fade the image slightly on hover to signal it is a link
+const LogoLink = styled(FooterLink)({
+  display: "inline-block",
+  verticalAlign: "middle",
+  fontSize: 0,
   textDecoration: "none",
-  transition: "color 0.2s",
-  "&:hover": {
-    color: TEXT_COLOR.ACCENT,
+  "& img": {
+    transition: "opacity 0.2s",
+  },
+  "&:hover img": {
+    opacity: 0.7,
   },
 })
 
 const FooterCopyright = styled(Typography)({
   fontSize: FONT_SIZE.SMALL,
   color: TEXT_COLOR.SECONDARY,
+})
+
+const FooterLegal = styled(Box)({
+  display: "flex",
+  gap: "1rem",
+})
+
+const LegalLink = styled(Link)({
+  fontSize: FONT_SIZE.SMALL,
+  color: TEXT_COLOR.SECONDARY,
+  textDecoration: "underline",
+  transition: "color 0.2s",
+  "&:hover": {
+    color: TEXT_COLOR.ACCENT,
+  },
 })

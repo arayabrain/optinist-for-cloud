@@ -2,7 +2,7 @@
 Cloud utilities for user context and subscription management.
 """
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from sqlmodel import select
@@ -20,7 +20,6 @@ from studio.app.common.core.subscription.constants import (
     StorageSize,
     SubscriptionLifecycleStatus,
     SubscriptionPeriods,
-    SubscriptionPlanIds,
     SubscriptionStatus,
     SubscriptionType,
 )
@@ -181,6 +180,65 @@ async def get_user_context_with_warnings(user_id: int) -> Optional[Dict[str, Any
         return None
 
 
+def _effective_quota_bytes(
+    status: Optional[SubscriptionLifecycleStatus], raw_quota_bytes: int
+) -> int:
+    """Storage quota actually applied, given lifecycle status.
+
+    Premium users past expiry (grace/warning/overdue) are held to the free-tier
+    limit even while their raw quota record still reads the premium quota;
+    everyone else (active, free, or an undeterminable status) uses the raw quota.
+    This is the single mapping shared by the warning banner and the enforcement
+    gates so they cannot disagree.
+    """
+    downgraded = {
+        SubscriptionLifecycleStatus.GRACE,
+        SubscriptionLifecycleStatus.WARNING,
+        SubscriptionLifecycleStatus.OVERDUE,
+    }
+    if status in downgraded:
+        return StorageQuota.FREE * StorageSize.GB
+    return raw_quota_bytes
+
+
+def get_effective_quota_bytes(
+    user_id: int, storage_info: Optional[Dict[str, Any]] = None
+) -> int:
+    """Return the storage quota to enforce for a user, in bytes.
+
+    Mirrors the effective quota that ``calculate_limit_warning`` uses so the
+    run/upload gates and the warning banner stay in agreement. Returns 0 when
+    the raw quota is unknown/disabled, letting callers skip enforcement exactly
+    as the pre-existing ``quota > 0`` guard did.
+    """
+    if storage_info is None:
+        storage_info = get_user_storage_usage(user_id)
+    raw_quota_bytes = storage_info.get("storage_quota_bytes", 0) if storage_info else 0
+    if raw_quota_bytes <= 0:
+        return 0
+
+    # Fail open to the raw quota on any lookup error: a transient DB issue must
+    # not turn a run/upload into a 500 (this runs on the request hot path).
+    try:
+        with session_scope() as db:
+            lifecycle = SubscriptionService.determine_lifecycle(db, user_id)
+    except Exception as e:
+        logger.warning(
+            f"Failed to determine subscription lifecycle for user {user_id}: {e}; "
+            f"enforcing raw quota {raw_quota_bytes}"
+        )
+        return raw_quota_bytes
+
+    if lifecycle is None:
+        logger.warning(
+            f"Could not determine subscription lifecycle for user {user_id}; "
+            f"enforcing raw quota {raw_quota_bytes}"
+        )
+        return raw_quota_bytes
+
+    return _effective_quota_bytes(lifecycle.status, raw_quota_bytes)
+
+
 async def calculate_limit_warning(user_id: int) -> Optional[LimitWarning]:
     """
     Calculate limit warning based on subscription and storage status.
@@ -197,8 +255,6 @@ async def calculate_limit_warning(user_id: int) -> Optional[LimitWarning]:
     """
     try:
         FREE_PLAN_LIMIT_BYTES = StorageQuota.FREE * StorageSize.GB
-        GRACE_PERIOD_DAYS = SubscriptionPeriods.GRACE_PERIOD_DAYS
-        WARNING_PERIOD_DAYS = SubscriptionPeriods.WARNING_PERIOD_DAYS
 
         logger.info(f"Calculating limit warning for user {user_id}")
 
@@ -233,98 +289,24 @@ async def calculate_limit_warning(user_id: int) -> Optional[LimitWarning]:
             )
             storage_quota_gb = storage_quota_bytes / StorageSize.GB
 
-            # Step 1: Determine subscription status
-            # Only look at premium subscriptions - free plan records
-            # should not trigger "premium expired" warnings
-            query_result = db.execute(
-                select(UserSubscription)
-                .where(UserSubscription.user_id == user_id)
-                .where(UserSubscription.plan_id == SubscriptionPlanIds.PREMIUM)
-                .order_by(UserSubscription.expiration.desc())
+            # Step 1: Determine subscription status.
+            # A malformed premium row (None returned) means no warning.
+            lifecycle = SubscriptionService.determine_lifecycle(db, user_id)
+            if lifecycle is None:
+                return None
+            subscription_status = lifecycle.status
+            subscription_end = lifecycle.subscription_end
+            grace_end = lifecycle.grace_end
+            deletion_date = lifecycle.deletion_date
+            days_remaining = lifecycle.days_remaining
+
+            # Step 2: Determine storage status against the effective quota
+            # (grace/warning/overdue are held to the free-tier limit), using the
+            # same mapping the enforcement gates apply.
+            effective_quota_bytes = _effective_quota_bytes(
+                subscription_status, storage_quota_bytes
             )
-            result_rows = query_result.all()
-
-            logger.info(
-                f"Found {len(result_rows)} premium subscription "
-                f"records for user {user_id}"
-            )
-
-            subscription_status = None
-            subscription_end = None
-            grace_end = None
-            deletion_date = None
-            days_remaining = None
-
-            if result_rows:
-                last_subscription_row = result_rows[0]
-
-                if hasattr(last_subscription_row, "__getitem__"):
-                    last_subscription = last_subscription_row[0]
-                else:
-                    last_subscription = last_subscription_row
-
-                # Safely access expiration with error handling
-                if hasattr(last_subscription, "expiration"):
-                    subscription_end = last_subscription.expiration
-                    if subscription_end is None:
-                        logger.error(
-                            f"User {user_id} subscription has None expiration date"
-                        )
-                        return None
-                    # Ensure subscription_end is timezone-aware for comparison
-                    if subscription_end.tzinfo is None:
-                        subscription_end = subscription_end.replace(tzinfo=timezone.utc)
-                else:
-                    logger.error(
-                        f"User {user_id} subscription object missing "
-                        f"expiration attribute: {dir(last_subscription)}"
-                    )
-                    return None
-                grace_end = subscription_end + timedelta(days=GRACE_PERIOD_DAYS)
-                deletion_date = grace_end + timedelta(days=WARNING_PERIOD_DAYS)
-                now = SubscriptionService.get_current_datetime()
-
-                logger.debug(f"User {user_id} subscription details:")
-                logger.debug(f"Subscription end: {subscription_end}")
-                logger.debug(f"Grace end: {grace_end}")
-                logger.debug(f"Deletion date: {deletion_date}")
-                logger.debug(f"Current time: {now}")
-
-                if subscription_end > now:
-                    subscription_status = SubscriptionLifecycleStatus.ACTIVE
-                elif now <= grace_end:
-                    subscription_status = SubscriptionLifecycleStatus.GRACE
-                    days_remaining = (grace_end - now).days
-                elif now <= deletion_date:
-                    subscription_status = SubscriptionLifecycleStatus.WARNING
-                    days_remaining = (deletion_date - now).days
-                else:
-                    subscription_status = SubscriptionLifecycleStatus.OVERDUE
-                    days_remaining = 0
-
-                logger.info(
-                    f"Final status: {subscription_status}, "
-                    f"days_remaining: {days_remaining}"
-                )
-            else:
-                subscription_status = (
-                    SubscriptionLifecycleStatus.FREE
-                )  # Never had premium
-
-            # Step 2: Determine storage status
-            # For users in grace/warning/overdue period, compare against free tier limit
-            # since that's what they'll have after their subscription fully expires
-            match subscription_status:
-                case (
-                    SubscriptionLifecycleStatus.GRACE
-                    | SubscriptionLifecycleStatus.WARNING
-                    | SubscriptionLifecycleStatus.OVERDUE
-                ):
-                    effective_quota_bytes = FREE_PLAN_LIMIT_BYTES
-                    effective_quota_gb = StorageQuota.FREE
-                case _:
-                    effective_quota_bytes = storage_quota_bytes
-                    effective_quota_gb = storage_quota_gb
+            effective_quota_gb = effective_quota_bytes / StorageSize.GB
 
             storage_exceeded = current_usage_bytes > effective_quota_bytes
             excess_bytes = max(0, current_usage_bytes - effective_quota_bytes)

@@ -12,6 +12,9 @@ on:
 
   workflow_dispatch:
 
+  # Called by the weekly regression workflow so its jobs are defined once.
+  workflow_call:
+
 # Test jobs are separated for parallel execution and clearer failure identification
 jobs:
   # Backend and Lambda tests

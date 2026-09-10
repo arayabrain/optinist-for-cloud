@@ -19,6 +19,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteSyncLockFileUtil,
 )
+from studio.app.common.core.utils.datetime_utils import parse_datetime_for_timezone
 from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
 from studio.app.common.schemas.experiment import CopyItem
 from studio.app.const import DATE_FORMAT
@@ -27,6 +28,13 @@ logger = AppLogger.get_logger()
 
 
 class ExperimentService:
+    @staticmethod
+    def _started_at(config: ExptConfig) -> datetime:
+        # ordered across experiments, so different user zones must resolve first
+        return parse_datetime_for_timezone(
+            config.started_at, DATE_FORMAT, config.timezone
+        )
+
     @classmethod
     def get_last_experiment(cls, workspace_id: str):
         last_expt_config: Optional[ExptConfig] = None
@@ -36,9 +44,7 @@ class ExperimentService:
             config = ExptConfigReader.read_from_path(path)
             if not last_expt_config:
                 last_expt_config = config
-            elif datetime.strptime(config.started_at, DATE_FORMAT) > datetime.strptime(
-                last_expt_config.started_at, DATE_FORMAT
-            ):
+            elif cls._started_at(config) > cls._started_at(last_expt_config):
                 last_expt_config = config
 
         return last_expt_config

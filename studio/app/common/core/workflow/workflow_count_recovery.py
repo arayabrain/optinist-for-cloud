@@ -1,15 +1,20 @@
 """
 Workflow Count Recovery for Free and Premium Tier Users
 
-Handles recovery of active_workflow_count in case of process crashes.
-This module provides a scheduled task that can be run by Lambda to:
+UNCALLED AND SUPERSEDED. Nothing in the application imports this module. The
+sweep that actually runs is `recover_stale_workflow_counts` in the Common User
+Manager Lambda, which replaced this copy and is invoked as step 1 of its handler.
+
+Their rules also differ: this one resets any counter whose workflow started more
+than STALE_WORKFLOW_THRESHOLD_MINUTES ago, where the Lambda additionally requires
+an inactive heartbeat and evidence the workflow ended, specifically so a
+legitimate multi-hour run is not reclaimed underneath the user. Reviving this
+version would reintroduce that.
+
+Handles recovery of active_workflow_count in case of process crashes:
 1. Detect stale workflow counts (workflows marked as active but actually finished)
 2. Reset counts to 0 for users with no running processes
 3. Prevent workflow count leaks from process crashes
-
-USAGE:
-- Run as scheduled Lambda (e.g., every 5-10 minutes)
-- Can also be manually triggered for immediate recovery
 """
 
 from datetime import timedelta

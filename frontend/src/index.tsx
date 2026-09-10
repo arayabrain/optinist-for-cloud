@@ -7,14 +7,18 @@ import "index.css"
 import { ThemeProvider } from "@mui/material/styles"
 
 import App from "App"
+import ConsentBanner from "components/common/ConsentBanner"
+import ErrorBoundary from "components/common/ErrorBoundary"
 import reportWebVitals from "reportWebVitals"
 import { store } from "store/store"
 import { theme } from "Theme"
+import { initAnalyticsConsent } from "utils/analytics"
 import { initChunkReloadHandler } from "utils/chunkLoadReload"
 import { initErrorReporter } from "utils/errorReporter"
 
 initChunkReloadHandler()
 initErrorReporter()
+initAnalyticsConsent()
 
 const root = createRoot(document.getElementById("root")!)
 
@@ -22,6 +26,9 @@ root.render(
   <Provider store={store}>
     <ThemeProvider theme={theme}>
       <App />
+      <ErrorBoundary fallback={<></>}>
+        <ConsentBanner />
+      </ErrorBoundary>
     </ThemeProvider>
   </Provider>,
 )

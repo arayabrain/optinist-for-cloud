@@ -158,6 +158,24 @@ describe("UserSlice", () => {
       expect(mockSetLoggingOut).toHaveBeenCalledWith(true)
     })
 
+    it("should clear every stored auth token", () => {
+      const state = userSlice.reducer(undefined, { type: "@@INIT" })
+
+      userSlice.reducer(state, logout())
+
+      expect(mockRemoveToken).toHaveBeenCalledTimes(1)
+      expect(mockRemoveRefreshToken).toHaveBeenCalledTimes(1)
+      expect(mockRemoveExToken).toHaveBeenCalledTimes(1)
+    })
+
+    it("should clear premium routing info", () => {
+      const state = userSlice.reducer(undefined, { type: "@@INIT" })
+
+      userSlice.reducer(state, logout())
+
+      expect(mockClearRoutingInfo).toHaveBeenCalledTimes(1)
+    })
+
     it("should clear localStorage dismissedAlerts", () => {
       const state = userSlice.reducer(undefined, { type: "@@INIT" })
 

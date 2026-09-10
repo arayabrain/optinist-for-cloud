@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +19,39 @@ def _always_acquired_lock():
     mock.return_value.__enter__ = MagicMock(return_value=True)
     mock.return_value.__exit__ = MagicMock(return_value=False)
     return mock
+
+
+class _StatefulFakeElbv2:
+    """Fake ELBv2 that tracks target-group create/describe/delete so the
+    concurrent-assign orphaned-TG corruption is observable."""
+
+    def __init__(self):
+        self._seq = 0
+        self.live = {}  # arn -> name
+        self.created = []  # arns, in creation order
+        self.deleted = []  # arns passed to delete_target_group
+
+    def create_target_group(self, Name, **kwargs):
+        self._seq += 1
+        arn = f"arn:tg/{Name}/{self._seq}"
+        self.live[arn] = Name
+        self.created.append(arn)
+        return {"TargetGroups": [{"TargetGroupArn": arn}]}
+
+    def describe_target_groups(self, Names=None, **kwargs):
+        if Names:
+            arns = [a for a, n in self.live.items() if n in Names]
+        else:
+            arns = list(self.live)
+        return {"TargetGroups": [{"TargetGroupArn": a} for a in arns]}
+
+    def delete_target_group(self, TargetGroupArn=None, **kwargs):
+        self.deleted.append(TargetGroupArn)
+        self.live.pop(TargetGroupArn, None)
+        return {}
+
+    def register_targets(self, **kwargs):
+        return {}
 
 
 class TestPremiumManagerEvents:
@@ -470,6 +504,278 @@ class TestEarlyCheckAndCleanup:
             )
             assert not mock_elbv2.create_rule.called
             mock_get_existing.assert_called_once_with(test_user_id)
+
+    def test_reuse_drops_assignment_when_target_group_missing(
+        self, mock_env_vars_premium
+    ):
+        """A dedicated assignment whose target group was reaped must NOT be
+        reused as-is — the stored ARNs are dead. The guard drops the stale row
+        and falls through to a fresh assignment instead of returning
+        ``assignment_source == "existing"``."""
+        import premium_manager
+
+        existing = {
+            "user_id": 12,
+            "instance_id": "i-dedicated",
+            "target_group_arn": "arn:aws:tg/premium-12-gone",
+            "alb_rule_arn": "arn:aws:rule/premium-12-gone",
+            "status": "active",
+            "instance_state": "running",
+            "is_shared": 0,
+        }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.restore_pending_release", return_value=None
+        ), patch(
+            "premium_manager.get_existing_user_assignment", return_value=existing
+        ), patch(
+            "premium_manager.target_group_exists", return_value=False
+        ) as mock_tg_exists, patch(
+            "premium_manager.remove_user_assignment"
+        ) as mock_remove, patch(
+            # First call on the fresh-assignment path: raise a sentinel so the
+            # test proves control fell through without exercising the whole path.
+            "premium_manager.register_orphaned_stopped_instances",
+            side_effect=RuntimeError("reached fresh assignment path"),
+        ):
+            mock_ec2 = MagicMock()
+            # Assigned instance is still running, so the EC2 state check keeps
+            # the row — the missing TG is the only reason it is dropped.
+            mock_ec2.describe_instances.return_value = {
+                "Reservations": [{"Instances": [{"State": {"Name": "running"}}]}]
+            }
+            mock_elbv2 = MagicMock()
+
+            with pytest.raises(RuntimeError, match="reached fresh assignment path"):
+                premium_manager._assign_premium_user_impl(
+                    12,
+                    {"tier": "premium"},
+                    "uid_12",
+                    mock_ec2,
+                    mock_elbv2,
+                    8000,
+                    "vpc-123",
+                    "arn:aws:listener/test",
+                )
+
+            # Healed: the dead assignment was dropped, triggered by the missing
+            # TG, and it was NOT returned as an existing reuse.
+            mock_tg_exists.assert_called_once_with("arn:aws:tg/premium-12-gone")
+            mock_remove.assert_called_once_with(12)
+
+    def test_reuse_kept_when_target_group_probe_fails_transiently(
+        self, mock_env_vars_premium
+    ):
+        """Fail-open (N1): a transient (non-NotFound) target-group probe error
+        must NOT drop the row or 500 — the guard keeps reusing the existing
+        assignment. Only an authoritative not-found drops it."""
+        import premium_manager
+
+        existing = {
+            "user_id": 12,
+            "instance_id": "i-dedicated",
+            "target_group_arn": "arn:aws:tg/premium-12",
+            "alb_rule_arn": "arn:aws:rule/premium-12",
+            "status": "active",
+            "instance_state": "running",
+            "is_shared": 0,
+        }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.restore_pending_release", return_value=None
+        ), patch(
+            "premium_manager.get_existing_user_assignment", return_value=existing
+        ), patch(
+            "premium_manager.target_group_exists",
+            side_effect=Exception("Throttling: Rate exceeded"),
+        ), patch(
+            "premium_manager.remove_user_assignment"
+        ) as mock_remove, patch(
+            # Must never be reached — a kept reuse returns before this path.
+            "premium_manager.register_orphaned_stopped_instances",
+            side_effect=RuntimeError("must not reach fresh assignment path"),
+        ):
+            mock_ec2 = MagicMock()
+            mock_ec2.describe_instances.return_value = {
+                "Reservations": [{"Instances": [{"State": {"Name": "running"}}]}]
+            }
+            mock_elbv2 = MagicMock()
+
+            result = premium_manager._assign_premium_user_impl(
+                12,
+                {"tier": "premium"},
+                "uid_12",
+                mock_ec2,
+                mock_elbv2,
+                8000,
+                "vpc-123",
+                "arn:aws:listener/test",
+            )
+
+            # Reused, not dropped: row survives the probe hiccup.
+            assert result["statusCode"] == 200
+            assert json.loads(result["body"])["assignment_source"] == "existing"
+            mock_remove.assert_not_called()
+
+    def test_shared_assignment_missing_tg_guard_skipped(self, mock_env_vars_premium):
+        """Scope lock: the missing-TG guard only applies to dedicated rows. A
+        shared row uses the shared TG, so it must never be probed or dropped by
+        the guard — the ``not is_shared`` short-circuit keeps reuse intact."""
+        import premium_manager
+
+        existing = {
+            "user_id": 12,
+            "instance_id": "i-shared",
+            "target_group_arn": "arn:aws:tg/shared-autoscaling",
+            "alb_rule_arn": "arn:aws:rule/shared",
+            "status": "active",
+            "instance_state": "running",
+            "is_shared": 1,
+        }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.restore_pending_release", return_value=None
+        ), patch(
+            "premium_manager.get_existing_user_assignment", return_value=existing
+        ), patch(
+            # No dedicated instance available → inline migration finds nothing.
+            "premium_manager.get_all_premium_instances_with_states",
+            return_value=[],
+        ), patch(
+            "premium_manager.invoke_migration_async", return_value=None
+        ), patch(
+            "premium_manager.target_group_exists"
+        ) as mock_tg_exists, patch(
+            "premium_manager.remove_user_assignment"
+        ) as mock_remove:
+            mock_ec2 = MagicMock()
+            mock_ec2.describe_instances.return_value = {
+                "Reservations": [{"Instances": [{"State": {"Name": "running"}}]}]
+            }
+            mock_elbv2 = MagicMock()
+
+            result = premium_manager._assign_premium_user_impl(
+                12,
+                {"tier": "premium"},
+                "uid_12",
+                mock_ec2,
+                mock_elbv2,
+                8000,
+                "vpc-123",
+                "arn:aws:listener/test",
+            )
+
+            # Shared row reused; the guard never probed or dropped it.
+            assert result["statusCode"] == 200
+            assert json.loads(result["body"])["assignment_source"] == "existing"
+            mock_tg_exists.assert_not_called()
+            mock_remove.assert_not_called()
+
+    def test_reuse_drop_survives_concurrent_removal(self, mock_env_vars_premium):
+        """A concurrent reconcile heal (or second /assign) may drop the row
+        before this guard's own remove runs. The resulting "No assignment
+        found" must be treated as already-healed — fall through to the fresh
+        assignment path, not 500 on the outer except."""
+        import premium_manager
+
+        existing = {
+            "user_id": 12,
+            "instance_id": "i-dedicated",
+            "target_group_arn": "arn:aws:tg/premium-12-gone",
+            "alb_rule_arn": "arn:aws:rule/premium-12-gone",
+            "status": "active",
+            "instance_state": "running",
+            "is_shared": 0,
+        }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.restore_pending_release", return_value=None
+        ), patch(
+            "premium_manager.get_existing_user_assignment", return_value=existing
+        ), patch(
+            "premium_manager.target_group_exists", return_value=False
+        ), patch(
+            # Row already dropped by a concurrent heal: removal raises the
+            # same "No assignment found" the transaction raises on an empty row.
+            "premium_manager.remove_user_assignment",
+            side_effect=Exception("No assignment found for user 12"),
+        ) as mock_remove, patch(
+            # Sentinel proves control fell through to fresh provisioning
+            # instead of returning a 500 from the outer except.
+            "premium_manager.register_orphaned_stopped_instances",
+            side_effect=RuntimeError("reached fresh assignment path"),
+        ):
+            mock_ec2 = MagicMock()
+            mock_ec2.describe_instances.return_value = {
+                "Reservations": [{"Instances": [{"State": {"Name": "running"}}]}]
+            }
+            mock_elbv2 = MagicMock()
+
+            with pytest.raises(RuntimeError, match="reached fresh assignment path"):
+                premium_manager._assign_premium_user_impl(
+                    12,
+                    {"tier": "premium"},
+                    "uid_12",
+                    mock_ec2,
+                    mock_elbv2,
+                    8000,
+                    "vpc-123",
+                    "arn:aws:listener/test",
+                )
+
+            # The concurrent removal was swallowed as already-healed; control
+            # reached the fresh path rather than 500ing.
+            mock_remove.assert_called_once_with(12)
+
+    def test_reuse_drop_reraises_unexpected_removal_error(self, mock_env_vars_premium):
+        """A real DB error during the guard's removal (not "No assignment
+        found") must still propagate to the outer except and 500 — fail fast,
+        as before, rather than masquerading as a heal."""
+        import premium_manager
+
+        existing = {
+            "user_id": 12,
+            "instance_id": "i-dedicated",
+            "target_group_arn": "arn:aws:tg/premium-12-gone",
+            "alb_rule_arn": "arn:aws:rule/premium-12-gone",
+            "status": "active",
+            "instance_state": "running",
+            "is_shared": 0,
+        }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.restore_pending_release", return_value=None
+        ), patch(
+            "premium_manager.get_existing_user_assignment", return_value=existing
+        ), patch(
+            "premium_manager.target_group_exists", return_value=False
+        ), patch(
+            "premium_manager.remove_user_assignment",
+            side_effect=Exception("Deadlock found when trying to get lock"),
+        ), patch(
+            # Must never be reached — the unexpected error fails fast first.
+            "premium_manager.register_orphaned_stopped_instances",
+            side_effect=RuntimeError("must not reach fresh assignment path"),
+        ):
+            mock_ec2 = MagicMock()
+            mock_ec2.describe_instances.return_value = {
+                "Reservations": [{"Instances": [{"State": {"Name": "running"}}]}]
+            }
+            mock_elbv2 = MagicMock()
+
+            result = premium_manager._assign_premium_user_impl(
+                12,
+                {"tier": "premium"},
+                "uid_12",
+                mock_ec2,
+                mock_elbv2,
+                8000,
+                "vpc-123",
+                "arn:aws:listener/test",
+            )
+
+            # Unexpected removal error fails fast on the outer except → 500.
+            assert result["statusCode"] == 500
 
     def test_exception_handler_cleans_up_alb_rule(self, mock_env_vars_premium):
         """Exception handler cleans up ALB rule."""
@@ -1137,7 +1443,7 @@ class TestEarlyCheckAndCleanup:
 
 
 class TestConcurrentAssignLock:
-    """Tests for per-user distributed lock on assign_premium_user (issue #630)."""
+    """Tests for per-user distributed lock on assign_premium_user."""
 
     @staticmethod
     def _lock_ctx(acquired: bool):
@@ -1226,9 +1532,17 @@ class TestConcurrentAssignLock:
                 timeout=ASSIGN_LOCK_TIMEOUT_SECONDS,
             )
 
-    def test_lock_acquired_calls_impl_under_lock(self, mock_env_vars_premium):
-        """When the lock is acquired, _assign_premium_user_impl is
-        called INSIDE the lock for full mutual exclusion."""
+    def test_lock_acquired_does_not_consult_the_existing_assignment(
+        self, mock_env_vars_premium
+    ):
+        """The winner assigns; only the loser reads back what the winner stored.
+
+        This case used to assert only ``mock_impl.assert_called_once()``, which
+        ``test_assign_impl_runs_inside_the_lock`` already covers more strictly.
+        The distinct claim is the branch: reading the existing assignment on the
+        acquired path would hand a stale row back as the fresh assignment and
+        skip the impl.
+        """
         impl_response = {
             "statusCode": 200,
             "body": json.dumps({"instance_id": "i-new", "assigned": True}),
@@ -1239,6 +1553,8 @@ class TestConcurrentAssignLock:
             "premium_manager.distributed_lock",
             new=self._lock_ctx(True),
         ), patch(
+            "premium_manager.get_existing_user_assignment"
+        ) as mock_existing, patch(
             "premium_manager._assign_premium_user_impl",
             return_value=impl_response,
         ) as mock_impl:
@@ -1246,10 +1562,173 @@ class TestConcurrentAssignLock:
 
             result = assign_premium_user(123, {"tier": "premium"}, "uid_123")
 
-            assert result["statusCode"] == 200
-            body = json.loads(result["body"])
-            assert body["instance_id"] == "i-new"
-            mock_impl.assert_called_once()
+        assert result is impl_response
+        assert json.loads(result["body"])["instance_id"] == "i-new"
+        mock_impl.assert_called_once()
+        assert mock_impl.call_args.args[:3] == (123, {"tier": "premium"}, "uid_123")
+        mock_existing.assert_not_called()
+
+    def test_assign_impl_runs_inside_the_lock(self, mock_env_vars_premium):
+        """The critical section (_assign_premium_user_impl) must execute strictly
+        BETWEEN lock acquire and release. Guards the lock's scope, not just its
+        presence: a refactor that keeps distributed_lock but moves the impl call
+        outside the `with` block would reorder these events and fail here (the
+        real-lock serialization is proven by the GET_LOCK integration test;
+        this pins that assign runs its work under the lock). It treats impl as
+        opaque, so work hoisted OUT of _assign_premium_user_impl to before the
+        lock is NOT caught here - only a full concurrent-assign-vs-real-DB race
+        (deferred) would."""
+        from contextlib import contextmanager
+
+        events = []
+
+        @contextmanager
+        def tracking_lock(name, timeout=None):
+            events.append(("enter", name))
+            try:
+                yield True
+            finally:
+                events.append(("exit", name))
+
+        def impl_probe(*_args, **_kwargs):
+            events.append(("impl", None))
+            return {
+                "statusCode": 200,
+                "body": json.dumps({"instance_id": "i-x", "assigned": True}),
+            }
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "boto3.client"
+        ), patch("premium_manager.distributed_lock", new=tracking_lock), patch(
+            "premium_manager._assign_premium_user_impl", side_effect=impl_probe
+        ):
+            from premium_manager import ASSIGN_USER_LOCK_PREFIX, assign_premium_user
+
+            result = assign_premium_user(77, {"tier": "premium"}, "uid_77")
+
+        assert result["statusCode"] == 200
+        assert [e[0] for e in events] == ["enter", "impl", "exit"]
+        assert events[0][1] == f"{ASSIGN_USER_LOCK_PREFIX}77"
+
+    def _assign_once(self, premium_manager, fake_elbv2, ec2, *, existing_return):
+        """Run one assign_premium_user for user 77 against a shared stateful
+        fake ELBv2. existing_return is what get_existing_user_assignment yields
+        for this call.
+
+        NOTE: the lock is always granted here (both variants). These two tests
+        do NOT exercise serialization — that is covered by test_lock_* above
+        (lock timeout -> 409/200, lock name includes user_id, impl runs under
+        the lock). What they isolate is the DOWNSTREAM behavior the lock's
+        happens-before guarantees: whether the existing-assignment read observes
+        a prior assignment (existing_return) decides orphan-cleanup vs
+        short-circuit. This documents the corruption mechanism (6204); it is
+        not itself proof the lock serializes."""
+        from contextlib import ExitStack
+
+        def boto3_client(service):
+            if service == "elbv2":
+                return fake_elbv2
+            if service == "ec2":
+                return ec2
+            return MagicMock()
+
+        with ExitStack() as stack:
+
+            def stub(name, **kwargs):
+                stack.enter_context(patch.object(premium_manager, name, **kwargs))
+
+            stub("restore_pending_release", return_value=None)
+            stub("get_existing_user_assignment", return_value=existing_return)
+            stub("register_orphaned_stopped_instances")
+            stub(
+                "get_all_premium_instances_with_states",
+                return_value=[{"instance_id": "i-run", "state": InstanceState.RUNNING}],
+            )
+            stub("count_active_premium_users", return_value=0)
+            stub("get_available_standby_instances", return_value=[])
+            stub("check_instance_readiness_with_retry", return_value=True)
+            stub("get_assigned_users_for_instance", return_value=[])
+            stub("try_reserve_instance", return_value=True)
+            stub("target_group_exists", return_value=True)
+            stub("_enable_sticky_sessions")
+            stub("_ensure_premium_tg_unhealthy_alarm")
+            stub("_delete_premium_tg_unhealthy_alarm")
+            stub("cleanup_duplicate_rules_for_routing_id", return_value=0)
+            stub("create_alb_rule", return_value={"Rules": [{"RuleArn": "arn:rule"}]})
+            stub("store_user_assignment")
+            stub("update_user_activity", return_value=True)
+            stub("invoke_migration_async")
+            stub("scale_premium_instances_if_needed", return_value=False)
+            stack.enter_context(
+                patch("premium_manager.pymysql.connect", return_value=setup_db_mock())
+            )
+            stack.enter_context(
+                patch("premium_manager.distributed_lock", new=_always_acquired_lock())
+            )
+            stack.enter_context(patch("boto3.client", side_effect=boto3_client))
+
+            return premium_manager.assign_premium_user(
+                77, {"tier": "premium"}, "uid_77"
+            )
+
+    def test_stale_existing_read_orphans_target_group(self, mock_env_vars_premium):
+        """Corruption mechanism (6204): when a second assign does not
+        observe the first's stored assignment (the stale read the per-user lock
+        prevents), its orphan-cleanup deletes the first's live target group,
+        corrupting routing. This is what the lock exists to prevent; the lock
+        itself is asserted by test_lock_* above, not here."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            fake = _StatefulFakeElbv2()
+            ec2 = MagicMock()
+
+            r1 = self._assign_once(premium_manager, fake, ec2, existing_return=None)
+            r2 = self._assign_once(premium_manager, fake, ec2, existing_return=None)
+
+        assert r1["statusCode"] == 200, r1["body"]
+        assert r2["statusCode"] == 200, r2["body"]
+        first_tg = fake.created[0]
+        assert len(fake.created) == 2
+        assert first_tg in fake.deleted
+        assert first_tg not in fake.live
+
+    def test_existing_assignment_read_short_circuits_single_target_group(
+        self, mock_env_vars_premium
+    ):
+        """Post-serialization outcome (6204): once the second assign
+        observes the first's stored assignment (what the lock's happens-before
+        guarantees), it short-circuits to 'existing', creating and deleting
+        nothing, so exactly one target group survives. The serialization that
+        produces this read ordering is asserted by test_lock_* above, not
+        here."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            fake = _StatefulFakeElbv2()
+            ec2 = MagicMock()
+            ec2.describe_instances.return_value = {
+                "Reservations": [
+                    {"Instances": [{"State": {"Name": InstanceState.RUNNING}}]}
+                ]
+            }
+
+            r1 = self._assign_once(premium_manager, fake, ec2, existing_return=None)
+            first_tg = fake.created[0]
+            stored = {
+                "instance_id": "i-run",
+                "target_group_arn": first_tg,
+                "alb_rule_arn": "arn:rule",
+                "is_shared": 0,
+            }
+            r2 = self._assign_once(premium_manager, fake, ec2, existing_return=stored)
+
+        assert r1["statusCode"] == 200, r1["body"]
+        assert r2["statusCode"] == 200, r2["body"]
+        assert json.loads(r2["body"])["assignment_source"] == "existing"
+        assert fake.deleted == []
+        assert list(fake.live) == [first_tg]
+        assert len(fake.created) == 1
 
 
 class TestDictCursorFix:
@@ -2314,6 +2793,17 @@ class TestRoutingIdContract:
         assert numeric_id != firebase_uid
 
 
+def _assert_no_scale_down(capsys, expected):
+    """``scale_down_if_possible`` wraps its whole body in ``except Exception``, so a
+    test whose only assertion is ``assert_not_called()`` also passes when the
+    function dies on its first line. The printed decision is the proof it ran to
+    the end, and it is also the only thing that separates a refused scale-down
+    from an entered branch that found nothing to stop."""
+    out = capsys.readouterr().out
+    assert "Error scaling down premium instances" not in out, out
+    assert expected in out, out
+
+
 class TestScaleDownIfPossible:
     """scale_down_if_possible stops idle instances and registers
     them as standby in the database for later termination."""
@@ -2374,7 +2864,9 @@ class TestScaleDownIfPossible:
                 assert call[1]["instance_state"] == "stopped"
                 assert call[1]["is_standby"] is True
 
-    def test_no_scale_down_when_idle_below_threshold(self, mock_env_vars_premium):
+    def test_no_scale_down_when_idle_below_threshold(
+        self, mock_env_vars_premium, capsys
+    ):
         """No scale-down when fewer than 2 idle instances."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "boto3.client"
@@ -2406,6 +2898,65 @@ class TestScaleDownIfPossible:
 
             mock_ec2.stop_instances.assert_not_called()
             mock_store.assert_not_called()
+            _assert_no_scale_down(
+                capsys, "No scale-down: running=1, min_needed=1, idle=1"
+            )
+
+    def test_no_scale_down_when_only_one_of_three_running_is_idle(
+        self, mock_env_vars_premium, capsys
+    ):
+        """``idle_instances >= 2`` declines this scale-down, but only in the log.
+
+        With 3 running, 2 occupied and 1 active user min_running_needed is 2, so
+        ``len(running) > min_running_needed`` holds and the idle count is what
+        refuses. The clause is a second layer whose only observable effect is the
+        printed decision: drop it and ``min(idle_instances - 1, ...)`` is 0, the
+        collection loop breaks immediately and nothing is stopped either way. It
+        becomes load-bearing only if that ``- 1`` is ever removed, so the printed
+        line is what this test reads.
+        """
+        occupied = {"i-busy1": [10], "i-busy2": [11], "i-idle1": []}
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "boto3.client"
+        ) as mock_boto3, patch(
+            "premium_manager.get_dynamic_max_capacity", return_value=10
+        ), patch(
+            "premium_manager.count_active_premium_users", return_value=1
+        ), patch(
+            "premium_manager.count_total_premium_users", return_value=5
+        ), patch(
+            "premium_manager.get_all_premium_instances_with_states"
+        ) as mock_get_instances, patch(
+            "premium_manager.get_assigned_users_for_instance",
+            side_effect=lambda iid: occupied[iid],
+        ), patch(
+            "premium_manager.deregister_container_instance_from_ecs"
+        ) as mock_deregister, patch(
+            "premium_manager.store_user_assignment"
+        ) as mock_store, patch(
+            "premium_manager.update_premium_service_desired_count"
+        ) as mock_desired_count:
+            mock_ec2 = MagicMock()
+            mock_boto3.return_value = mock_ec2
+
+            mock_get_instances.return_value = [
+                self._make_instance("i-busy1"),
+                self._make_instance("i-busy2"),
+                self._make_instance("i-idle1"),
+            ]
+
+            from premium_manager import scale_down_if_possible
+
+            scale_down_if_possible()
+
+            mock_ec2.stop_instances.assert_not_called()
+            mock_deregister.assert_not_called()
+            mock_store.assert_not_called()
+            mock_desired_count.assert_not_called()
+            _assert_no_scale_down(
+                capsys, "No scale-down: running=3, min_needed=2, idle=1"
+            )
 
     def test_standby_registration_failure_does_not_block(self, mock_env_vars_premium):
         """If store_user_assignment fails for one instance, the
@@ -2503,6 +3054,74 @@ class TestScaleDownIfPossible:
             assert "i-occupied" not in stopped_ids
             # All stopped instances registered as standby
             assert mock_store.call_count == len(stopped_ids)
+
+    def test_every_instance_is_deregistered_from_ecs_before_it_is_stopped(
+        self, mock_env_vars_premium
+    ):
+        """Deregistration order. ``test_stops_idle_and_registers_standby``
+        asserts both calls happened but not their order, and each mock records its
+        own calls only. Stopping an instance ECS still holds a registration for
+        leaves a ghost registration that draws tasks to a dead host, which is the
+        failure the cleanup sweep exists to mop up.
+        """
+        recorder = MagicMock()
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "boto3.client"
+        ) as mock_boto3, patch(
+            "premium_manager.get_dynamic_max_capacity", return_value=10
+        ), patch(
+            "premium_manager.count_active_premium_users", return_value=0
+        ), patch(
+            "premium_manager.count_total_premium_users", return_value=5
+        ), patch(
+            "premium_manager.get_all_premium_instances_with_states"
+        ) as mock_get_instances, patch(
+            "premium_manager.get_assigned_users_for_instance", return_value=[]
+        ), patch(
+            "premium_manager.deregister_container_instance_from_ecs",
+            recorder.deregister,
+        ), patch(
+            "premium_manager.store_user_assignment"
+        ), patch(
+            "premium_manager.update_premium_service_desired_count"
+        ):
+            mock_boto3.return_value = recorder.ec2
+
+            mock_get_instances.return_value = [
+                self._make_instance(f"i-idle{index}") for index in range(4)
+            ]
+
+            from premium_manager import scale_down_if_possible
+
+            scale_down_if_possible()
+
+        stopped_ids = recorder.ec2.stop_instances.call_args[1]["InstanceIds"]
+        assert stopped_ids, "nothing was stopped, so the ordering claim is vacuous"
+
+        names = [call[0] for call in recorder.mock_calls]
+        assert names.count("ec2.stop_instances") == 1
+        deregistered_before_stop = [
+            call[1][0]
+            for call in recorder.mock_calls[: names.index("ec2.stop_instances")]
+            if call[0] == "deregister"
+        ]
+        assert deregistered_before_stop == stopped_ids
+
+
+def _assert_orphan_sweep_completed(capsys):
+    """Both sweeps wrap their whole body in ``except Exception``, so a test whose
+    only assertion is ``assert_not_called()`` also passes when the function dies
+    on its first line. The tail print is the proof it ran to the end."""
+    out = capsys.readouterr().out
+    assert "Error cleaning up orphaned EC2 instances" not in out, out
+    assert "Orphan cleanup: stopped 0 instance(s)" in out, out
+
+
+def _assert_ghost_sweep_completed(capsys):
+    out = capsys.readouterr().out
+    assert "Error cleaning up ghost ECS registrations" not in out, out
+    assert "No ghost ECS registrations found" in out, out
 
 
 class TestCleanupOrphanedEC2Instances:
@@ -2619,7 +3238,7 @@ class TestCleanupOrphanedEC2Instances:
             # Both registrations attempted
             assert mock_store.call_count == 2
 
-    def test_skips_instance_within_grace_period(self, mock_env_vars_premium):
+    def test_skips_instance_within_grace_period(self, mock_env_vars_premium, capsys):
         """EC2 instance running 5 min is within grace period
         and must NOT be stopped."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
@@ -2670,8 +3289,9 @@ class TestCleanupOrphanedEC2Instances:
             cleanup_orphaned_ec2_instances()
 
             mock_ec2.stop_instances.assert_not_called()
+            _assert_orphan_sweep_completed(capsys)
 
-    def test_skips_instance_registered_in_ecs(self, mock_env_vars_premium):
+    def test_skips_instance_registered_in_ecs(self, mock_env_vars_premium, capsys):
         """EC2 instance registered as ECS container instance
         must NOT be stopped even if old."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
@@ -2730,6 +3350,7 @@ class TestCleanupOrphanedEC2Instances:
             cleanup_orphaned_ec2_instances()
 
             mock_ec2.stop_instances.assert_not_called()
+            _assert_orphan_sweep_completed(capsys)
 
 
 class TestHandleScheduledMonitoring:
@@ -3180,7 +3801,7 @@ class TestCleanupGhostECSRegistrations:
 
     def test_deregisters_shutting_down_ec2_immediately(self, mock_env_vars_premium):
         """Instance whose EC2 is shutting-down (the typical transient state
-        during the #549 race) gets deregistered with no grace."""
+        during this deregistration race) gets deregistered with no grace."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "boto3.client"
         ) as mock_boto3:
@@ -3315,7 +3936,7 @@ class TestCleanupGhostECSRegistrations:
             assert tag_call.kwargs["Resources"] == ["i-pending1"]
             assert tag_call.kwargs["Tags"][0]["Key"] == "optinist:agent-disconnected-at"
 
-    def test_skips_within_grace_period(self, mock_env_vars_premium):
+    def test_skips_within_grace_period(self, mock_env_vars_premium, capsys):
         """Running EC2 tagged recently is within grace period — skip."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "boto3.client"
@@ -3361,6 +3982,7 @@ class TestCleanupGhostECSRegistrations:
             cleanup_ghost_ecs_registrations()
 
             mock_ecs.deregister_container_instance.assert_not_called()
+            _assert_ghost_sweep_completed(capsys)
 
     def test_deregisters_after_grace_period(self, mock_env_vars_premium):
         """Running EC2 tagged over 5 minutes ago gets deregistered."""
@@ -3527,7 +4149,7 @@ class TestCleanupGhostECSRegistrations:
     def test_deregisters_connected_agent_when_ec2_terminated(
         self, mock_env_vars_premium
     ):
-        """Regression for #549: a CI reporting agentConnected=True is still
+        """Regression: a CI reporting agentConnected=True is still
         deregistered when its underlying EC2 has been terminated."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "boto3.client"
@@ -3701,7 +4323,7 @@ class TestCleanupGhostECSRegistrations:
 
     def test_deregisters_connected_without_ec2_id(self, mock_env_vars_premium):
         """CI with no ec2InstanceId is deregistered even when
-        agentConnected=True (the pre-#549 short-circuit treated any connected
+        agentConnected=True (the earlier short-circuit treated any connected
         agent as healthy regardless of EC2 mapping)."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "boto3.client"
@@ -4329,12 +4951,17 @@ class TestReconcilePremiumTargetGroupPorts:
             assert mock_elbv2.register_targets.call_count == 1
             assert mock_elbv2.deregister_targets.call_count == 3
 
-    def test_skips_when_target_group_missing(self, mock_env_vars_premium):
+    def test_heals_missing_tg(self, mock_env_vars_premium):
+        """A missing TG for an active row is a permanent strand, so reconcile
+        drops the row (heal) instead of skipping — the next assign reprovisions
+        the rule/TG."""
         with patch.dict("os.environ", mock_env_vars_premium), patch(
             "premium_manager.get_db_connection"
         ) as mock_db, patch("boto3.client") as mock_boto3, patch(
             "premium_manager.target_group_exists", return_value=False
         ), patch(
+            "premium_manager.remove_user_assignment"
+        ) as mock_remove, patch(
             "premium_manager.get_host_port_for_instance"
         ) as mock_host_port:
             mock_db.return_value = setup_db_mock(
@@ -4347,10 +4974,82 @@ class TestReconcilePremiumTargetGroupPorts:
 
             summary = reconcile_premium_target_group_ports()
 
-            assert summary["skipped_missing_tg"] == 1
+            # Healed, not skipped: row dropped and no port work attempted.
+            assert summary["healed_missing_tg"] == 1
             assert summary["drift_detected"] == 0
+            mock_remove.assert_called_once_with(12)
             mock_host_port.assert_not_called()
             mock_elbv2.register_targets.assert_not_called()
+
+    def test_missing_tg_removal_failure_counts_error_not_heal(
+        self, mock_env_vars_premium
+    ):
+        """The heal counter is incremented only after remove_user_assignment
+        succeeds. If removal raises (concurrent removal / DB error) the outer
+        except records an error and the row is NOT counted as healed."""
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.get_db_connection"
+        ) as mock_db, patch("boto3.client") as mock_boto3, patch(
+            "premium_manager.target_group_exists", return_value=False
+        ), patch(
+            "premium_manager.remove_user_assignment",
+            side_effect=Exception("No assignment found for user 12"),
+        ) as mock_remove:
+            mock_db.return_value = setup_db_mock(
+                fetchall_values=[[self._make_row(12, "i-aaa", "arn:tg/gone")]]
+            )
+            mock_boto3.return_value = MagicMock()
+
+            from premium_manager import reconcile_premium_target_group_ports
+
+            summary = reconcile_premium_target_group_ports()
+
+            # Removal raised → error counted, heal not counted.
+            assert summary["healed_missing_tg"] == 0
+            assert summary["errors"] == 1
+            mock_remove.assert_called_once_with(12)
+
+    def test_heals_only_stranded_row_in_mixed_batch(self, mock_env_vars_premium):
+        """In a batch of one missing-TG row and one healthy row, only the
+        stranded row is dropped (``continue``); the healthy row is still
+        reconciled in the same scan."""
+        gone_tg = "arn:tg/premium-12-gone"
+
+        def tg_exists_side_effect(tg_arn):
+            return tg_arn != gone_tg
+
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.get_db_connection"
+        ) as mock_db, patch("boto3.client") as mock_boto3, patch(
+            "premium_manager.target_group_exists",
+            side_effect=tg_exists_side_effect,
+        ), patch(
+            "premium_manager.remove_user_assignment"
+        ) as mock_remove, patch(
+            "premium_manager.get_host_port_for_instance", return_value=None
+        ) as mock_host_port:
+            mock_db.return_value = setup_db_mock(
+                fetchall_values=[
+                    [
+                        self._make_row(12, "i-aaa", gone_tg),
+                        self._make_row(13, "i-bbb", "arn:tg/premium-13-tg"),
+                    ]
+                ]
+            )
+            mock_elbv2 = MagicMock()
+            mock_boto3.return_value = mock_elbv2
+
+            from premium_manager import reconcile_premium_target_group_ports
+
+            summary = reconcile_premium_target_group_ports()
+
+            # Stranded row healed; healthy row reached port reconciliation
+            # (which no-ops here on an unresolved host port).
+            assert summary["assignments_scanned"] == 2
+            assert summary["healed_missing_tg"] == 1
+            assert summary["skipped_no_host_port"] == 1
+            mock_remove.assert_called_once_with(12)
+            mock_host_port.assert_called_once_with("i-bbb")
 
     def test_skips_when_host_port_unresolved(self, mock_env_vars_premium):
         with patch.dict("os.environ", mock_env_vars_premium), patch(
@@ -4538,7 +5237,7 @@ class TestHandleScheduledMonitoringReconcile:
         self._run(
             mock_env_vars_premium,
             call_order,
-            {"drift_detected": 3, "drift_fixed": 2},
+            {"drift_detected": 3, "drift_fixed": 2, "healed_missing_tg": 1},
         )
 
         publish_calls = [c for c in call_order if isinstance(c, tuple)]
@@ -4546,6 +5245,7 @@ class TestHandleScheduledMonitoringReconcile:
         kwargs = publish_calls[0][1]
         assert kwargs["tg_port_drift_detected"] == 3
         assert kwargs["tg_port_drift_fixed"] == 2
+        assert kwargs["tg_healed_missing"] == 1
 
         reconcile_idx = call_order.index("reconcile")
         publish_idx = call_order.index(publish_calls[0])
@@ -4717,6 +5417,7 @@ class TestPublishPremiumMetricsDriftKwargs:
                 idle_instances=4,
                 tg_port_drift_detected=5,
                 tg_port_drift_fixed=6,
+                tg_healed_missing=7,
             )
 
             args, kwargs = mock_cw.put_metric_data.call_args
@@ -4724,6 +5425,7 @@ class TestPublishPremiumMetricsDriftKwargs:
             metric_by_name = {m["MetricName"]: m["Value"] for m in metric_data}
             assert metric_by_name["TargetGroupPortDriftDetected"] == 5
             assert metric_by_name["TargetGroupPortDriftFixed"] == 6
+            assert metric_by_name["HealedMissingTargetGroup"] == 7
 
     def test_drift_metrics_default_to_zero(self, mock_env_vars_premium):
         with patch.dict("os.environ", mock_env_vars_premium), patch(
@@ -4745,6 +5447,7 @@ class TestPublishPremiumMetricsDriftKwargs:
             metric_by_name = {m["MetricName"]: m["Value"] for m in kwargs["MetricData"]}
             assert metric_by_name["TargetGroupPortDriftDetected"] == 0
             assert metric_by_name["TargetGroupPortDriftFixed"] == 0
+            assert metric_by_name["HealedMissingTargetGroup"] == 0
 
 
 class TestPremiumTgUnhealthyAlarm:
@@ -4819,3 +5522,802 @@ class TestPremiumTgUnhealthyAlarm:
                 AlarmNames=[self.EXPECTED_NAME]
             )
             assert "[premium-alarm] action=delete" in capsys.readouterr().out
+
+
+class TestAssignCascadeTiers:
+    """Every reachable branch of the assign cascade emits the correct
+    (assignment_source, is_shared) tuple, so each premium tier is exercised at
+    least once.
+
+    _assign_premium_user_impl has five cascade branches:
+        dedicated / False, shared / True, standby / False,
+        autoscaling_temp / True, aws_fallback / False.
+    Only the first four are reachable; see
+    test_aws_fallback_is_shadowed_by_autoscaling for why aws_fallback is dead.
+    """
+
+    @staticmethod
+    def _run_assign(
+        premium_manager,
+        *,
+        all_instances,
+        standby,
+        assigned_users=None,
+        reserve=True,
+        active_users=0,
+    ):
+        """Force one cascade branch via pool-state stubs, run the real assign
+        path, and return ``(body, stubs)``.
+
+        ``stubs`` exposes the follow-up calls each branch is supposed to fire.
+        They were stubbed out and never asserted, so the standby branch's
+        replacement-standby creation and the whole autoscaling-pool branch
+        (the pool row is scaled and migrated to a dedicated instance) rested
+        on nothing.
+        """
+        from contextlib import ExitStack
+
+        assigned_users = [] if assigned_users is None else assigned_users
+
+        mock_elbv2 = MagicMock()
+        mock_elbv2.describe_target_groups.return_value = {"TargetGroups": []}
+        mock_elbv2.create_target_group.return_value = {
+            "TargetGroups": [{"TargetGroupArn": "arn:aws:tg/cascade"}]
+        }
+
+        def boto3_client(service):
+            return mock_elbv2 if service == "elbv2" else MagicMock()
+
+        stubs = {}
+
+        with ExitStack() as stack:
+
+            def stub(name, **kwargs):
+                stubs[name] = stack.enter_context(
+                    patch.object(premium_manager, name, **kwargs)
+                )
+
+            stub("restore_pending_release", return_value=None)
+            stub("get_existing_user_assignment", return_value=None)
+            stub("register_orphaned_stopped_instances")
+            stub("get_all_premium_instances_with_states", return_value=all_instances)
+            stub("count_active_premium_users", return_value=active_users)
+            stub("get_available_standby_instances", return_value=standby)
+            stub("check_instance_readiness_with_retry", return_value=True)
+            stub("get_assigned_users_for_instance", return_value=assigned_users)
+            stub("try_reserve_instance", return_value=reserve)
+            stub("start_standby_instance", return_value=True)
+            stub("invoke_standby_replenishment_async")
+            stub("scale_premium_instances_if_needed", return_value=False)
+            stub("invoke_migration_async")
+            stub("_enable_sticky_sessions")
+            stub("_ensure_premium_tg_unhealthy_alarm")
+            stub("cleanup_duplicate_rules_for_routing_id", return_value=0)
+            stub("create_alb_rule", return_value={"Rules": [{"RuleArn": "arn:rule"}]})
+            stub("store_user_assignment")
+            stub("update_user_activity", return_value=True)
+            stack.enter_context(
+                patch("premium_manager.pymysql.connect", return_value=setup_db_mock())
+            )
+            stack.enter_context(
+                patch("premium_manager.distributed_lock", new=_always_acquired_lock())
+            )
+            stack.enter_context(patch("boto3.client", side_effect=boto3_client))
+
+            result = premium_manager.assign_premium_user(
+                12345, {"tier": "premium"}, "firebase_uid_cascade"
+            )
+
+        assert result["statusCode"] == 200, result["body"]
+        return json.loads(result["body"]), SimpleNamespace(**stubs)
+
+    def test_tier1_dedicated(self, mock_env_vars_premium):
+        """Idle running instance with 0 users -> dedicated, is_shared False."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            body, stubs = self._run_assign(
+                premium_manager,
+                all_instances=[
+                    {"instance_id": "i-ded", "state": InstanceState.RUNNING}
+                ],
+                standby=[],
+                assigned_users=[],
+                reserve=True,
+            )
+        assert body["assignment_source"] == "dedicated"
+        assert body["is_shared"] is False
+        # A dedicated instance needs no follow-up: no pool consumed, no
+        # migration owed.
+        stubs.invoke_standby_replenishment_async.assert_not_called()
+        stubs.invoke_migration_async.assert_not_called()
+        stubs.scale_premium_instances_if_needed.assert_not_called()
+
+    def test_tier2_shared(self, mock_env_vars_premium):
+        """All running instances occupied -> shared on least-loaded, is_shared True."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            body, stubs = self._run_assign(
+                premium_manager,
+                all_instances=[
+                    {"instance_id": "i-run", "state": InstanceState.RUNNING}
+                ],
+                standby=[],
+                assigned_users=[{"user_id": 999}],
+                active_users=1,
+            )
+        assert body["assignment_source"] == "shared"
+        assert body["is_shared"] is True
+        stubs.invoke_standby_replenishment_async.assert_not_called()
+
+    def test_tier3_standby(self, mock_env_vars_premium):
+        """No running instances, standby available -> standby, is_shared False."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            body, stubs = self._run_assign(
+                premium_manager,
+                all_instances=[],
+                standby=[{"instance_id": "i-standby1"}],
+            )
+        assert body["assignment_source"] == "standby"
+        assert body["is_shared"] is False
+        # 6206 expected #3: consuming the last standby must schedule a
+        # replacement, or the next fresh login pays the full boot latency.
+        stubs.invoke_standby_replenishment_async.assert_called_once_with()
+
+    def test_tier3_5_autoscaling_pool(self, mock_env_vars_premium):
+        """No premium capacity at all -> autoscaling_temp sentinel, is_shared True."""
+        env = {
+            **mock_env_vars_premium,
+            "AUTOSCALING_TARGET_GROUP_ARN": "arn:aws:tg/autoscaling",
+        }
+        with patch.dict("os.environ", env):
+            import premium_manager
+
+            body, stubs = self._run_assign(
+                premium_manager, all_instances=[], standby=[]
+            )
+        assert body["assignment_source"] == "autoscaling_temp"
+        assert body["is_shared"] is True
+        assert body["instance_id"] == premium_manager.PremiumAssignment.AUTOSCALING_POOL
+        # The sentinel row is temporary. Without these the user stays on the
+        # shared free pool indefinitely.
+        stubs.scale_premium_instances_if_needed.assert_called_once_with()
+        stubs.invoke_migration_async.assert_called_once_with()
+
+    def test_aws_fallback_is_shadowed_by_autoscaling(self, mock_env_vars_premium):
+        """PRIORITY 4 (aws_fallback) is unreachable. With only a stopped AWS
+        instance and no running/standby capacity, PRIORITY 3.5
+        (autoscaling_temp) always catches first: no_premium_available is
+        necessarily true whenever instance_to_use is still None (a truthy
+        available_dedicated would already have been assigned at PRIORITY 1).
+        Documents the dead branch instead of pretending to cover it.
+        """
+        env = {
+            **mock_env_vars_premium,
+            "AUTOSCALING_TARGET_GROUP_ARN": "arn:aws:tg/autoscaling",
+        }
+        with patch.dict("os.environ", env):
+            import premium_manager
+
+            body, _ = self._run_assign(
+                premium_manager,
+                all_instances=[
+                    {"instance_id": "i-stopped", "state": InstanceState.STOPPED}
+                ],
+                standby=[],
+            )
+        assert body["assignment_source"] == "autoscaling_temp"
+        assert body["assignment_source"] != "aws_fallback"
+
+
+class TestMigrationWorkflowGuard:
+    """can_migrate_user blocks migration while a workflow is active (6217).
+    The active_workflow_count guard returns False for count > 0 and for a
+    missing row, and True only when no workflow is running."""
+
+    @staticmethod
+    def _can_migrate(premium_user_utils, row):
+        """Run can_migrate_user against a single stubbed fetchone row."""
+        cursor = MagicMock()
+        cursor.fetchone.return_value = row
+        conn = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cursor
+        conn.cursor.return_value.__exit__.return_value = False
+        db_cm = MagicMock()
+        db_cm.__enter__.return_value = conn
+        db_cm.__exit__.return_value = False
+        with patch.object(premium_user_utils, "get_db_connection", return_value=db_cm):
+            return premium_user_utils.can_migrate_user(42)
+
+    def test_blocks_while_workflow_active(self, mock_env_vars_premium):
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_user_utils
+
+            row = MockRow({"active_workflow_count": 2, "instance_id": "i-x"})
+            assert self._can_migrate(premium_user_utils, row) is False
+
+    def test_permits_when_no_active_workflow(self, mock_env_vars_premium):
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_user_utils
+
+            row = MockRow({"active_workflow_count": 0, "instance_id": "i-x"})
+            assert self._can_migrate(premium_user_utils, row) is True
+
+    def test_permits_when_count_null(self, mock_env_vars_premium):
+        """NULL active_workflow_count coalesces to 0 -> migration permitted."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_user_utils
+
+            row = MockRow({"active_workflow_count": None, "instance_id": "i-x"})
+            assert self._can_migrate(premium_user_utils, row) is True
+
+    def test_blocks_when_user_not_found(self, mock_env_vars_premium):
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_user_utils
+
+            assert self._can_migrate(premium_user_utils, None) is False
+
+    def test_migrate_aborts_before_side_effects_when_workflow_active(
+        self, mock_env_vars_premium
+    ):
+        """The real migrate path honours the guard: can_migrate_user False
+        returns without reserving the target or touching ELB."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            with patch(
+                "premium_user_utils.can_migrate_user", return_value=False
+            ), patch.object(
+                premium_manager, "try_reserve_instance_for_migration"
+            ) as mock_reserve, patch(
+                "boto3.client"
+            ) as mock_boto3:
+                result = premium_manager.migrate_user_to_dedicated_instance(42, "i-new")
+
+        assert result is False
+        mock_reserve.assert_not_called()
+        mock_boto3.assert_not_called()
+
+    @staticmethod
+    def _run_blocked_migrate(premium_manager, fetchone_values):
+        """Run migrate_user_to_dedicated_instance(42, "i-new") past
+        can_migrate_user (reservation granted) with the given assignment-row
+        fetch, capturing the reserve/release/elbv2 mocks. Returns
+        (result, mock_reserve, mock_release, mock_elbv2)."""
+        mock_elbv2 = MagicMock()
+        with patch(
+            "premium_user_utils.can_migrate_user", return_value=True
+        ), patch.object(
+            premium_manager,
+            "try_reserve_instance_for_migration",
+            return_value=True,
+        ) as mock_reserve, patch.object(
+            premium_manager, "release_instance_reservation"
+        ) as mock_release, patch(
+            "boto3.client", return_value=mock_elbv2
+        ), patch(
+            "premium_manager.pymysql.connect",
+            return_value=setup_db_mock(fetchone_values=fetchone_values),
+        ):
+            result = premium_manager.migrate_user_to_dedicated_instance(42, "i-new")
+        return result, mock_reserve, mock_release, mock_elbv2
+
+    _ACTIVE_WORKFLOW_ROW = [
+        MockRow(
+            {
+                "instance_id": "i-old",
+                "target_group_arn": "arn:tg/old",
+                "alb_rule_arn": "arn:rule/old",
+                "active_workflow_count": 3,
+            }
+        )
+    ]
+
+    def test_migrate_aborts_when_record_shows_active_workflow(
+        self, mock_env_vars_premium
+    ):
+        """Defense in depth: even past can_migrate_user, a stale
+        active_workflow_count > 0 on the assignment row blocks the swap before
+        any target-group mutation (no register/deregister). The reserve is a
+        transient SELECT..FOR UPDATE lock that writes no persistent row, so the
+        abort has nothing to release (no release_instance_reservation call)."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            result, mock_reserve, mock_release, mock_elbv2 = self._run_blocked_migrate(
+                premium_manager, self._ACTIVE_WORKFLOW_ROW
+            )
+
+        assert result is False
+        mock_elbv2.register_targets.assert_not_called()
+        mock_elbv2.deregister_targets.assert_not_called()
+        mock_reserve.assert_called_once()
+        mock_release.assert_not_called()
+
+    def test_migrate_aborts_when_no_assignment_record(self, mock_env_vars_premium):
+        """No assignment row past the reserve also aborts before any
+        target-group mutation. Same transient-lock reserve, so nothing to
+        release on abort."""
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            result, mock_reserve, mock_release, mock_elbv2 = self._run_blocked_migrate(
+                premium_manager, [None]
+            )
+
+        assert result is False
+        mock_elbv2.register_targets.assert_not_called()
+        mock_elbv2.deregister_targets.assert_not_called()
+        mock_reserve.assert_called_once()
+        mock_release.assert_not_called()
+
+
+class TestInlineMigrationOnAdoption:
+    """A user holding a shared / autoscaling-pool assignment is migrated to a
+    ready idle dedicated instance inline, in a single assign invocation, and
+    does not fall through to the async migration path (6233).
+
+    An autoscaling-pool existing assignment skips the EC2-state precheck (guarded
+    by instance_id != AUTOSCALING_POOL) and enters the inline-migration block
+    directly, so this drives the real adoption path end to end.
+    """
+
+    def test_inline_migration_returns_dedicated_without_async_fallback(
+        self, mock_env_vars_premium
+    ):
+        from aws_constants import PremiumAssignment
+
+        pool_row = MockRow(
+            {
+                "instance_id": PremiumAssignment.AUTOSCALING_POOL,
+                "is_shared": True,
+                "target_group_arn": "arn:tg/shared",
+                "alb_rule_arn": "arn:rule/shared",
+            }
+        )
+        migrated_row = MockRow(
+            {
+                "instance_id": "i-dedicated",
+                "is_shared": False,
+                "target_group_arn": "arn:tg/premium-77-tg",
+                "alb_rule_arn": "arn:rule/premium-77",
+            }
+        )
+        ready_dedicated = [
+            {"instance_id": "i-dedicated", "state": InstanceState.RUNNING}
+        ]
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_manager
+
+            with patch.object(
+                premium_manager, "restore_pending_release", return_value=None
+            ), patch.object(
+                premium_manager,
+                "get_existing_user_assignment",
+                side_effect=[pool_row, migrated_row],
+            ), patch.object(
+                premium_manager,
+                "get_all_premium_instances_with_states",
+                return_value=ready_dedicated,
+            ), patch.object(
+                premium_manager, "get_assigned_users_for_instance", return_value=[]
+            ), patch.object(
+                premium_manager,
+                "check_instance_readiness_with_retry",
+                return_value=True,
+            ), patch.object(
+                premium_manager,
+                "migrate_user_to_dedicated_instance",
+                return_value=True,
+            ) as mock_migrate, patch.object(
+                premium_manager, "invoke_migration_async"
+            ) as mock_async, patch(
+                "premium_manager.pymysql.connect", return_value=setup_db_mock()
+            ), patch(
+                "premium_manager.distributed_lock", new=_always_acquired_lock()
+            ), patch(
+                "boto3.client", return_value=MagicMock()
+            ):
+                result = premium_manager.assign_premium_user(
+                    77, {"tier": "premium"}, "firebase_uid_inline"
+                )
+
+        assert result["statusCode"] == 200, result["body"]
+        body = json.loads(result["body"])
+        assert body["assignment_source"] == "inline_migration"
+        assert body["is_shared"] is False
+        assert body["instance_id"] == "i-dedicated"
+        mock_migrate.assert_called_once_with(77, "i-dedicated")
+        mock_async.assert_not_called()
+
+
+class TestIdleUserSelectorExcludesActiveWorkflows:
+    """get_idle_premium_users_for_instance selects only workflow-free users
+    (6217 "migrate query excludes count > 0"). The exclusion lives
+    purely in SQL, so assert the query filters active_workflow_count = 0 rather
+    than a Python-side filter that does not exist."""
+
+    def test_query_filters_on_zero_active_workflows(self, mock_env_vars_premium):
+        with patch.dict("os.environ", mock_env_vars_premium):
+            import premium_user_utils
+
+            cursor = MagicMock()
+            cursor.fetchall.return_value = [
+                MockRow({"user_id": 11}),
+                MockRow({"user_id": 22}),
+            ]
+            conn = MagicMock()
+            conn.cursor.return_value.__enter__.return_value = cursor
+            conn.cursor.return_value.__exit__.return_value = False
+            db_cm = MagicMock()
+            db_cm.__enter__.return_value = conn
+            db_cm.__exit__.return_value = False
+
+            with patch.object(
+                premium_user_utils, "get_db_connection", return_value=db_cm
+            ):
+                result = premium_user_utils.get_idle_premium_users_for_instance(
+                    "i-target"
+                )
+
+        assert result == [11, 22]
+        sql = cursor.execute.call_args[0][0]
+        params = cursor.execute.call_args[0][1]
+        normalized = " ".join(sql.split())
+        assert "instance_id = %s" in normalized
+        assert "active_workflow_count = 0" in normalized
+        assert "status = 'active'" in normalized
+        assert params == ("i-target",)
+
+
+class TestSoftReleaseUserAssignment:
+    """The soft release keeps the row and its ALB resources.
+
+    A beacon-driven release has to leave the assignment recoverable: the row
+    flipped to pending_release with its rule and target group still standing. A
+    release that deleted the row outright looks identical to its caller but
+    makes the restore impossible.
+    """
+
+    def _soft_release(self, mock_env_vars_premium, row):
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "pymysql.connect"
+        ) as mock_pymysql, patch("boto3.client") as mock_boto3:
+            mock_connection = setup_db_mock(fetchone_values=[row])
+            mock_pymysql.return_value = mock_connection
+            cursor = mock_connection.cursor.return_value.__enter__.return_value
+            aws = MagicMock()
+            mock_boto3.return_value = aws
+
+            from premium_manager import soft_release_user_assignment
+
+            return soft_release_user_assignment(42), cursor, aws
+
+    def test_flips_the_row_to_pending_release_without_deleting_it(
+        self, mock_env_vars_premium
+    ):
+        from aws_constants import PremiumAssignment
+
+        result, cursor, aws = self._soft_release(
+            mock_env_vars_premium,
+            MockRow(
+                {
+                    "instance_id": TEST_INSTANCE_ID,
+                    "target_group_arn": "arn:aws:tg/user-42",
+                    "alb_rule_arn": "arn:aws:rule/user-42",
+                    "status": PremiumAssignment.ACTIVE,
+                }
+            ),
+        )
+
+        statements = [
+            (" ".join(call[0][0].split()), call[0][1])
+            for call in cursor.execute.call_args_list
+        ]
+        assert not any(sql.startswith("DELETE") for sql, _ in statements)
+        row_updates = [
+            (sql, params)
+            for sql, params in statements
+            if sql.startswith("UPDATE premium_user_assignments")
+        ]
+        assert len(row_updates) == 1
+        assert "assigned_at" not in row_updates[0][0]
+        assert row_updates[0][1] == (
+            PremiumAssignment.PENDING_RELEASE,
+            42,
+            PremiumAssignment.ACTIVE,
+        )
+        # Usage log closed so grace time is not billed as active premium use.
+        assert any(sql.startswith("UPDATE instance_usage_log") for sql, _ in statements)
+        # The ALB rule and target group must survive, or the restore would have
+        # to recreate them (the whole point of the grace window).
+        aws.delete_rule.assert_not_called()
+        aws.delete_target_group.assert_not_called()
+        assert result["instance_id"] == TEST_INSTANCE_ID
+
+    def test_no_active_assignment_is_a_noop(self, mock_env_vars_premium):
+        """A second beacon (or one after the grace expired) must not write."""
+        result, cursor, _ = self._soft_release(mock_env_vars_premium, None)
+
+        assert result is None
+        assert len(cursor.execute.call_args_list) == 1
+
+    def test_soft_release_does_not_scale_down_but_hard_release_does(
+        self, mock_env_vars_premium
+    ):
+        """The instance is still allocated during the grace, so scaling it down
+        would strand a user who is about to come back."""
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "premium_manager.soft_release_user_assignment",
+            return_value={"instance_id": TEST_INSTANCE_ID},
+        ), patch(
+            "premium_manager.remove_user_assignment",
+            return_value={
+                "instance_id": TEST_INSTANCE_ID,
+                "target_group_arn": "arn:aws:tg/user-42",
+                "alb_rule_arn": "arn:aws:rule/user-42",
+            },
+        ), patch(
+            "premium_manager._teardown_alb_resources", return_value=[]
+        ), patch(
+            "premium_manager.count_active_premium_users", return_value=1
+        ), patch(
+            "premium_manager.scale_down_if_possible"
+        ) as mock_scale_down:
+            from premium_manager import release_premium_user
+
+            soft = release_premium_user(42)
+            assert soft["statusCode"] == 200
+            assert "soft release completed" in json.loads(soft["body"])["message"]
+            mock_scale_down.assert_not_called()
+
+            hard = release_premium_user(42, hard=True)
+            assert "hard release completed" in json.loads(hard["body"])["message"]
+            mock_scale_down.assert_called_once()
+
+
+class TestRestorePendingReleaseTransaction:
+    """restore_pending_release restores the SAME row.
+
+    A reopen inside the grace window has to land the user back on the row they
+    already had: same id, same assigned_at, status back to active, and no ALB
+    resources recreated. TestHeartbeatRestoresPendingRelease covers the
+    heartbeat route to the same outcome; this is the status-check route.
+    """
+
+    ASSIGNED_AT = datetime(2026, 7, 30, 9, 0, 0)
+
+    def _pending_row(self, instance_id=TEST_INSTANCE_ID, **overrides):
+        from aws_constants import PremiumAssignment
+
+        row = {
+            "user_id": 42,
+            "instance_id": instance_id,
+            "target_group_arn": "arn:aws:tg/user-42",
+            "alb_rule_arn": "arn:aws:rule/user-42",
+            "status": PremiumAssignment.PENDING_RELEASE,
+            "instance_state": "running",
+            "is_shared": 0,
+            "assigned_at": self.ASSIGNED_AT,
+        }
+        row.update(overrides)
+        return MockRow(row)
+
+    def _restore(self, mock_env_vars_premium, row, ec2_state="running"):
+        """Run the real restore transaction; returns (result, cursor, aws)."""
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "pymysql.connect"
+        ) as mock_pymysql, patch("boto3.client") as mock_boto3:
+            mock_connection = setup_db_mock(fetchone_values=[row])
+            mock_pymysql.return_value = mock_connection
+            cursor = mock_connection.cursor.return_value.__enter__.return_value
+            aws = MagicMock()
+            if ec2_state is None:
+                aws.describe_instances.return_value = {"Reservations": []}
+            else:
+                aws.describe_instances.return_value = {
+                    "Reservations": [{"Instances": [{"State": {"Name": ec2_state}}]}]
+                }
+            mock_boto3.return_value = aws
+
+            from premium_manager import restore_pending_release
+
+            return restore_pending_release(42), cursor, aws
+
+    @staticmethod
+    def _statements(cursor):
+        return [" ".join(call[0][0].split()) for call in cursor.execute.call_args_list]
+
+    def test_restores_same_row_to_active(self, mock_env_vars_premium):
+        """The UPDATE flips status only - assigned_at is never re-stamped, so the
+        restored row stays indistinguishable from the one the user had."""
+        from aws_constants import PremiumAssignment
+
+        result, cursor, _ = self._restore(mock_env_vars_premium, self._pending_row())
+
+        updates = [s for s in self._statements(cursor) if s.startswith("UPDATE")]
+        assert len(updates) == 1
+        assert "SET status = %s, last_activity = NOW()" in updates[0]
+        assert "assigned_at" not in updates[0]
+        assert cursor.execute.call_args_list[-1][0][1] == (
+            PremiumAssignment.ACTIVE,
+            42,
+            PremiumAssignment.PENDING_RELEASE,
+        )
+        assert not any(s.startswith("DELETE") for s in self._statements(cursor))
+        assert result["assigned_at"] == self.ASSIGNED_AT
+
+    def test_restore_creates_no_alb_resources(self, mock_env_vars_premium):
+        """The grace window exists so the restore can reuse the rule and target
+        group; recreating them would defeat the point of keeping the row."""
+        _, _, aws = self._restore(mock_env_vars_premium, self._pending_row())
+
+        aws.create_target_group.assert_not_called()
+        aws.create_rule.assert_not_called()
+        aws.delete_rule.assert_not_called()
+        aws.delete_target_group.assert_not_called()
+
+    def test_autoscaling_pool_skips_the_ec2_liveness_check(self, mock_env_vars_premium):
+        """The pool marker is not a real instance, so describe_instances on it
+        would raise and drop a restorable assignment."""
+        from aws_constants import PremiumAssignment
+
+        result, cursor, aws = self._restore(
+            mock_env_vars_premium,
+            self._pending_row(instance_id=PremiumAssignment.AUTOSCALING_POOL),
+        )
+
+        aws.describe_instances.assert_not_called()
+        assert result is not None
+        assert any(s.startswith("UPDATE") for s in self._statements(cursor))
+
+    def test_dead_instance_deletes_the_row_instead_of_restoring(
+        self, mock_env_vars_premium
+    ):
+        """A terminated instance must not be restored: the row is deleted so the
+        next login assigns fresh (and the ALB leftovers are torn down)."""
+        from aws_constants import PremiumAssignment
+
+        with patch(
+            "premium_manager._teardown_alb_resources", return_value=[]
+        ) as mock_teardown:
+            result, cursor, _ = self._restore(
+                mock_env_vars_premium,
+                self._pending_row(),
+                ec2_state=InstanceState.TERMINATED,
+            )
+
+        assert result is None
+        deletes = [s for s in self._statements(cursor) if s.startswith("DELETE")]
+        assert len(deletes) == 1
+        assert deletes[0].startswith("DELETE FROM premium_user_assignments")
+        delete_params = [
+            call[0][1]
+            for call in cursor.execute.call_args_list
+            if call[0][0].strip().startswith("DELETE")
+        ]
+        assert delete_params == [(42, PremiumAssignment.PENDING_RELEASE)]
+        mock_teardown.assert_called_once_with(
+            42, "arn:aws:rule/user-42", "arn:aws:tg/user-42"
+        )
+
+    def test_returns_none_when_no_pending_release_row(self, mock_env_vars_premium):
+        """Nothing in grace - the caller keeps whatever status it already read."""
+        result, cursor, _ = self._restore(mock_env_vars_premium, None)
+
+        assert result is None
+        statements = self._statements(cursor)
+        assert len(statements) == 1
+        assert statements[0].startswith("SELECT")
+
+
+class TestFinalizeExpiredPendingReleases:
+    """finalize_expired_pending_releases deletes rows past the grace.
+
+    Once the grace lapses the old row has to be gone, so the next login assigns
+    fresh instead of restoring a row whose ALB resources are being torn down.
+    """
+
+    def _finalize(self, mock_env_vars_premium, expired_rows):
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "pymysql.connect"
+        ) as mock_pymysql:
+            mock_connection = setup_db_mock(fetchall_values=[expired_rows])
+            mock_pymysql.return_value = mock_connection
+            cursor = mock_connection.cursor.return_value.__enter__.return_value
+
+            from premium_manager import finalize_expired_pending_releases
+
+            return finalize_expired_pending_releases(), cursor
+
+    def test_selects_only_rows_past_the_grace_window(self, mock_env_vars_premium):
+        from aws_constants import PremiumAssignment
+
+        _, cursor = self._finalize(mock_env_vars_premium, [])
+
+        sql = " ".join(cursor.execute.call_args_list[0][0][0].split())
+        params = cursor.execute.call_args_list[0][0][1]
+        assert "last_activity < DATE_SUB(NOW(), INTERVAL %s SECOND)" in sql
+        # FOR UPDATE: the sweep and a concurrent restore must not race.
+        assert sql.endswith("FOR UPDATE")
+        assert params == (
+            PremiumAssignment.PENDING_RELEASE,
+            PremiumAssignment.PENDING_RELEASE_GRACE_SECONDS,
+        )
+
+    def test_deletes_each_expired_row_and_returns_it_for_teardown(
+        self, mock_env_vars_premium
+    ):
+        from aws_constants import PremiumAssignment
+
+        rows = [
+            MockRow(
+                {
+                    "user_id": 11,
+                    "instance_id": "i-dedicated",
+                    "target_group_arn": "arn:aws:tg/user-11",
+                    "alb_rule_arn": "arn:aws:rule/user-11",
+                }
+            ),
+            MockRow(
+                {
+                    "user_id": 22,
+                    "instance_id": PremiumAssignment.AUTOSCALING_POOL,
+                    "target_group_arn": "",
+                    "alb_rule_arn": "",
+                }
+            ),
+        ]
+        expired, cursor = self._finalize(mock_env_vars_premium, rows)
+
+        assert expired == rows
+        statements = [
+            (" ".join(call[0][0].split()), call[0][1])
+            for call in cursor.execute.call_args_list
+        ]
+        deletes = [p for sql, p in statements if sql.startswith("DELETE")]
+        assert deletes == [
+            (11, PremiumAssignment.PENDING_RELEASE),
+            (22, PremiumAssignment.PENDING_RELEASE),
+        ]
+        # Usage log closed per row, so premium minutes stop billing at release.
+        usage_closes = [
+            p for sql, p in statements if sql.startswith("UPDATE instance_usage_log")
+        ]
+        assert usage_closes == [(11,), (22,)]
+
+    def test_no_expired_rows_deletes_nothing(self, mock_env_vars_premium):
+        expired, cursor = self._finalize(mock_env_vars_premium, [])
+
+        assert expired == []
+        assert not any(
+            call[0][0].strip().startswith("DELETE")
+            for call in cursor.execute.call_args_list
+        )
+
+    def test_teardown_drops_the_per_user_tg_but_never_the_shared_one(
+        self, mock_env_vars_premium
+    ):
+        """The monitor hands every finalized row to _teardown_alb_resources, and a
+        pool row carries the shared ASG target group - deleting that one would
+        break routing for every autoscaling-pool user at once."""
+        with patch.dict("os.environ", mock_env_vars_premium), patch(
+            "boto3.client"
+        ) as mock_boto3:
+            elbv2 = MagicMock()
+            mock_boto3.return_value = elbv2
+
+            from premium_manager import _teardown_alb_resources
+
+            shared_tg = mock_env_vars_premium["AUTOSCALING_TARGET_GROUP_ARN"]
+            assert _teardown_alb_resources(22, "arn:aws:rule/user-22", shared_tg) == []
+            elbv2.delete_rule.assert_called_once_with(RuleArn="arn:aws:rule/user-22")
+            elbv2.delete_target_group.assert_not_called()
+
+            assert _teardown_alb_resources(11, None, "arn:aws:tg/user-11") == []
+            elbv2.delete_target_group.assert_called_once_with(
+                TargetGroupArn="arn:aws:tg/user-11"
+            )

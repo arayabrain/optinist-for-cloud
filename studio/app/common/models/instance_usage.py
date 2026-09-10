@@ -4,6 +4,7 @@ from typing import Optional
 
 from sqlalchemy import TIMESTAMP
 from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import Index
 from sqlalchemy.dialects.mysql import BIGINT, VARCHAR
 from sqlalchemy.sql.functions import current_timestamp
 from sqlmodel import Column, Field, SQLModel
@@ -16,6 +17,12 @@ class UsageTier(str, Enum):
 
 class InstanceUsageLog(SQLModel, table=True):
     __tablename__ = "instance_usage_log"
+
+    __table_args__ = (
+        Index("idx_usage_log_user_tier", "user_id", "tier"),
+        Index("idx_usage_log_active", "ended_at"),
+        Index("idx_usage_log_tier_started", "tier", "started_at"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(

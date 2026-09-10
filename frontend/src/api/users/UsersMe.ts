@@ -3,6 +3,7 @@ import {
   UpdateUserDTO,
   UpdateUserPasswordDTO,
 } from "api/users/UsersApiDTO"
+import { API_TIMEOUT } from "const/API"
 import axios from "utils/axios"
 
 export const getMeApi = async (): Promise<UserDTO> => {
@@ -32,6 +33,8 @@ export const logoutFreeUserApi = async (): Promise<{
   logged_out: boolean
   cleanup_after_minutes?: number
 }> => {
-  const response = await axios.post("/users/me/free/logout")
+  const response = await axios.post("/users/me/free/logout", undefined, {
+    timeout: API_TIMEOUT.LOGOUT,
+  })
   return response.data
 }

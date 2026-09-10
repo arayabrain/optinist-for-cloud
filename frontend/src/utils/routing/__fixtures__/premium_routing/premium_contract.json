@@ -1,0 +1,51 @@
+{
+  "routing_info": {
+    "user_tier": "premium",
+    "requires_premium_routing": true,
+    "routing_headers": {}
+  },
+  "premium_assign": {
+    "message": "Assigned to instance i-0abc123",
+    "assigned": true,
+    "instance_id": "i-0abc123",
+    "instance_id_hash": "3f9a1c2b4d5e6f70",
+    "is_shared": false,
+    "assignment_source": "dedicated"
+  },
+  "premium_release": {
+    "message": "Released from instance i-0abc123",
+    "released": true,
+    "released_instance": "i-0abc123"
+  },
+  "premium_status": {
+    "subscription_type": "premium",
+    "is_premium": true,
+    "assignment": {
+      "instance_id": "i-0abc123",
+      "instance_id_hash": "3f9a1c2b4d5e6f70",
+      "assigned_at": "2026-01-15T10:30:00Z",
+      "status": "active",
+      "is_shared": false
+    }
+  },
+  "premium_heartbeat": {
+    "message": "Activity updated",
+    "updated": true,
+    "user_tier": "premium",
+    "assignment_active": true
+  },
+  "free_logout": {
+    "message": "Logout recorded",
+    "logged_out": true,
+    "cleanup_after_minutes": 60
+  },
+  "release_beacon": {
+    "success": true,
+    "message": "Released"
+  },
+  "headers": {
+    "routing_id": "X-Routing-ID",
+    "user_tier": "X-User-Tier",
+    "served_by_instance": "X-Served-By-Instance"
+  }
+}

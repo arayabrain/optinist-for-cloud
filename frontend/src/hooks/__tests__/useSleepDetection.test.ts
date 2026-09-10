@@ -186,15 +186,34 @@ describe("useSleepDetection (Cases 50-51)", () => {
     expect(onWake).not.toHaveBeenCalled()
   })
 
-  it("should cleanup interval on unmount", () => {
-    const clearIntervalSpy = jest.spyOn(global, "clearInterval")
+  it("should not wake after unmount", () => {
     const onWake = jest.fn()
     const { unmount } = renderHook(() => useSleepDetection(onWake))
 
     unmount()
 
-    expect(clearIntervalSpy).toHaveBeenCalled()
-    clearIntervalSpy.mockRestore()
+    // A gap that would wake a mounted hook must fire nothing once unmounted.
+    act(() => {
+      currentTime += 600000
+      jest.advanceTimersByTime(30000)
+    })
+    expect(onWake).not.toHaveBeenCalled()
+  })
+
+  it("should stop listening for visibilitychange after unmount", () => {
+    const onWake = jest.fn()
+    const { unmount } = renderHook(() => useSleepDetection(onWake))
+
+    act(() => {
+      changeVisibility("hidden")
+    })
+    unmount()
+
+    currentTime += 600000
+    act(() => {
+      changeVisibility("visible")
+    })
+    expect(onWake).not.toHaveBeenCalled()
   })
 
   it("should update onWake callback when it changes", () => {

@@ -1,4 +1,11 @@
-import { describe, test, expect, beforeEach, jest } from "@jest/globals"
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  jest,
+} from "@jest/globals"
 
 import { UserDTO } from "api/users/UsersApiDTO"
 import {
@@ -323,7 +330,7 @@ describe("RoutingService", () => {
       expect(routingService.requiresPremiumRouting()).toBe(false)
     })
 
-    test("should stay aligned with getRoutingHeaders — both true or both false", () => {
+    test("should stay aligned with getRoutingHeaders in both directions", () => {
       // After page reload with localStorage state
       localStorageMock.setItem("routing_id", "stored-token")
       localStorageMock.setItem("premium_assigned", "true")
@@ -331,10 +338,18 @@ describe("RoutingService", () => {
 
       const newService = new RoutingService()
 
-      const headersActive =
-        Object.keys(newService.getRoutingHeaders()).length > 0
-      const fallbackActive = newService.requiresPremiumRouting()
-      expect(headersActive).toBe(fallbackActive)
+      // Both active: headers are emitted and the 503 fallback gate is open.
+      expect(newService.getRoutingHeaders()).toEqual({
+        [RoutingHeaders.ROUTING_ID]: "stored-token",
+        [RoutingHeaders.USER_TIER]: UserTier.PREMIUM,
+      })
+      expect(newService.requiresPremiumRouting()).toBe(true)
+
+      // Both inactive: dropping the assignment closes both at once.
+      newService.setPremiumAssigned(false)
+
+      expect(newService.getRoutingHeaders()).toEqual({})
+      expect(newService.requiresPremiumRouting()).toBe(false)
     })
   })
 
@@ -632,6 +647,55 @@ describe("RoutingService", () => {
     })
   })
 
+  describe("emitPremiumReachable re-arms premiumAssigned (exit side)", () => {
+    test("recovery not routed through the probe still re-arms routing", () => {
+      // Teardown turned routing off (concurrent failure) but keeps the instance
+      // identity, then a concurrent success emits reachable without going
+      // through the half-open probe.
+      routingService.setPremiumInstanceId("inst-A")
+      routingService.setPremiumAssigned(false)
+
+      routingService.emitPremiumReachable({ status: 200 })
+
+      expect(routingService.isPremiumAssigned()).toBe(true)
+    })
+
+    test("re-arm holds even when a listener throws", () => {
+      routingService.setPremiumInstanceId("inst-A")
+      routingService.setPremiumAssigned(false)
+      routingService.onPremiumReachable(() => {
+        throw new Error("boom")
+      })
+
+      routingService.emitPremiumReachable({ status: 200 })
+
+      expect(routingService.isPremiumAssigned()).toBe(true)
+    })
+
+    test("re-arm is idempotent when already assigned (probe path)", () => {
+      routingService.setPremiumInstanceId("inst-A")
+      routingService.setPremiumAssigned(true)
+
+      routingService.emitPremiumReachable({ status: 200 })
+
+      expect(routingService.isPremiumAssigned()).toBe(true)
+    })
+
+    test("late post-release reachable does not resurrect routing", () => {
+      // A premium request was in flight, then release/logout cleared the
+      // instance identity. The late verified 200 must not re-arm routing, or it
+      // recreates the (assigned, instanceId=null) desync resetForRelease prevents.
+      routingService.setPremiumInstanceId("inst-A")
+      routingService.setPremiumAssigned(true)
+      routingService.resetForRelease()
+      expect(routingService.getPremiumInstanceId()).toBeNull()
+
+      routingService.emitPremiumReachable({ status: 200 })
+
+      expect(routingService.isPremiumAssigned()).toBe(false)
+    })
+  })
+
   describe("premiumInstanceId", () => {
     test("setPremiumInstanceId / getPremiumInstanceId round-trip", () => {
       expect(routingService.getPremiumInstanceId()).toBeNull()
@@ -671,6 +735,191 @@ describe("RoutingService", () => {
 
       expect(routingService.getPremiumInstanceId()).toBeNull()
       expect(localStorageMock.getItem("premium_instance_id")).toBeNull()
+    })
+  })
+
+  describe("premiumShared flag", () => {
+    test("defaults to false", () => {
+      expect(routingService.isPremiumShared()).toBe(false)
+    })
+
+    test("setPremiumShared / isPremiumShared round-trip and persist", () => {
+      routingService.setPremiumShared(true)
+      expect(routingService.isPremiumShared()).toBe(true)
+      expect(localStorageMock.getItem("premium_shared")).toBe("true")
+
+      routingService.setPremiumShared(false)
+      expect(routingService.isPremiumShared()).toBe(false)
+      expect(localStorageMock.getItem("premium_shared")).toBe("false")
+    })
+
+    test("loads shared flag from localStorage on initialization", () => {
+      localStorageMock.setItem("premium_shared", "true")
+
+      const newService = new RoutingService()
+      expect(newService.isPremiumShared()).toBe(true)
+    })
+
+    test("clearRoutingInfo clears the shared flag", () => {
+      routingService.setPremiumShared(true)
+      routingService.clearRoutingInfo()
+
+      expect(routingService.isPremiumShared()).toBe(false)
+      expect(localStorageMock.getItem("premium_shared")).toBeNull()
+    })
+
+    test("resetForRelease clears the shared flag", () => {
+      routingService.setPremiumShared(true)
+      routingService.resetForRelease()
+
+      expect(routingService.isPremiumShared()).toBe(false)
+    })
+
+    test("updateRoutingInfo for a non-premium user clears the shared flag", () => {
+      routingService.setPremiumShared(true)
+      routingService.updateRoutingInfo(createFreeUser())
+
+      expect(routingService.isPremiumShared()).toBe(false)
+    })
+  })
+
+  describe("premium warm-up window", () => {
+    // Intentionally longer than DEDICATED_HANDOFF_GRACE_MS (15000) so the axios
+    // window contains the machine's grace window — see PREMIUM_WARMUP_GRACE_MS.
+    const GRACE_MS = 16000
+    const T0 = 1_000_000
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+      jest.setSystemTime(T0)
+      // Rebuild after fake timers are active so no stale state leaks in.
+      routingService = new RoutingService()
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    test("no window is open initially", () => {
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+    })
+
+    test("startPremiumWarmup opens a window that expires after the grace", () => {
+      routingService.startPremiumWarmup()
+      expect(routingService.isWithinPremiumWarmup()).toBe(true)
+
+      jest.setSystemTime(T0 + GRACE_MS - 1)
+      expect(routingService.isWithinPremiumWarmup()).toBe(true)
+
+      jest.setSystemTime(T0 + GRACE_MS)
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+    })
+
+    test("setPremiumInstanceId arms the window on a new/changed instance", () => {
+      routingService.setPremiumInstanceId("hash-A")
+      expect(routingService.isWithinPremiumWarmup()).toBe(true)
+    })
+
+    test("re-confirming the same instance does not extend the window", () => {
+      routingService.setPremiumInstanceId("hash-A")
+
+      // Advance near the end of the original window, then re-confirm the SAME
+      // instance — must not re-arm (a genuine late fallback still needs to
+      // surface once the original window expires).
+      jest.setSystemTime(T0 + GRACE_MS - 1)
+      routingService.setPremiumInstanceId("hash-A")
+
+      jest.setSystemTime(T0 + GRACE_MS)
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+    })
+
+    test("changing to a different instance re-arms the window", () => {
+      routingService.setPremiumInstanceId("hash-A")
+
+      jest.setSystemTime(T0 + GRACE_MS)
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+
+      routingService.setPremiumInstanceId("hash-B")
+      expect(routingService.isWithinPremiumWarmup()).toBe(true)
+    })
+
+    test("setPremiumInstanceId(null) clears the window", () => {
+      routingService.setPremiumInstanceId("hash-A")
+      routingService.setPremiumInstanceId(null)
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+    })
+
+    test("clearRoutingInfo clears the window", () => {
+      routingService.setPremiumInstanceId("hash-A")
+      routingService.clearRoutingInfo()
+      expect(routingService.isWithinPremiumWarmup()).toBe(false)
+    })
+  })
+
+  describe("reachable watermark / stale premium failure", () => {
+    const T0 = 1_000_000
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+      jest.setSystemTime(T0)
+      routingService = new RoutingService()
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    test("no failure is stale before any reachable is observed", () => {
+      expect(routingService.isStalePremiumFailure(100)).toBe(false)
+    })
+
+    test("emitPremiumReachable advances the watermark; an older failure is stale", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      expect(routingService.isStalePremiumFailure(1500)).toBe(true)
+    })
+
+    test("a failure newer than the watermark is not stale", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      expect(routingService.isStalePremiumFailure(2500)).toBe(false)
+    })
+
+    test("a failure sent at exactly the watermark is not stale", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      expect(routingService.isStalePremiumFailure(2000)).toBe(false)
+    })
+
+    test("undefined sentAt is treated as now — not stale when the watermark is in the past", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      expect(routingService.isStalePremiumFailure(undefined)).toBe(false)
+    })
+
+    test("undefined sentAt is stale only if now predates the watermark", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: T0 + 5000 })
+      expect(routingService.isStalePremiumFailure(undefined)).toBe(true)
+    })
+
+    test("the watermark is monotonic — an older reachable does not lower it", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      routingService.emitPremiumReachable({ status: 200, sentAt: 1000 })
+      expect(routingService.isStalePremiumFailure(1500)).toBe(true)
+    })
+
+    test("clearRoutingInfo resets the watermark", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      routingService.clearRoutingInfo()
+      expect(routingService.isStalePremiumFailure(1500)).toBe(false)
+    })
+
+    test("resetForRelease resets the watermark", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      routingService.resetForRelease()
+      expect(routingService.isStalePremiumFailure(1500)).toBe(false)
+    })
+
+    test("updateRoutingInfo downgrade to free resets the watermark", () => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+      routingService.updateRoutingInfo(createFreeUser())
+      expect(routingService.isStalePremiumFailure(1500)).toBe(false)
     })
   })
 })

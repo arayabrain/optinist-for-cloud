@@ -36,7 +36,12 @@
   "globals": {
     "NodeJS": true
   },
-  "ignorePatterns": ["build/", "config-overrides.js"],
+  "ignorePatterns": [
+    "build/",
+    "config-overrides.js",
+    "e2e/",
+    "playwright.config.ts"
+  ],
   "rules": {
     "quotes": ["error", "double"],
     "semi": ["error", "never"],

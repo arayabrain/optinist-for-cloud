@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import INTEGER, TIMESTAMP, VARCHAR
+from sqlalchemy import INTEGER, TIMESTAMP, VARCHAR, Index
 from sqlalchemy.dialects.mysql import BIGINT
 from sqlalchemy.sql.functions import current_timestamp
 from sqlmodel import Column, Field, ForeignKey, SQLModel
@@ -9,6 +9,15 @@ from sqlmodel import Column, Field, ForeignKey, SQLModel
 
 class FreeUserAssignment(SQLModel, table=True):
     __tablename__ = "free_user_assignments"
+
+    __table_args__ = (
+        Index("idx_instance_id", "instance_id"),
+        Index("idx_last_activity", "last_activity"),
+        Index("idx_logged_out_at", "logged_out_at"),
+        Index("idx_active_workflow_count", "active_workflow_count"),
+        Index("idx_last_workflow_start", "last_workflow_start"),
+        Index("idx_idle_users", "active_workflow_count", "last_activity"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(

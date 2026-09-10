@@ -14,9 +14,6 @@ import {
   TabSyncService,
 } from "utils/crossTabSync"
 
-// Note: CrossTabLeaderElection uses timers and is tested separately
-// These tests focus on the activity sync functions which are simpler to test
-
 describe("Activity Sync Functions", () => {
   let mockStorage: Record<string, string>
   let originalLocalStorage: Storage

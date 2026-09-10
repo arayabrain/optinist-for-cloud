@@ -8,7 +8,11 @@ import "@testing-library/jest-dom"
 import { Store, AnyAction } from "@reduxjs/toolkit"
 import { render, screen } from "@testing-library/react"
 
-import { FileTreeItemLabel } from "components/Workspace/FlowChart/Dialog/FileSelectDialog"
+import { FILE_TREE_TYPE_SET } from "api/files/Files"
+import {
+  FileSelectDialog,
+  FileTreeItemLabel,
+} from "components/Workspace/FlowChart/Dialog/FileSelectDialog"
 import { AppDispatch } from "store/store"
 
 // Create a mock context
@@ -21,7 +25,11 @@ const MockFileTreeActionsContext =
 const mockOnOpenDeleteDialog = jest.fn()
 
 const mockStore = configureStore<
-  Partial<{ workspace: { currentWorkspace: { workspaceId?: number } } }>,
+  Partial<{
+    workspace: { currentWorkspace: { workspaceId?: number } }
+    filesTree: Record<string, { isLatest: boolean; isLoading: boolean }>
+    pipeline: { currentPipeline?: { uid: string } }
+  }>,
   AppDispatch
 >([])
 
@@ -108,5 +116,44 @@ describe("TreeItemLabel Component", () => {
 
     const deleteButton = screen.getByTestId("DeleteIconBtn")
     expect(deleteButton.hasAttribute("disabled")).toBe(false)
+  })
+})
+
+// The file-tree progress indicator. This pins the binding to the tree fetch's
+// isLoading only; that the fetch itself flips the flag is the slice's business.
+describe("File tree sync progress indicator", () => {
+  const storeWith = (isLoading: boolean): Store<unknown, AnyAction> => {
+    const store: Store<unknown, AnyAction> = mockStore({
+      workspace: { currentWorkspace: { workspaceId: 123 } },
+      filesTree: {
+        [FILE_TREE_TYPE_SET.ALL]: { isLatest: true, isLoading },
+      },
+      pipeline: {},
+    })
+    store.dispatch = jest.fn()
+    return store
+  }
+
+  const renderDialog = (isLoading: boolean) =>
+    render(
+      <Provider store={storeWith(isLoading)}>
+        <FileSelectDialog
+          open
+          initialFilePath={[]}
+          onClickCancel={jest.fn()}
+          onClickOk={jest.fn()}
+          multiSelect
+        />
+      </Provider>,
+    )
+
+  it("shows the progress bar while the file tree is being fetched", () => {
+    renderDialog(true)
+    expect(screen.getByRole("progressbar")).toBeTruthy()
+  })
+
+  it("clears the progress bar once the fetch completes", () => {
+    renderDialog(false)
+    expect(screen.queryByRole("progressbar")).toBeNull()
   })
 })

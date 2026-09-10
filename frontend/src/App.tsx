@@ -11,6 +11,8 @@ import IconButton from "@mui/material/IconButton"
 import BackendUnavailable from "components/common/BackendUnavailable"
 import ErrorBoundary from "components/common/ErrorBoundary"
 import Loading from "components/common/Loading"
+import RouteChangeTracker from "components/common/RouteChangeTracker"
+import ScrollToTop from "components/common/ScrollToTop"
 import Layout from "components/Layout"
 import { RETRY_MAX_COUNT, RETRY_WAIT, RETRY_WAIT_LONG } from "const/Mode"
 import Account from "pages/Account"
@@ -21,12 +23,14 @@ import Dataview from "pages/Dataview"
 import InvoicesPage from "pages/Invoice"
 import LandingPage from "pages/LandingPage"
 import Login from "pages/Login"
+import Privacy from "pages/Privacy"
 import PublicDataview from "pages/PublicDataview"
 import RegistrationForm from "pages/Register/MainRegistration"
 import ResetPassword from "pages/ResetPassword"
 import SubscriptionPage from "pages/Subscription"
 import Failed from "pages/Subscription/failed"
 import Thanks from "pages/Subscription/thanks"
+import Terms from "pages/Terms"
 import Workspaces from "pages/Workspace"
 import Workspace from "pages/Workspace/Workspace"
 import { getModeStandalone } from "store/slice/Standalone/StandaloneActions"
@@ -118,6 +122,8 @@ const App: FC = () => {
         style={{ maxWidth: "600px" }}
       >
         <BrowserRouter>
+          <ScrollToTop />
+          <RouteChangeTracker />
           <Routes>
             {/* Landing page - outside Layout */}
             <Route path="/" element={<LandingPage />} />
@@ -146,6 +152,8 @@ const App: FC = () => {
                         path="/reset-password"
                         element={<ResetPassword />}
                       />
+                      <Route path="/terms" element={<Terms />} />
+                      <Route path="/privacy" element={<Privacy />} />
 
                       {/* Authenticated routes */}
                       <Route path="/dashboard" element={<Dashboard />} />

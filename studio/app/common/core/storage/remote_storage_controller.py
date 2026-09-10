@@ -298,6 +298,13 @@ class RemoteSyncLockFileUtil:
     LOCK_WAIT_MAX_SECONDS = 300
     LOCK_WAIT_POLL_INTERVAL = 2
 
+    # Retry policy for operations that re-attempt on a lock conflict
+    # (RemoteStorageLockError) rather than waiting on the lock file.
+    # Used when an exclusive access is contended by another process and the
+    # operation is idempotent, so a short bounded retry can succeed.
+    LOCK_CONFLICT_RETRY_MAX = 3
+    LOCK_CONFLICT_RETRY_BACKOFF_SECONDS = 5
+
     @classmethod
     def __make_sync_lock_file_path(cls, workspace_id: str, unique_id: str) -> str:
         """

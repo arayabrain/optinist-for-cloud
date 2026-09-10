@@ -1,7 +1,9 @@
 /**
- * Tests for PremiumNotificationManager's instance-unreachable snackbar.
+ * Tests for PremiumNotificationManager's snackbars.
  *
  * Covers:
+ *  - The "preparing dedicated resource" waiting snackbar: its copy, its info /
+ *    persist options, and its dismissal once the dedicated instance lands
  *  - Initial non-terminal snackbar (no Retry button)
  *  - Non-terminal → terminal transition swaps the snackbar (close + enqueue)
  *    and the new snackbar carries an actionable Retry button
@@ -308,7 +310,7 @@ describe("PremiumNotificationManager — unreachable snackbar", () => {
   })
 })
 
-describe("PremiumNotificationManager — assignment success snackbar", () => {
+describe("PremiumNotificationManager — assignment success and waiting snackbars", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     snackbarLog = []
@@ -360,16 +362,96 @@ describe("PremiumNotificationManager — assignment success snackbar", () => {
     })
   }
 
+  // Asserted verbatim rather than by substring: this is the only confirmation a
+  // premium user gets that the dedicated instance is theirs.
+  const SUCCESS_COPY =
+    "Premium instance assigned successfully! " +
+    "You now have dedicated compute resources."
+
   test("success snackbar persists and inherits the default close action", () => {
     renderAndMigrate()
 
-    const successCall = snackbarLog.find((c) =>
-      c.message.includes("Premium instance assigned successfully"),
-    )
+    const successCall = snackbarLog.find((c) => c.message === SUCCESS_COPY)
     expect(successCall).toBeDefined()
     expect(successCall?.options?.variant).toBe("success")
     expect(successCall?.options?.persist).toBe(true)
     expect(successCall?.options?.autoHideDuration).toBeUndefined()
     expect(successCall?.options?.action).toBeUndefined()
+    expect(mockLogPremiumUiEvent).toHaveBeenCalledWith(
+      "dedicated_instance_ready",
+      { instance_id: "inst-A" },
+    )
+  })
+
+  // The once-per-session gate. A stale sessionStorage entry silently swallowing
+  // the notification is a plausible cause of a "no popup appeared" report, so
+  // both directions of the gate are pinned.
+  test("the assigned instance id is recorded so a refresh does not re-notify", () => {
+    renderAndMigrate()
+
+    expect(sessionStorage.getItem("premium_notified_instance_id")).toBe(
+      "inst-A",
+    )
+  })
+
+  test("no success snackbar when this session already notified for this instance", () => {
+    sessionStorage.setItem("premium_notified_instance_id", "inst-A")
+
+    renderAndMigrate()
+
+    expect(snackbarLog.filter((c) => c.message === SUCCESS_COPY)).toHaveLength(
+      0,
+    )
+  })
+
+  test("a different instance in sessionStorage does not suppress the snackbar", () => {
+    sessionStorage.setItem("premium_notified_instance_id", "inst-OLD")
+
+    renderAndMigrate()
+
+    expect(snackbarLog.filter((c) => c.message === SUCCESS_COPY)).toHaveLength(
+      1,
+    )
+  })
+
+  // Asserted verbatim: this is the only signal a premium user gets while the
+  // dedicated instance is still being prepared.
+  const WAITING_COPY =
+    "Please wait while your dedicated premium resource is being prepared."
+
+  test("waiting snackbar shows the preparing copy while there is no dedicated instance yet", () => {
+    mockCtxValue = { ...baseCtx(), assignmentResult: null, isAssigning: true }
+
+    render(<PremiumNotificationManager />)
+
+    const waitingCall = snackbarLog.find((c) => c.message === WAITING_COPY)
+    expect(waitingCall).toBeDefined()
+    expect(waitingCall?.options?.variant).toBe("info")
+    // Persistent: the wait outlives any autoHide, and only the dedicated
+    // handoff (or a hard error) may dismiss it.
+    expect(waitingCall?.options?.persist).toBe(true)
+    expect(mockLogPremiumUiEvent).toHaveBeenCalledWith(
+      "waiting_popup_shown",
+      expect.objectContaining({ is_assigning: true, has_assignment: false }),
+    )
+  })
+
+  test("waiting snackbar also covers a shared-only assignment, and is dismissed once dedicated lands", () => {
+    renderAndMigrate()
+
+    const waitingCall = snackbarLog.find((c) => c.message === WAITING_COPY)
+    expect(waitingCall).toBeDefined()
+    expect(mockCloseSnackbar).toHaveBeenCalledWith(waitingCall!.key)
+    expect(mockLogPremiumUiEvent).toHaveBeenCalledWith(
+      "waiting_popup_dismissed",
+      expect.objectContaining({
+        reason: "dedicated_ready",
+        instance_id: "inst-A",
+      }),
+    )
+    // Exactly one waiting snackbar for the whole shared → dedicated handoff.
+    expect(snackbarLog.filter((c) => c.message === WAITING_COPY)).toHaveLength(
+      1,
+    )
   })
 })

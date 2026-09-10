@@ -1,0 +1,58 @@
+# Brings up a throwaway MySQL and runs the real-GET_LOCK
+# integration test, proving distributed_lock serializes concurrent sessions.
+# Opt-in: needs a real database, so it is not part of the per-PR lambda job.
+# Credentials are inline (not from studio/config/.env) so it runs unchanged.
+# Invoked via `make premium_lock_it`.
+#
+# Own compose project: without it this file inherits `araya-optinist` from the
+# directory and the make target's `down -v` cleanup would stop a dev or test
+# lane running concurrently.
+name: premium-lock-it
+
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: premium_lock_it
+      MYSQL_USER: premium_it_user
+      MYSQL_PASSWORD: premium_it_password
+      TZ: UTC
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  premium_lock_it:
+    image: test_studio_backend
+    build:
+      context: .
+      dockerfile: studio/config/docker/Dockerfile.test
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PYTHONPATH: .
+      TZ: UTC
+      RUN_PREMIUM_LOCK_IT: "1"
+      # distributed_lock reads these; RDS_HOST is split on ":" and the port
+      # comes from DatabaseConfig.DEFAULT_PORT (3306).
+      RDS_HOST: db
+      RDS_USER: premium_it_user
+      RDS_PASSWORD: premium_it_password
+      RDS_DATABASE: premium_lock_it
+    depends_on:
+      db:
+        condition: service_healthy
+    # Fail (not skip) if any test is skipped: under this harness the opt-in
+    # flag + RDS_* are wired, so a skip means the env didn't reach the runner
+    # and the "green" would be hollow. set -e/pipefail also propagate real
+    # pytest failures.
+    command:
+      - bash
+      - -c
+      - |
+        set -eo pipefail
+        poetry run python -m pytest studio/tests/infrastructure/test_premium_lock_integration.py -v -rs | tee /tmp/ws5.out
+        ! grep -qE '[0-9]+ skipped' /tmp/ws5.out

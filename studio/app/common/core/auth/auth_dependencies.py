@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 import sqlalchemy
@@ -18,11 +18,9 @@ from studio.app.common.core.dataview.dataview_services import DataviewService
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.storage.remote_storage_controller import RemoteStorageType
-from studio.app.common.core.subscription.constants import (
-    PlanName,
-    SubscriptionPeriods,
-    SubscriptionPlanIds,
-    SubscriptionStatus,
+from studio.app.common.core.subscription.constants import PlanName
+from studio.app.common.core.subscription.subscription_service import (
+    derive_subscription_status,
 )
 from studio.app.common.core.utils.datetime_utils import get_current_datetime
 from studio.app.common.db.database import get_db
@@ -88,44 +86,20 @@ def _enrich_user_with_subscription_status(
         subscription_plan_id: ID of subscription plan
         subscription_plan_name: Name of subscription plan (fallback)
     """
-    now = get_current_datetime()
-
-    if subscription_expiration and subscription_plan_id:
-        # Make sure expiration is timezone-aware
-        if subscription_expiration.tzinfo is None:
-            subscription_expiration = subscription_expiration.replace(
-                tzinfo=timezone.utc
-            )
-
-        days_remaining = (subscription_expiration - now).days
-
-        if subscription_plan_id == SubscriptionPlanIds.FREE:
-            user.__dict__["subscription_status"] = SubscriptionStatus.FREE.value
-            user.__dict__["subscription_days_remaining"] = None
-        elif subscription_plan_id == SubscriptionPlanIds.PREMIUM:
-            if days_remaining > 0:
-                user.__dict__["subscription_status"] = SubscriptionStatus.PREMIUM.value
-                user.__dict__["subscription_days_remaining"] = days_remaining
-            elif days_remaining >= -SubscriptionPeriods.GRACE_PERIOD_DAYS:
-                user.__dict__[
-                    "subscription_status"
-                ] = SubscriptionStatus.LIMIT_GRACE.value
-                user.__dict__["subscription_days_remaining"] = (
-                    SubscriptionPeriods.GRACE_PERIOD_DAYS + days_remaining
-                )  # Days left in grace period
-            else:
-                user.__dict__["subscription_status"] = SubscriptionStatus.EXPIRED.value
-                user.__dict__["subscription_days_remaining"] = None
-        else:
-            user.__dict__["subscription_status"] = (
-                subscription_plan_name or PlanName.UNKNOWN.value
-            )
-            user.__dict__["subscription_days_remaining"] = (
-                days_remaining if days_remaining > 0 else None
-            )
-    else:
-        user.__dict__["subscription_status"] = SubscriptionStatus.FREE.value
-        user.__dict__["subscription_days_remaining"] = None
+    # One derivation, shared with crud_users: this block existed twice, so the
+    # day-truncation bug it used to carry existed twice too.
+    status, days_remaining = derive_subscription_status(
+        subscription_expiration,
+        subscription_plan_id,
+        subscription_plan_name,
+        get_current_datetime(),
+    )
+    user.__dict__["subscription_status"] = status
+    user.__dict__["subscription_days_remaining"] = days_remaining
+    # /users/me reads this path, and used to leave the expiration unset while
+    # crud_users set it - so the same account reported an expiration on
+    # /api/subsc/mgmts and null here.
+    user.__dict__["subscription_expiration"] = subscription_expiration
 
 
 async def get_current_user_with_dataview_outputs_check(

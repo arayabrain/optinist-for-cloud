@@ -43,6 +43,11 @@ const mockEmitPremiumReachable = jest.fn<
 const mockGetPremiumInstanceId = jest.fn<string | null, []>(() => null)
 const mockIsPremiumAssigned = jest.fn<boolean, []>(() => false)
 const mockGetRoutingToken = jest.fn<string | null, []>(() => null)
+const mockIsWithinPremiumWarmup = jest.fn<boolean, []>(() => false)
+const mockIsStalePremiumFailure = jest.fn<boolean, [number | undefined]>(
+  () => false,
+)
+const mockIsPremiumShared = jest.fn<boolean, []>(() => false)
 
 const mockIsDataviewPublicOutputsRequest = jest.fn<boolean, [string]>(
   () => false,
@@ -70,6 +75,9 @@ jest.mock("utils/routing/RoutingService", () => ({
     getPremiumInstanceId: mockGetPremiumInstanceId,
     isPremiumAssigned: mockIsPremiumAssigned,
     getRoutingToken: mockGetRoutingToken,
+    isWithinPremiumWarmup: mockIsWithinPremiumWarmup,
+    isStalePremiumFailure: mockIsStalePremiumFailure,
+    isPremiumShared: mockIsPremiumShared,
   },
 }))
 
@@ -550,6 +558,200 @@ describe("axios premium-routing interceptors", () => {
     expect(mockEmitPremiumReachable).not.toHaveBeenCalled()
   })
 
+  it("does NOT clear premiumAssigned on instance mismatch during the warm-up grace", async () => {
+    // Right after a fresh dedicated assignment the instance may still be
+    // registering in the ALB target group, so a 200 from a different (shared)
+    // instance is expected — not a fallback. Tearing down premium routing here
+    // would disable it before warm-up completes and, since the unreachable
+    // state is grace-suppressed downstream, leave no path to re-enable it.
+    mockGetRoutingHeaders.mockReturnValue({
+      "X-Routing-ID": "rid-outgoing",
+      "X-User-Tier": "premium",
+    })
+    mockGetPremiumInstanceId.mockReturnValue("expected-instance-hash")
+    mockIsWithinPremiumWarmup.mockReturnValue(true)
+
+    responses.set("/warmup-mismatch", {
+      status: 200,
+      data: { ok: true },
+      headers: {
+        "x-routing-id": "rid-outgoing",
+        "x-served-by-instance": "warming-shared-instance-hash",
+      },
+    })
+    const res = await axiosInstance.get("/warmup-mismatch")
+
+    expect(res.status).toBe(200)
+    // Suppressed during warm-up: neither teardown nor unreachable fires.
+    expect(mockSetPremiumAssigned).not.toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).not.toHaveBeenCalled()
+    expect(mockEmitPremiumReachable).not.toHaveBeenCalled()
+  })
+
+  it("does NOT clear premiumAssigned on instance mismatch when the assignment is shared", async () => {
+    // The teardown guard lives in the single choke-point, so the success-path
+    // instance-mismatch caller is gated for shared too: a 200 from a different
+    // instance must not tear a shared assignment down (it has no dedicated-only
+    // recovery to hand off to).
+    mockGetRoutingHeaders.mockReturnValue({
+      "X-Routing-ID": "rid-outgoing",
+      "X-User-Tier": "premium",
+    })
+    mockGetPremiumInstanceId.mockReturnValue("expected-instance-hash")
+    mockIsWithinPremiumWarmup.mockReturnValue(false)
+    mockIsStalePremiumFailure.mockReturnValue(false)
+    mockIsPremiumShared.mockReturnValue(true)
+
+    responses.set("/shared-mismatch", {
+      status: 200,
+      data: { ok: true },
+      headers: {
+        "x-routing-id": "rid-outgoing",
+        "x-served-by-instance": "free-tier-instance-hash",
+      },
+    })
+    const res = await axiosInstance.get("/shared-mismatch")
+
+    expect(res.status).toBe(200)
+    // Shared is never torn down, on either teardown caller.
+    expect(mockSetPremiumAssigned).not.toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).not.toHaveBeenCalled()
+    expect(mockEmitPremiumReachable).not.toHaveBeenCalled()
+  })
+
+  it("does NOT clear premiumAssigned on a 502/503 during the warm-up grace", async () => {
+    // A transient 5xx from a freshly-assigned dedicated instance is expected
+    // during warm-up. Tearing down premiumAssigned here would strand premium
+    // routing (the machine's grace suppresses the unreachable event, so the
+    // recovery probe never re-enables it). The request still falls back to free
+    // tier so it resolves, but premium routing stays armed to converge.
+    mockRequiresPremiumRouting.mockReturnValue(true)
+    mockIsWithinPremiumWarmup.mockReturnValue(true)
+
+    let callCount = 0
+    responses.set("/warmup-5xx", () => {
+      callCount += 1
+      if (callCount === 1) {
+        return { status: 503, data: { detail: "warming up" } }
+      }
+      return { status: 200, data: { ok: true }, headers: {} }
+    })
+    // Premium headers on the first request, absent on the free-tier retry.
+    mockGetRoutingHeaders
+      .mockReturnValueOnce({
+        "X-Routing-ID": "rid-outgoing",
+        "X-User-Tier": "premium",
+      })
+      .mockReturnValue({})
+
+    const res = await axiosInstance.get("/warmup-5xx")
+
+    // Falls back so the request still resolves...
+    expect(res.status).toBe(200)
+    // ...but premium routing is NOT torn down during warm-up.
+    expect(mockSetPremiumAssigned).not.toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).not.toHaveBeenCalled()
+  })
+
+  it("does NOT clear premiumAssigned on a stale 502/503 (older than the last reachable)", async () => {
+    // A late-arriving 5xx whose request was sent before the last confirmed-
+    // reachable response is an out-of-order echo, not a live outage. Past warm-up
+    // the choke-point still skips teardown: the machine suppresses the stale
+    // event (never flips), so tearing down here would strand premium routing.
+    mockRequiresPremiumRouting.mockReturnValue(true)
+    mockIsWithinPremiumWarmup.mockReturnValue(false)
+    mockIsStalePremiumFailure.mockReturnValue(true)
+
+    let callCount = 0
+    responses.set("/stale-5xx", () => {
+      callCount += 1
+      if (callCount === 1) {
+        return { status: 503, data: { detail: "late echo" } }
+      }
+      return { status: 200, data: { ok: true }, headers: {} }
+    })
+    mockGetRoutingHeaders
+      .mockReturnValueOnce({
+        "X-Routing-ID": "rid-outgoing",
+        "X-User-Tier": "premium",
+      })
+      .mockReturnValue({})
+
+    const res = await axiosInstance.get("/stale-5xx")
+
+    // Falls back so the request still resolves...
+    expect(res.status).toBe(200)
+    // ...but a stale failure never tears premium routing down.
+    expect(mockSetPremiumAssigned).not.toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).not.toHaveBeenCalled()
+  })
+
+  it("does NOT clear premiumAssigned on a 502/503 when the assignment is shared", async () => {
+    // Shared (pool) assignments have no dedicated-only recovery (state machine /
+    // probe), so tearing premium routing down here would strand them on free tier
+    // with nothing to re-arm. Past warm-up and non-stale, the choke-point still
+    // skips teardown for a shared assignment. The request still falls back to free
+    // tier so it resolves.
+    mockRequiresPremiumRouting.mockReturnValue(true)
+    mockIsWithinPremiumWarmup.mockReturnValue(false)
+    mockIsStalePremiumFailure.mockReturnValue(false)
+    mockIsPremiumShared.mockReturnValue(true)
+
+    let callCount = 0
+    responses.set("/shared-5xx", () => {
+      callCount += 1
+      if (callCount === 1) {
+        return { status: 503, data: { detail: "shared instance blip" } }
+      }
+      return { status: 200, data: { ok: true }, headers: {} }
+    })
+    mockGetRoutingHeaders
+      .mockReturnValueOnce({
+        "X-Routing-ID": "rid-outgoing",
+        "X-User-Tier": "premium",
+      })
+      .mockReturnValue({})
+
+    const res = await axiosInstance.get("/shared-5xx")
+
+    // Falls back so the request still resolves...
+    expect(res.status).toBe(200)
+    // ...but a shared assignment is never torn down.
+    expect(mockSetPremiumAssigned).not.toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).not.toHaveBeenCalled()
+  })
+
+  it("DOES clear premiumAssigned on a 502/503 for a dedicated assignment", async () => {
+    // Control for the shared case: a non-shared (dedicated) assignment past
+    // warm-up and non-stale must still tear down and hand off to the recovery
+    // state machine.
+    mockRequiresPremiumRouting.mockReturnValue(true)
+    mockIsWithinPremiumWarmup.mockReturnValue(false)
+    mockIsStalePremiumFailure.mockReturnValue(false)
+    mockIsPremiumShared.mockReturnValue(false)
+
+    let callCount = 0
+    responses.set("/dedicated-5xx", () => {
+      callCount += 1
+      if (callCount === 1) {
+        return { status: 503, data: { detail: "dedicated down" } }
+      }
+      return { status: 200, data: { ok: true }, headers: {} }
+    })
+    mockGetRoutingHeaders
+      .mockReturnValueOnce({
+        "X-Routing-ID": "rid-outgoing",
+        "X-User-Tier": "premium",
+      })
+      .mockReturnValue({})
+
+    const res = await axiosInstance.get("/dedicated-5xx")
+
+    expect(res.status).toBe(200)
+    expect(mockSetPremiumAssigned).toHaveBeenCalledWith(false)
+    expect(mockEmitPremiumUnreachable).toHaveBeenCalledTimes(1)
+  })
+
   it("does NOT emit unreachable on instance mismatch when _outgoingInstanceId is unset (startup race)", async () => {
     // Before the assignment API returns, getPremiumInstanceId() returns null.
     // Without a known instance ID, we cannot distinguish a legitimate
@@ -641,5 +843,28 @@ describe("axios premium-routing interceptors", () => {
     await axiosInstance.get("/wrong-instance")
 
     expect(mockUpdateRoutingToken).not.toHaveBeenCalled()
+  })
+
+  it("stamps whatever routing headers are active onto the ui-event POST (6238)", async () => {
+    // Unit-level check that logPremiumUiEvent is a normal request through this
+    // interceptor: it stamps exactly what getRoutingHeaders() returns, with no
+    // special-casing of the ui-event endpoint. The end-to-end 6238 behaviour —
+    // that a real dedicated 502 tears routing down so this POST goes free tier,
+    // while a reachable instance keeps the headers — is proven against the real
+    // routingService in premiumTelemetryRouting.test.ts.
+    mockGetRoutingHeaders.mockReturnValue({
+      "X-Routing-ID": "rid-outgoing",
+      "X-User-Tier": "premium",
+    })
+    responses.set("/users/me/premium/ui-event", { status: 200, data: {} })
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { logPremiumUiEvent } = require("api/premium/PremiumAssignmentApi")
+    await logPremiumUiEvent("instance_reachable", {})
+
+    expect(recorded).toHaveLength(1)
+    const reqHeaders = recorded[0].headers as Record<string, unknown>
+    expect(reqHeaders["X-Routing-ID"]).toBe("rid-outgoing")
+    expect(reqHeaders["X-User-Tier"]).toBe("premium")
   })
 })

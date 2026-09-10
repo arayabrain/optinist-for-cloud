@@ -50,16 +50,6 @@ export const computeNextProbeDelayMs = (failedProbes: number): number =>
 export const hasReachedProbeCap = (failedProbes: number): boolean =>
   failedProbes >= MAX_FAILED_PROBES
 
-// True when the failure's request predates the last reachable — stale evidence, do not act on it.
-export const isStaleFailure = (
-  detailSentAt: number | undefined,
-  lastReachableSentAt: number,
-  now: number,
-): boolean => {
-  const sentAt = detailSentAt ?? now
-  return sentAt < lastReachableSentAt
-}
-
 export const computeProbeFailure = (
   prevFailed: number,
 ): { nextFailed: number; nextTerminal: boolean } => {

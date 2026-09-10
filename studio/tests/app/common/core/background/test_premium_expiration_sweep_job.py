@@ -1,5 +1,6 @@
 """Tests for the premium expiration -> release backstop sweep job (issue #629 P3)."""
 
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,7 +8,10 @@ import pytest
 from studio.app.common.core.background.premium_expiration_sweep_job import (
     PremiumExpirationSweepJob,
 )
-from studio.app.common.core.subscription.constants import PremiumExpirationSweep
+from studio.app.common.core.subscription.constants import (
+    PremiumExpirationSweep,
+    SubscriptionPeriods,
+)
 
 MODULE = "studio.app.common.core.background.premium_expiration_sweep_job"
 
@@ -111,6 +115,47 @@ class TestFindDanglingAssignments:
         result = PremiumExpirationSweepJob._find_dangling_assignments()
 
         assert result == []
+
+
+class TestExpiryLeavesTheAssignmentDangling:
+    """Expiry alone must not release the assignment.
+
+    When the cancellation webhook never fires - or expiry is applied straight in
+    the DB - the assignment is left dangling, and this job is the only thing
+    that releases it, but not until GRACE_PERIOD_DAYS have passed. The session
+    is mocked here, so the predicates are the observable.
+    """
+
+    @patch(f"{MODULE}.get_current_datetime")
+    @patch(f"{MODULE}.session_scope")
+    def test_sweeps_only_assignments_expired_past_the_grace_period(
+        self, mock_scope, mock_now
+    ):
+        now = datetime(2026, 5, 22)
+        mock_now.return_value = now
+        mock_db = MagicMock()
+        query = _self_returning_query([])
+        mock_db.query.return_value = query
+        mock_scope.return_value = _mock_session_scope(mock_db).return_value
+
+        PremiumExpirationSweepJob._find_dangling_assignments()
+
+        rendered = [
+            str(clause.compile(compile_kwargs={"literal_binds": True}))
+            for clause in query.filter.call_args[0]
+        ]
+        grace_cutoff = now - timedelta(days=SubscriptionPeriods.GRACE_PERIOD_DAYS)
+        # A subscription that expired yesterday is outside the cutoff, so its
+        # assignment row is left dangling rather than released.
+        assert f"subscription_users.expiration <= '{grace_cutoff}'" in rendered
+        # Re-subscribers are excluded by a currently-active subscription.
+        assert any(
+            f"subscription_users_1.expiration > '{now}'" in clause
+            for clause in rendered
+        )
+        # Standby placeholder rows are not user assignments.
+        assert "premium_user_assignments.status = 'active'" in rendered
+        assert "premium_user_assignments.is_standby = false" in rendered
 
 
 if __name__ == "__main__":

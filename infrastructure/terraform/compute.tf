@@ -179,18 +179,16 @@ resource "aws_launch_template" "ecs" {
   }
 
   user_data = base64encode(templatefile("${path.module}/../scripts/ecs-user-data.sh", {
-    tier                  = "free"
-    cluster_name          = aws_ecs_cluster.main.name
-    git_branch            = var.git_branch
-    git_repo              = var.git_repo
-    firebase_config_json  = var.firebase_config_json
-    firebase_private_json = var.firebase_private_json
-    ecr_registry          = split("/", local.ecr_repository_url)[0]
-    ecr_repository_url    = local.ecr_repository_url
-    efs_id                = aws_efs_file_system.snmk.id
-    db_host               = replace(aws_db_instance.main.endpoint, ":3306", "")
-    swap_size_mb          = 32768 # 32GB swap for workflow memory spikes
-    swap_device_name      = "/dev/xvds"
+    tier               = "free"
+    cluster_name       = aws_ecs_cluster.main.name
+    git_branch         = var.git_branch
+    git_repo           = var.git_repo
+    ecr_registry       = split("/", local.ecr_repository_url)[0]
+    ecr_repository_url = local.ecr_repository_url
+    efs_id             = aws_efs_file_system.snmk.id
+    db_host            = replace(aws_db_instance.main.endpoint, ":3306", "")
+    swap_size_mb       = 32768 # 32GB swap for workflow memory spikes
+    swap_device_name   = "/dev/xvds"
   }))
   tag_specifications {
     resource_type = "instance"
@@ -412,18 +410,16 @@ resource "aws_launch_template" "premium" {
   }
 
   user_data = base64encode(templatefile("${path.module}/../scripts/ecs-user-data.sh", {
-    tier                  = "premium"
-    cluster_name          = aws_ecs_cluster.main.name
-    git_branch            = var.git_branch
-    git_repo              = var.git_repo
-    firebase_config_json  = var.firebase_config_json
-    firebase_private_json = var.firebase_private_json
-    ecr_registry          = split("/", local.ecr_repository_url)[0]
-    ecr_repository_url    = local.ecr_repository_url
-    efs_id                = aws_efs_file_system.snmk.id
-    db_host               = replace(aws_db_instance.main.endpoint, ":3306", "")
-    swap_size_mb          = 32768 # 32GB swap for workflow memory spikes
-    swap_device_name      = "/dev/xvds"
+    tier               = "premium"
+    cluster_name       = aws_ecs_cluster.main.name
+    git_branch         = var.git_branch
+    git_repo           = var.git_repo
+    ecr_registry       = split("/", local.ecr_repository_url)[0]
+    ecr_repository_url = local.ecr_repository_url
+    efs_id             = aws_efs_file_system.snmk.id
+    db_host            = replace(aws_db_instance.main.endpoint, ":3306", "")
+    swap_size_mb       = 32768 # 32GB swap for workflow memory spikes
+    swap_device_name   = "/dev/xvds"
   }))
 
   tag_specifications {
@@ -467,6 +463,10 @@ resource "aws_ecs_cluster" "main" {
 
   tags = {
     Name = "${local.env_prefix}-cloud-cluster"
+    # Terraform apply provenance (see deploy_info.tf). Traces the running
+    # deployment back to the infrastructure/ git revision it was applied from.
+    TfGitCommit = data.external.tf_build_info.result.git_commit
+    TfGitBranch = data.external.tf_build_info.result.git_branch
   }
 }
 
@@ -769,6 +769,12 @@ resource "aws_ecs_task_definition" "autoscaling" {
         # Disable scheduler - background jobs run in dedicated background service
         {
           name  = "DISABLE_BACKGROUND_SCHEDULER"
+          value = "1"
+        },
+        # Enable standalone cleanup worker on free-tier instances.
+        # cloud-startup.sh starts studio/cleanup_worker.py when this is set.
+        {
+          name  = "ENABLE_LOCAL_CLEANUP"
           value = "1"
         },
         {

@@ -39,18 +39,16 @@ resource "aws_launch_template" "background" {
   }
 
   user_data = base64encode(templatefile("${path.module}/../scripts/ecs-user-data.sh", {
-    tier                  = "background"
-    cluster_name          = aws_ecs_cluster.main.name
-    git_branch            = var.git_branch
-    git_repo              = var.git_repo
-    firebase_config_json  = var.firebase_config_json
-    firebase_private_json = var.firebase_private_json
-    ecr_registry          = split("/", local.ecr_repository_url)[0]
-    ecr_repository_url    = local.ecr_repository_url
-    efs_id                = aws_efs_file_system.snmk.id
-    db_host               = replace(aws_db_instance.main.endpoint, ":3306", "")
-    swap_size_mb          = 1536 # 2x task memory (768MB) for stable background job operation
-    swap_device_name      = ""   # File-based swap (1.5GB dd is fast, no dedicated volume needed)
+    tier               = "background"
+    cluster_name       = aws_ecs_cluster.main.name
+    git_branch         = var.git_branch
+    git_repo           = var.git_repo
+    ecr_registry       = split("/", local.ecr_repository_url)[0]
+    ecr_repository_url = local.ecr_repository_url
+    efs_id             = aws_efs_file_system.snmk.id
+    db_host            = replace(aws_db_instance.main.endpoint, ":3306", "")
+    swap_size_mb       = 1536 # 2x task memory (768MB) for stable background job operation
+    swap_device_name   = ""   # File-based swap (1.5GB dd is fast, no dedicated volume needed)
   }))
 
   tag_specifications {
@@ -269,6 +267,15 @@ resource "aws_ecs_task_definition" "background" {
           name  = "ALB_DNS_NAME"
           value = aws_lb.autoscaling.dns_name
         },
+        # Base URL for the sync job's internal /system-internal call.
+        # Scheme/port mirror aws_lb_listener.autoscaling_https: HTTPS:443 in
+        # prod, HTTP:8080 in dev. enable_custom_domain gates both this and
+        # compute.tf, so the flag can't drift them apart; the ":8080" literal
+        # is kept to match compute.tf and must be changed there in lockstep.
+        {
+          name  = "INTERNAL_API_BASE_URL"
+          value = var.enable_custom_domain ? "https://${aws_lb.autoscaling.dns_name}" : "http://${aws_lb.autoscaling.dns_name}:8080"
+        },
         # Background scheduler ENABLED - this service runs all background jobs
         {
           name  = "DISABLE_BACKGROUND_SCHEDULER"
@@ -305,7 +312,7 @@ resource "aws_ecs_task_definition" "background" {
         logDriver = "awslogs"
         options = {
           "awslogs-group"             = "/ecs/${var.environment}-background-optinist-cloud-taskdef"
-          "awslogs-multiline-pattern" = "^\\[\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}"
+          "awslogs-multiline-pattern" = "^\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}"
           "max-buffer-size"           = "25m"
           "awslogs-region"            = var.aws_region
           "awslogs-create-group"      = "true"

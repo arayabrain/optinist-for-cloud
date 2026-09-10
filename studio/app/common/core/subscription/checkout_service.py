@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 import stripe
 from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException
-from sqlalchemy import update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
@@ -598,19 +598,17 @@ class CheckoutService:
 
                     # Update storage quota
                     storage_quota_bytes = StorageQuota.bytes_for_plan(recovered_plan_id)
-                    rows_updated = db.execute(
-                        update(UserStorageUsage)
-                        .where(UserStorageUsage.user_id == user_id)
-                        .values(storage_quota_bytes=storage_quota_bytes)
-                    ).rowcount
-                    if not rows_updated:
-                        db.add(
-                            UserStorageUsage(
-                                user_id=user_id,
-                                storage_usage_bytes=0,
-                                storage_quota_bytes=storage_quota_bytes,
-                            )
+                    db.execute(
+                        mysql_insert(UserStorageUsage)
+                        .values(
+                            user_id=user_id,
+                            storage_usage_bytes=0,
+                            storage_quota_bytes=storage_quota_bytes,
                         )
+                        .on_duplicate_key_update(
+                            storage_quota_bytes=storage_quota_bytes
+                        )
+                    )
 
                     db.commit()
 

@@ -1,1 +1,5 @@
 *.log*
+
+# ConcurrentRotatingFileHandler's lock file, named .__<logfile>.lock, which the
+# *.log* pattern above does not match (".lock" is not ".log").
+*.lock

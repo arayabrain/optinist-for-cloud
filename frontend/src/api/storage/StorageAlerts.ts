@@ -2,7 +2,6 @@ import { LimitAlertType } from "const/Subscription"
 import axios from "utils/axios"
 
 export interface StorageAlert {
-  user_id: number
   user_name: string
   user_email: string
   alert_level: "critical" | "danger"
@@ -83,7 +82,6 @@ export interface LimitAlertStatus {
   has_alert: boolean
   alert_type: string | null
   days_remaining: number | null
-  user_id: number
 }
 
 // Limit Alert API Functions

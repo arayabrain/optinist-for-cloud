@@ -587,7 +587,6 @@ async def test_check_limit_warning_has_alert(mock_current_user):
         assert result.has_alert is True
         assert result.alert_type == "grace"
         assert result.days_remaining == 5
-        assert result.user_id == "test-user-123"
 
 
 @pytest.mark.asyncio
@@ -607,7 +606,6 @@ async def test_check_limit_warning_no_warning(mock_current_user):
         assert result.has_alert is False
         assert result.alert_type is None
         assert result.days_remaining is None
-        assert result.user_id == "test-user-123"
 
 
 # ============================================================================

@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 
+import yaml
+from sqlalchemy import text
 from sqlalchemy.exc import NoResultFound
-from sqlmodel import Session, delete, update
+from sqlmodel import Session, delete, select, update
 
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.experiment.experiment_writer import ExptConfigWriter
@@ -53,28 +55,89 @@ class WorkspaceDataCapacityService:
         # Overwrite experiment config
         ExptConfigWriter(workspace_id, unique_id).overwrite(update_params)
 
+    # MySQL advisory-lock namespace for _update_exp_data_usage_db (name max 64).
+    _EXP_DATA_USAGE_LOCK_PREFIX = "exp_data_usage"
+    _EXP_DATA_USAGE_LOCK_TIMEOUT_SECONDS = 10
+
     @classmethod
     def _update_exp_data_usage_db(
         cls, workspace_id: str, unique_id: str, data_usage: int
     ):
-        with session_scope() as db:
+        # Concurrent writers (main /run/result task + executor) write the same
+        # row. Two safeguards:
+        #   - Core UPDATE with an existence SELECT (not UPDATE rowcount, which is
+        #     0 for a same-value write on MySQL) avoids the ORM stale-data error.
+        #   - (workspace_id, uid) has no unique constraint, so the check-then-
+        #     write is serialized by a MySQL advisory lock, held on a dedicated
+        #     lock_db session and released only AFTER the inner write commits.
+        #     Spanning the commit is essential: otherwise a second writer could
+        #     acquire the lock and run its existence SELECT before this INSERT is
+        #     visible (REPEATABLE READ) and insert a duplicate. Best-effort:
+        #     proceeds unlocked if the lock backend is unavailable.
+        lock_name = f"{cls._EXP_DATA_USAGE_LOCK_PREFIX}_{workspace_id}_{unique_id}"[:64]
+
+        with session_scope() as lock_db:
+            got_lock = False
             try:
-                exp = (
-                    db.query(ExperimentRecord)
-                    .filter(
-                        ExperimentRecord.workspace_id == workspace_id,
-                        ExperimentRecord.uid == unique_id,
+                got_lock = (
+                    lock_db.execute(
+                        text("SELECT GET_LOCK(:name, :timeout) AS r"),
+                        {
+                            "name": lock_name,
+                            "timeout": cls._EXP_DATA_USAGE_LOCK_TIMEOUT_SECONDS,
+                        },
+                    ).scalar()
+                    == 1
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Advisory lock unavailable for experiment data usage "
+                    f"[{workspace_id}/{unique_id}]: {e}; proceeding without it"
+                )
+
+            try:
+                # Separate session: its commit lands while lock_db still holds
+                # the lock.
+                with session_scope() as db:
+                    exists = (
+                        db.execute(
+                            select(ExperimentRecord.id).where(
+                                ExperimentRecord.workspace_id == workspace_id,
+                                ExperimentRecord.uid == unique_id,
+                            )
+                        ).first()
+                        is not None
                     )
-                    .one()
-                )
-                exp.data_usage = data_usage
-            except NoResultFound:
-                exp = ExperimentRecord(
-                    workspace_id=workspace_id,
-                    uid=unique_id,
-                    data_usage=data_usage,
-                )
-                db.add(exp)
+
+                    if exists:
+                        db.execute(
+                            update(ExperimentRecord)
+                            .where(
+                                ExperimentRecord.workspace_id == workspace_id,
+                                ExperimentRecord.uid == unique_id,
+                            )
+                            .values(data_usage=data_usage)
+                        )
+                    else:
+                        db.add(
+                            ExperimentRecord(
+                                workspace_id=workspace_id,
+                                uid=unique_id,
+                                data_usage=data_usage,
+                            )
+                        )
+            finally:
+                # Release after the inner write committed (lock spans commit).
+                if got_lock:
+                    try:
+                        lock_db.execute(
+                            text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name}
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to release advisory lock for experiment "
+                            f"data usage [{workspace_id}/{unique_id}]: {e}"
+                        )
 
     @classmethod
     def update_workspace_data_usage(
@@ -133,13 +196,21 @@ class WorkspaceDataCapacityService:
                 # Update yaml file - skip if experiment.yaml is invalid/corrupted
                 try:
                     cls._update_exp_data_usage_yaml(workspace_id, unique_id, data_usage)
-                except (AssertionError, ValueError) as yaml_error:
-                    # Log warning if experiment.yaml is invalid but continue processing
+                except AssertionError:
+                    # A missing or empty experiment.yaml is recoverable - capacity
+                    # is still tracked in the DB - so it is logged at debug to
+                    # avoid re-warning on every recalculation.
+                    logger.debug(
+                        f"Skipping YAML update for experiment "
+                        f"{workspace_id}/{unique_id}: "
+                        f"experiment.yaml is missing or empty"
+                    )
+                except (ValueError, yaml.YAMLError) as yaml_error:
                     logger.warning(
                         f"Skipping YAML update for experiment "
                         f"{workspace_id}/{unique_id}: "
-                        f"Invalid or corrupted experiment.yaml file ({yaml_error}). "
-                        f"Data usage will still be tracked in database."
+                        f"malformed experiment.yaml ({yaml_error}). "
+                        f"Data usage will still be tracked in the database."
                     )
 
                 # Add experiment record even if YAML update failed

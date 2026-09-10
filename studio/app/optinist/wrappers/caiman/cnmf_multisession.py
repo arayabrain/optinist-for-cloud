@@ -111,7 +111,10 @@ def caiman_cnmf_multisession(
         del split_image_mmap
         gc.collect()
 
-    stop_server(dview=dview)
+    # In single-thread mode dview is None and there is no cluster to stop;
+    # stop_server() would shell out to a nonexistent `ipcluster` and log errors.
+    if dview is not None:
+        stop_server(dview=dview)
 
     spatial = [cnm.estimates.A for cnm in cnm_list]
     dims = templates[0].shape

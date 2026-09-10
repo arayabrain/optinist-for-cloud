@@ -356,6 +356,12 @@ class SyncStatusConstants:
         tempfile.gettempdir(), "optinist_sync_job.lock"
     )  # Lock file to prevent concurrent runs (cross-platform)
 
+    # Interval jobs' first run: next_run_time = now + this delay.
+    # Without it, IntervalTrigger first fires at now+interval (delaying the
+    # first run a full interval after each restart).
+    # Non-zero to avoid racing container/DB startup; kept under a minute.
+    INITIAL_RUN_DELAY_SECONDS = 10
+
     # Cleanup job configuration
     CLEANUP_INTERVAL_MINUTES = 60  # How often to run cleanup job
     LOGOUT_GRACE_PERIOD_MINUTES = 60  # Wait time after logout before cleanup

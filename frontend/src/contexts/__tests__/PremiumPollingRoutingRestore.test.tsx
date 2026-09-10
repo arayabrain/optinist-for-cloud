@@ -36,7 +36,10 @@ const mockLogoutFn = jest.fn()
 
 jest.mock("react-redux", () => ({
   useSelector: (selector: (s: unknown) => unknown) =>
-    selector({ user: { currentUser: mockUser, logoutGeneration: 0 } }),
+    selector({
+      user: { currentUser: mockUser, logoutGeneration: 0 },
+      pipeline: { run: { status: "StartUninitialized" } },
+    }),
   useDispatch: () => mockDispatchFn,
 }))
 
@@ -84,6 +87,21 @@ jest.mock("api/premium/PremiumAssignmentApi", () => ({
 jest.mock("hooks/useSleepDetection", () => ({
   __esModule: true,
   useSleepDetection: () => undefined,
+}))
+
+// Neutralize the dedicated warm-up grace here: these tests flip unreachable
+// immediately after a fresh dedicated assignment. The grace (which now covers
+// the initial undefined → dedicated case too) would otherwise suppress that
+// first 5xx. The grace itself is covered in
+// useInstanceUnreachableMachineLeader.test.tsx.
+// "mock" prefix required for Jest's out-of-scope factory guard.
+const mockUnreachableConstants = jest.requireActual(
+  "contexts/premium/unreachableConstants",
+) as typeof import("contexts/premium/unreachableConstants")
+jest.mock("contexts/premium/unreachableConstants", () => ({
+  __esModule: true,
+  ...mockUnreachableConstants,
+  DEDICATED_HANDOFF_GRACE_MS: 0,
 }))
 
 const mockTabSyncHandlers: Map<
@@ -166,7 +184,6 @@ const dedicatedAssignment: PremiumAssignmentResult = {
 }
 
 const sharedStatus: PremiumStatusResult = {
-  user_id: 1,
   subscription_type: UserTier.PREMIUM,
   is_premium: true,
   assignment: {
@@ -178,7 +195,6 @@ const sharedStatus: PremiumStatusResult = {
 }
 
 const dedicatedStatus: PremiumStatusResult = {
-  user_id: 1,
   subscription_type: UserTier.PREMIUM,
   is_premium: true,
   assignment: {
@@ -186,6 +202,20 @@ const dedicatedStatus: PremiumStatusResult = {
     is_shared: false,
     assigned_at: "2026-05-12T00:00:00Z",
     status: "active",
+  },
+}
+
+// The pool marker is load-balanced across the ASG, so /status carries no
+// instance_id_hash for it — nothing to pin a single instance to.
+const autoscalingPoolStatus: PremiumStatusResult = {
+  subscription_type: UserTier.PREMIUM,
+  is_premium: true,
+  assignment: {
+    instance_id: "autoscaling-pool",
+    is_shared: true,
+    assigned_at: "2026-05-12T00:00:00Z",
+    status: "active",
+    assignment_source: "autoscaling_temp",
   },
 }
 
@@ -372,11 +402,12 @@ describe("PremiumAssignmentProvider — polling routing restore", () => {
     expect(ctxRef.current?.error).toBeNull()
   })
 
-  test("polling on shared neither terminates nor increments pollAttempts", async () => {
-    // Isolates the cap-bypass + counter-freeze: across multiple shared polls,
-    // error must stay null and pollAttempts must not be persisted (the provider
-    // only writes the SS key when the counter is >0, so a null read proves no
-    // increment occurred).
+  test("polling on shared does not terminate and keeps the counter advancing", async () => {
+    // Cap-bypass: across multiple shared polls error stays null and the
+    // assignment stays shared (the MAX_POLL_ATTEMPTS stop excludes shared).
+    // pollAttempts must advance every cycle — that dependency change is what
+    // re-runs the effect and reschedules the next poll once pollInterval
+    // saturates, so the loop cannot stall (a frozen counter used to kill it).
     mockGetPremiumStatus.mockResolvedValue(sharedStatus)
 
     const ctxRef = renderProvider()
@@ -394,7 +425,8 @@ describe("PremiumAssignmentProvider — polling routing restore", () => {
 
     expect(ctxRef.current?.assignmentResult?.is_shared).toBe(true)
     expect(ctxRef.current?.error).toBeNull()
-    expect(sessionStorage.getItem(SS_POLL_ATTEMPTS)).toBeNull()
+    // Counter advanced (>0) and is persisted — proves the loop kept re-running.
+    expect(Number(sessionStorage.getItem(SS_POLL_ATTEMPTS))).toBeGreaterThan(0)
   })
 
   test("repeated shared-status polls do not churn assignmentResult identity", async () => {
@@ -419,6 +451,46 @@ describe("PremiumAssignmentProvider — polling routing restore", () => {
     }
 
     expect(ctxRef.current?.assignmentResult).toBe(firstRef)
+  })
+
+  test("refresh adopts an autoscaling-pool assignment and keeps polling for the dedicated handoff", async () => {
+    // A page refresh on the pool marker must re-adopt the same row (no fresh
+    // assignment) and resume leader polling. The pool has no verifiable
+    // instance, so the pinned instance id must be cleared rather than set to
+    // the marker string — pinning it would fail every x-served-by comparison.
+    mockGetPremiumStatus.mockResolvedValue(autoscalingPoolStatus)
+    // A pin left in localStorage by an earlier dedicated session survives the
+    // refresh, so the adoption has to actively clear it.
+    routingService.setPremiumInstanceId("hash-stale")
+
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.instance_id).toBe(
+        "autoscaling-pool",
+      )
+    })
+    expect(ctxRef.current?.assignmentResult?.is_shared).toBe(true)
+    expect(routingService.isPremiumAssigned()).toBe(true)
+    expect(routingService.isPremiumShared()).toBe(true)
+    expect(routingService.getPremiumInstanceId()).toBeNull()
+    expect(mockAssignPremiumInstance).not.toHaveBeenCalled()
+
+    mockGetPremiumStatus.mockClear()
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000)
+      await Promise.resolve()
+    })
+
+    // Poll state survives the adoption: the tab keeps asking /status so the
+    // inline migration to a dedicated instance is picked up when it happens.
+    expect(mockGetPremiumStatus).toHaveBeenCalled()
+    expect(mockAssignPremiumInstance).not.toHaveBeenCalled()
+    expect(ctxRef.current?.assignmentResult?.instance_id).toBe(
+      "autoscaling-pool",
+    )
+    expect(ctxRef.current?.error).toBeNull()
   })
 
   test("polling fires via unreachable path on dedicated assignment, uses /status not /assign", async () => {

@@ -11,7 +11,7 @@ import {
   BG_COLOR,
   BORDER_COLOR,
   BUTTON_BASE,
-} from "pages/LandingPage/constants"
+} from "const/Style"
 
 export const Header = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)

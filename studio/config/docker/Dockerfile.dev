@@ -48,9 +48,14 @@ RUN echo 'alias ll="ls -la --color=auto"' >> /root/.bashrc && \
 # setup optinist
 COPY pyproject.toml poetry.lock ./
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install poetry && \
+    pip3 install poetry poetry-plugin-export && \
     poetry config virtualenvs.create false
-RUN poetry install --no-root --with dev
+
+# NOTE: Export and install with pip rather than `poetry install`. Poetry shares
+# this environment, so installing the lock replaces packages poetry itself
+# imports mid-run (distlib, via build isolation) and the install fails at random.
+RUN poetry export -f requirements.txt -o requirements.studio.txt --with dev
+RUN pip3 install --no-cache-dir -r requirements.studio.txt
 
 # setup optinist: download caiman model files
 COPY studio/app/optinist/wrappers/caiman/run_download_model_files.sh ./

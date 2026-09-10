@@ -24,7 +24,6 @@ import {
 } from "const/Subscription"
 
 export interface RoutingInfo {
-  user_id: string
   user_tier: UserTier
   requires_premium_routing: boolean
   routing_headers: Record<string, string>
@@ -63,12 +62,34 @@ export class RoutingService {
   private storedTier: UserTier | null = null
   private premiumAssigned: boolean = false
   private premiumInstanceId: string | null = null
+  // Whether the current assignment is a shared (pool) instance. Shared has no
+  // dedicated-only recovery (state machine / probe), so the teardown choke-point
+  // must not permanently downgrade it — see tearDownPremiumRoutingUnlessWarmup.
+  private premiumShared: boolean = false
+  // Warm-up grace window (epoch ms) after a fresh dedicated assignment.
+  private premiumWarmupUntil: number | null = null
+  // Monotonic sentAt of the last response confirmed to come from the assigned
+  // instance. A failure whose request was sent before this is a stale/out-of-order
+  // echo; the teardown choke-point and the state machine use it to ignore such
+  // failures instead of tearing routing down.
+  private lastReachableSentAt = 0
   private lastFetch: number = 0
   private readonly CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+  // Warm-up grace duration. Intentionally longer than DEDICATED_HANDOFF_GRACE_MS
+  // (15000 ms, contexts/premium/unreachableConstants) so this window CONTAINS the
+  // machine's grace. Arming sources:
+  //   - fresh/changed instance: setPremiumInstanceId arms synchronously (T0)
+  //   - every first dedicated transition (incl. reload/new-tab same instance):
+  //     the machine co-arms via startPremiumWarmup in its useEffect (T0+Δ)
+  // Equal durations would leave a tail [T0+15000, T0+Δ+15000] where teardown is no
+  // longer suppressed here but the machine still suppresses the unreachable event —
+  // stranding premium routing. Do NOT shrink this back to equality.
+  private readonly PREMIUM_WARMUP_GRACE_MS = 16000
   private readonly STORAGE_KEY = "routing_id"
   private readonly TIER_STORAGE_KEY = "routing_tier"
   private readonly PREMIUM_ASSIGNED_KEY = "premium_assigned"
   private readonly PREMIUM_INSTANCE_ID_KEY = "premium_instance_id"
+  private readonly PREMIUM_SHARED_KEY = "premium_shared"
   private unreachableListeners: Set<PremiumUnreachableListener> = new Set()
   private reachableListeners: Set<PremiumReachableListener> = new Set()
 
@@ -78,6 +99,7 @@ export class RoutingService {
     this.loadTierFromStorage()
     this.loadPremiumAssignedFromStorage()
     this.loadPremiumInstanceIdFromStorage()
+    this.loadPremiumSharedFromStorage()
   }
 
   /**
@@ -135,7 +157,6 @@ export class RoutingService {
     const userTier = isPremium ? UserTier.PREMIUM : UserTier.FREE
 
     this.routingInfo = {
-      user_id: user.uid || "",
       user_tier: userTier,
       requires_premium_routing: isPremium,
       routing_headers: {}, // No longer client-controlled
@@ -154,6 +175,10 @@ export class RoutingService {
     if (!isPremium) {
       this.setPremiumAssigned(false)
       this.setPremiumInstanceId(null)
+      this.setPremiumShared(false)
+      // Reset the reachable watermark alongside clearRoutingInfo / resetForRelease
+      // so all three "premium goes away" paths leave watermark state consistent.
+      this.lastReachableSentAt = 0
     }
 
     this.lastFetch = Date.now()
@@ -168,11 +193,15 @@ export class RoutingService {
     this.storedTier = null
     this.premiumAssigned = false
     this.premiumInstanceId = null
+    this.premiumShared = false
+    this.premiumWarmupUntil = null
+    this.lastReachableSentAt = 0
     this.lastFetch = 0
     this.clearTokenFromStorage()
     this.clearTierFromStorage()
     this.clearPremiumAssignedFromStorage()
     this.clearPremiumInstanceIdFromStorage()
+    this.clearPremiumSharedFromStorage()
   }
 
   /**
@@ -193,7 +222,9 @@ export class RoutingService {
   resetForRelease(): void {
     this.setPremiumAssigned(false)
     this.setPremiumInstanceId(null)
+    this.setPremiumShared(false)
     this.clearRoutingToken()
+    this.lastReachableSentAt = 0
   }
 
   /**
@@ -217,10 +248,18 @@ export class RoutingService {
    * Used by the axios interceptor to detect ALB fallback responses.
    */
   setPremiumInstanceId(id: string | null): void {
+    // Arm the warm-up grace only when moving onto a new/changed dedicated
+    // instance — re-confirming the same instance must not keep extending the
+    // window, or a genuine late fallback would never surface.
+    const changedToNewInstance = !!id && id !== this.premiumInstanceId
     this.premiumInstanceId = id
     if (id) {
+      if (changedToNewInstance) {
+        this.startPremiumWarmup()
+      }
       this.savePremiumInstanceIdToStorage(id)
     } else {
+      this.clearPremiumWarmup()
       this.clearPremiumInstanceIdFromStorage()
     }
   }
@@ -230,6 +269,57 @@ export class RoutingService {
    */
   getPremiumInstanceId(): string | null {
     return this.premiumInstanceId
+  }
+
+  /**
+   * Set whether the current assignment is a shared (pool) instance.
+   * Set alongside the instance ID whenever an assignment is established.
+   */
+  setPremiumShared(shared: boolean): void {
+    this.premiumShared = shared
+    this.savePremiumSharedToStorage(shared)
+  }
+
+  /**
+   * Whether the current assignment is a shared (pool) instance.
+   */
+  isPremiumShared(): boolean {
+    return this.premiumShared
+  }
+
+  /**
+   * Arm the warm-up grace window (transition onto a new dedicated instance).
+   */
+  startPremiumWarmup(): void {
+    this.premiumWarmupUntil = Date.now() + this.PREMIUM_WARMUP_GRACE_MS
+  }
+
+  /**
+   * Whether we are still within the dedicated-instance warm-up grace window.
+   * axios uses this to suppress the isInstanceMismatch teardown while a
+   * freshly-assigned instance is still registering in the ALB target group.
+   */
+  isWithinPremiumWarmup(): boolean {
+    return (
+      this.premiumWarmupUntil != null && Date.now() < this.premiumWarmupUntil
+    )
+  }
+
+  /**
+   * Clear the warm-up grace window (release/logout/downgrade).
+   */
+  clearPremiumWarmup(): void {
+    this.premiumWarmupUntil = null
+  }
+
+  /**
+   * Whether a premium failure is stale — its request was sent before the last
+   * response confirmed reachable, so it is an out-of-order echo rather than a
+   * live outage. The teardown choke-point and the state machine both consult
+   * this so a stale failure never tears premium routing down.
+   */
+  isStalePremiumFailure(sentAt: number | undefined): boolean {
+    return (sentAt ?? Date.now()) < this.lastReachableSentAt
   }
 
   // Pure notifier — telemetry lives in listeners so tests can emit without side effects.
@@ -259,6 +349,17 @@ export class RoutingService {
   }
 
   emitPremiumReachable(detail: PremiumReachableDetail): void {
+    // Advance the reachable watermark before notifying — the teardown
+    // choke-point and the state machine read it to suppress stale failures.
+    const sentAt = detail.sentAt ?? Date.now()
+    if (sentAt > this.lastReachableSentAt) {
+      this.lastReachableSentAt = sentAt
+    }
+    // Re-arm routing at the source of truth for every listener path. Gate on a
+    // live premiumInstanceId so a late post-release 200 can't resurrect routing.
+    if (this.premiumInstanceId != null && !this.premiumAssigned) {
+      this.setPremiumAssigned(true)
+    }
     this.reachableListeners.forEach((listener) => {
       try {
         listener(detail)
@@ -476,6 +577,34 @@ export class RoutingService {
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("Failed to clear premium instance ID from localStorage:", e)
+    }
+  }
+
+  private loadPremiumSharedFromStorage(): void {
+    try {
+      this.premiumShared =
+        localStorage.getItem(this.PREMIUM_SHARED_KEY) === "true"
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to load premium shared from localStorage:", e)
+    }
+  }
+
+  private savePremiumSharedToStorage(shared: boolean): void {
+    try {
+      localStorage.setItem(this.PREMIUM_SHARED_KEY, String(shared))
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to save premium shared to localStorage:", e)
+    }
+  }
+
+  private clearPremiumSharedFromStorage(): void {
+    try {
+      localStorage.removeItem(this.PREMIUM_SHARED_KEY)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to clear premium shared from localStorage:", e)
     }
   }
 }

@@ -2,7 +2,7 @@ import { FC, ReactNode } from "react"
 
 import { Box } from "@mui/material"
 
-// import PublicFooter from "components/PublicLayout/PublicFooter"
+import PublicFooter from "components/PublicLayout/PublicFooter"
 import PublicHeader from "components/PublicLayout/PublicHeader"
 
 const PublicLayout: FC<{ children: ReactNode }> = ({ children }) => {
@@ -10,7 +10,7 @@ const PublicLayout: FC<{ children: ReactNode }> = ({ children }) => {
     <Box sx={{ height: "100%", width: "100%" }}>
       <PublicHeader />
       <Box>{children}</Box>
-      {/* <PublicFooter /> */}
+      <PublicFooter />
     </Box>
   )
 }

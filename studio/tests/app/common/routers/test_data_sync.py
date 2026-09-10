@@ -855,31 +855,244 @@ class TestInputDataSync:
         assert SyncStatus.SYNCED.value == "synced"
         assert SyncStatus.REMOTE.value == "remote"
 
-    def test_workflow_runner_has_ensure_input_data_local(self):
-        """WorkflowRunner should have ensure_input_data_local method."""
-        import inspect
+    @pytest.fixture()
+    def mock_storage(self, tmp_path, monkeypatch):
+        """A real ``MockStorageController`` over ``tmp_path``, reached through the
+        production ``RemoteStorageSimpleReader`` wrapper.
 
-        from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
+        The seven cases this replaced were ``assert "<name>" in
+        inspect.getsource(module)``, which hold for a function that is defined and
+        never wired up. Nothing here patches the download: the file really moves
+        between two directories, so an on-demand sync that stops firing fails.
+        """
+        from studio.app.common.core.storage.mock_storage_controller import (
+            MockStorageController,
+        )
+        from studio.app.dir_path import DIRPATH
 
-        # Verify the method exists
-        assert hasattr(WorkflowRunner, "ensure_input_data_local")
+        remote = tmp_path / "remote"
+        monkeypatch.setenv("REMOTE_STORAGE_TYPE", "1")
+        monkeypatch.setattr(MockStorageController, "MOCK_STORAGE_DIR", str(remote))
+        monkeypatch.setattr(
+            MockStorageController, "MOCK_INPUT_DIR", str(remote / "input")
+        )
+        monkeypatch.setattr(
+            MockStorageController, "MOCK_OUTPUT_DIR", str(remote / "output")
+        )
+        monkeypatch.setattr(DIRPATH, "INPUT_DIR", str(tmp_path / "local"))
 
-        # Verify it's called before workflow runs
-        source = inspect.getsource(WorkflowRunner)
-        assert (
-            "_ensure_input_data_local" in source or "ensure_input_data_local" in source
+        class Harness:
+            workspace_id = "ws1"
+            bucket = "bucket-under-test"
+
+            def put_remote(self, filename, body="a,b\n1,2\n"):
+                path = remote / "input" / self.workspace_id / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body)
+                return path
+
+            def put_local(self, filename, body="x,y\n3,4\n"):
+                path = tmp_path / "local" / self.workspace_id / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body)
+                return path
+
+            def local_path(self, filename):
+                return tmp_path / "local" / self.workspace_id / filename
+
+        return Harness()
+
+    @pytest.mark.asyncio
+    async def test_sync_input_file_downloads_the_remote_file(self, mock_storage):
+        from fastapi import BackgroundTasks
+
+        from studio.app.common.routers.files import sync_input_file
+
+        mock_storage.put_remote("remote_only.csv", "a,b\n9,9\n")
+        assert not mock_storage.local_path("remote_only.csv").exists()
+
+        tasks = BackgroundTasks()
+        result = await sync_input_file(
+            mock_storage.workspace_id,
+            "remote_only.csv",
+            tasks,
+            remote_bucket_name=mock_storage.bucket,
         )
 
-    def test_run_router_calls_ensure_input_data_local(self):
-        """Run router should call ensure_input_data_local before workflow."""
-        import inspect
+        assert result == {"file_path": "remote_only.csv"}
+        assert mock_storage.local_path("remote_only.csv").read_text() == "a,b\n9,9\n"
 
-        from studio.app.common.routers import run
+    @pytest.mark.asyncio
+    async def test_sync_input_file_404s_when_the_file_is_not_in_remote_storage(
+        self, mock_storage
+    ):
+        from fastapi import BackgroundTasks, HTTPException
 
-        source = inspect.getsource(run)
+        from studio.app.common.routers.files import sync_input_file
 
-        # Verify ensure_input_data_local is called
-        assert "ensure_input_data_local" in source
+        with pytest.raises(HTTPException) as exc:
+            await sync_input_file(
+                mock_storage.workspace_id,
+                "absent.csv",
+                BackgroundTasks(),
+                remote_bucket_name=mock_storage.bucket,
+            )
+
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_sync_input_file_503s_without_remote_storage(
+        self, mock_storage, monkeypatch
+    ):
+        from fastapi import BackgroundTasks, HTTPException
+
+        from studio.app.common.routers.files import sync_input_file
+
+        monkeypatch.setenv("REMOTE_STORAGE_TYPE", "0")
+
+        with pytest.raises(HTTPException) as exc:
+            await sync_input_file(
+                mock_storage.workspace_id,
+                "remote_only.csv",
+                BackgroundTasks(),
+                remote_bucket_name=mock_storage.bucket,
+            )
+
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_merged_listing_labels_local_synced_and_remote_only_files(
+        self, mock_storage
+    ):
+        """The three sync statuses a migrated user's file list has to show."""
+        from studio.app.common.routers.files import get_files_merged
+        from studio.app.common.schemas.files import SyncStatus
+        from studio.app.const import FILETYPE
+
+        mock_storage.put_local("local_only.csv")
+        mock_storage.put_local("both.csv")
+        mock_storage.put_remote("both.csv")
+        mock_storage.put_remote("remote_only.csv")
+
+        nodes = await get_files_merged(
+            mock_storage.workspace_id,
+            file_type=FILETYPE.CSV,
+            remote_bucket_name=mock_storage.bucket,
+        )
+
+        statuses = {node.path: node.sync_status for node in nodes}
+        assert statuses == {
+            "local_only.csv": SyncStatus.LOCAL,
+            "both.csv": SyncStatus.SYNCED,
+            "remote_only.csv": SyncStatus.REMOTE,
+        }
+
+    @pytest.mark.asyncio
+    async def test_merged_listing_reports_the_remote_size_for_remote_only_files(
+        self, mock_storage
+    ):
+        from studio.app.common.routers.files import get_files_merged
+        from studio.app.const import FILETYPE
+
+        body = "a,b\n1,2\n3,4\n"
+        mock_storage.put_remote("remote_only.csv", body)
+
+        nodes = await get_files_merged(
+            mock_storage.workspace_id,
+            file_type=FILETYPE.CSV,
+            remote_bucket_name=mock_storage.bucket,
+        )
+
+        assert [(n.path, n.size) for n in nodes] == [
+            ("remote_only.csv", len(body.encode()))
+        ]
+
+    @pytest.mark.asyncio
+    async def test_ensure_input_data_local_downloads_a_missing_input(
+        self, mock_storage
+    ):
+        """The workflow-side half: a migrated user's inputs arrive before the run."""
+        from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
+
+        mock_storage.put_remote("input.csv", "a,b\n7,7\n")
+
+        runner = WorkflowRunner.__new__(WorkflowRunner)
+        runner.remote_bucket_name = mock_storage.bucket
+        runner.workspace_id = mock_storage.workspace_id
+        runner.logger = MagicMock()
+        with patch.object(
+            WorkflowRunner, "_extract_input_files", return_value=["input.csv"]
+        ):
+            await runner.ensure_input_data_local()
+
+        assert mock_storage.local_path("input.csv").read_text() == "a,b\n7,7\n"
+
+    @pytest.mark.asyncio
+    async def test_ensure_input_data_local_leaves_an_existing_local_file_alone(
+        self, mock_storage
+    ):
+        """The runner's own ``os.path.exists`` guard is what has to refuse, so the
+        assertion is that no download was requested at all.
+
+        Reading the resulting file instead would read the backend's guard: the
+        mock controller skips whenever a local file exists, while S3 skips only on
+        a size match, and the two versions here differ in size.
+        """
+        from studio.app.common.core.storage.remote_storage_controller import (
+            RemoteStorageController,
+        )
+        from studio.app.common.core.workflow.workflow_runner import WorkflowRunner
+
+        mock_storage.put_local("input.csv", "local version\n")
+        mock_storage.put_remote("input.csv", "remote version\n")
+
+        runner = WorkflowRunner.__new__(WorkflowRunner)
+        runner.remote_bucket_name = mock_storage.bucket
+        runner.workspace_id = mock_storage.workspace_id
+        runner.logger = MagicMock()
+        with patch.object(
+            WorkflowRunner, "_extract_input_files", return_value=["input.csv"]
+        ), patch.object(
+            RemoteStorageController,
+            "download_input_data",
+            autospec=True,
+            wraps=RemoteStorageController.download_input_data,
+        ) as download:
+            await runner.ensure_input_data_local()
+
+        assert download.call_count == 0
+        assert mock_storage.local_path("input.csv").read_text() == "local version\n"
+
+    @pytest.mark.asyncio
+    async def test_run_endpoint_syncs_inputs_before_starting_the_workflow(self):
+        """Ordering is the claim: a download after the run starts is useless."""
+        from studio.app.common.routers import run as run_router
+
+        calls = []
+        runner = MagicMock()
+        runner.ensure_input_data_local = AsyncMock(
+            side_effect=lambda: calls.append("sync")
+        )
+        runner.run_workflow = MagicMock(side_effect=lambda _: calls.append("run"))
+
+        with patch.object(
+            run_router, "WorkflowRunner", MagicMock(return_value=runner)
+        ), patch.object(
+            run_router, "_check_storage_quota", new_callable=AsyncMock
+        ), patch.object(
+            run_router.RemoteStorageController, "is_available", return_value=True
+        ), patch.object(
+            run_router, "get_current_user_storage_usage"
+        ):
+            await run_router.run(
+                "ws1",
+                MagicMock(),
+                MagicMock(),
+                current_user=MagicMock(id=1),
+                remote_bucket_name="bucket-under-test",
+            )
+
+        assert calls == ["sync", "run"]
 
     def test_hdf5_endpoint_uses_cached_structure(self):
         """HDF5 endpoint should check for cached structure before reading file."""

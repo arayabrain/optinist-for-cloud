@@ -62,18 +62,16 @@ resource "aws_launch_template" "public" {
   }
 
   user_data = base64encode(templatefile("${path.module}/../scripts/ecs-user-data.sh", {
-    tier                  = "public"
-    cluster_name          = aws_ecs_cluster.main.name
-    git_branch            = var.git_branch
-    git_repo              = var.git_repo
-    firebase_config_json  = var.firebase_config_json
-    firebase_private_json = var.firebase_private_json
-    ecr_registry          = split("/", local.ecr_repository_url)[0]
-    ecr_repository_url    = local.ecr_repository_url
-    efs_id                = ""
-    db_host               = replace(aws_db_instance.main.endpoint, ":3306", "")
-    swap_size_mb          = 0
-    swap_device_name      = ""
+    tier               = "public"
+    cluster_name       = aws_ecs_cluster.main.name
+    git_branch         = var.git_branch
+    git_repo           = var.git_repo
+    ecr_registry       = split("/", local.ecr_repository_url)[0]
+    ecr_repository_url = local.ecr_repository_url
+    efs_id             = ""
+    db_host            = replace(aws_db_instance.main.endpoint, ":3306", "")
+    swap_size_mb       = 0
+    swap_device_name   = ""
   }))
 
   tag_specifications {

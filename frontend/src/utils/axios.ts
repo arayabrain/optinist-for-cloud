@@ -12,7 +12,10 @@ import {
   isDataviewPublicOutputsRequest,
   DATAVIEW_PUBLIC_REQUEST_KEY,
 } from "utils/DataviewUtils"
-import { routingService } from "utils/routing/RoutingService"
+import {
+  routingService,
+  type PremiumUnreachableDetail,
+} from "utils/routing/RoutingService"
 
 // Extend AxiosRequestConfig to include custom retry property
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -213,6 +216,33 @@ const handleUnauthorizedError = async (
 }
 
 /**
+ * Single guarded choke-point for tearing down premium routing after a transient
+ * premium-routing failure (wrong-instance 200 or 502/503).
+ *   within warm-up → no-op: a freshly-assigned instance is expected to flap;
+ *                    tearing down would strand routing (the machine grace-
+ *                    suppresses the unreachable event, so recovery never fires).
+ *   after warm-up  → tear down + emit so the recovery flow runs.
+ * Routing every failure site through here prevents a new site from forgetting
+ * the warm-up check.
+ */
+const tearDownPremiumRoutingUnlessWarmup = (
+  detail: PremiumUnreachableDetail,
+): void => {
+  if (routingService.isWithinPremiumWarmup()) return
+  // Stale/out-of-order failure (request sent before the last confirmed-reachable
+  // response) — an echo, not a live outage. Tearing down here would strand
+  // routing, since the state machine suppresses the event and never arms a
+  // recovery probe.
+  if (routingService.isStalePremiumFailure(detail.sentAt)) return
+  // Shared assignments have no dedicated-only recovery (state machine / probe),
+  // so a permanent downgrade here would strand them on free tier with nothing to
+  // re-arm. The per-request free-tier retry in the caller still serves the request.
+  if (routingService.isPremiumShared()) return
+  routingService.setPremiumAssigned(false)
+  routingService.emitPremiumUnreachable(detail)
+}
+
+/**
  * Handle 503 Service Unavailable errors for premium routing by falling back to free tier
  */
 const handlePremiumRoutingError = async (
@@ -230,11 +260,9 @@ const handlePremiumRoutingError = async (
     return Promise.reject(error)
   }
 
-  // Premium instance not ready, falling back to free tier.
-  // Clear premiumAssigned so subsequent requests don't keep sending
-  // stale routing headers that cause repeated 503s.
-  routingService.setPremiumAssigned(false)
-  routingService.emitPremiumUnreachable({
+  // Premium instance not ready — fall back to free tier for this request.
+  // Teardown is warm-up-gated (see tearDownPremiumRoutingUnlessWarmup).
+  tearDownPremiumRoutingUnlessWarmup({
     url: originalRequest.url,
     status: error.response?.status,
     sentAt: originalRequest._premiumSentAt,
@@ -380,10 +408,9 @@ axios.interceptors.response.use(
       })
     } else if (isInstanceMismatch(res, cfg)) {
       // Active detection: 200 OK from wrong instance (ALB fallback after
-      // EventBridge cleanup). Stop sending premium headers to prevent
-      // further misrouted requests and trigger the recovery flow.
-      routingService.setPremiumAssigned(false)
-      routingService.emitPremiumUnreachable({
+      // EventBridge cleanup). Tear down to trigger the recovery flow — gated so
+      // a warm-up mismatch (fresh instance still registering) is left alone.
+      tearDownPremiumRoutingUnlessWarmup({
         url: cfg!.url,
         status: res.status,
         sentAt: cfg!._premiumSentAt,

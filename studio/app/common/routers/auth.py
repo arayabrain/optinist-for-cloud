@@ -59,9 +59,10 @@ async def login(user_data: UserAuth, db: Session = Depends(get_db)):
                 f"Failed to check limit warning for user " f"{user.id}: {warning_error}"
             )
 
-    except HTTPException as e:
-        logger.error(e, exc_info=True)
-        raise e
+    except HTTPException:
+        # The auth layer already logged the cause; a 4xx (e.g. a mistyped
+        # password) is routine, so re-raise without a second ERROR traceback.
+        raise
 
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -89,9 +90,10 @@ async def login_with_uid(
 ):
     try:
         token = await auth.login_with_uid(db, uid, admin_user)
-    except HTTPException as e:
-        logger.error(e, exc_info=True)
-        raise e
+    except HTTPException:
+        # The auth layer already logged the cause; a 4xx (e.g. a mistyped
+        # password) is routine, so re-raise without a second ERROR traceback.
+        raise
 
     except Exception as e:
         logger.error(e, exc_info=True)

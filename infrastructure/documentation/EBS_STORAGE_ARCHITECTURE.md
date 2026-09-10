@@ -285,7 +285,11 @@ All metrics published to CloudWatch namespace `OptiNiSt/BackgroundJobs`.
 | Metric Name | Description | Unit | Trigger |
 |-------------|-------------|------|---------|
 | `DataCleanupCount` | Users whose data was successfully cleaned | Count | Each cleanup run |
-| `CleanupErrors` | Users whose cleanup failed | Count | Each cleanup run |
+| `CleanupErrors` | Users whose cleanup could not complete safely — unexpected exception, or data retained because its S3 backup could not be verified | Count | Each cleanup run |
+| `CleanupKept` | Users deliberately kept (no local data on this instance, or user returned) — not an error | Count | Each cleanup run |
+
+> No CloudWatch alarm currently references the `OptiNiSt/BackgroundJobs` namespace;
+> these metrics are the intended signals for future alarms.
 
 ---
 
@@ -338,7 +342,7 @@ All metrics published to CloudWatch namespace `OptiNiSt/BackgroundJobs`.
 | `_check_user_relogin()` | Detects re-login to abort cleanup for that user |
 | `_verify_no_active_workflows()` | Double-checks no workflows started during cleanup |
 | `_handle_orphaned_data()` | Cleans DB assignments for terminated instances |
-| `_publish_metrics()` | Publishes `DataCleanupCount`, `CleanupErrors` to CloudWatch |
+| `_publish_metrics()` | Publishes `DataCleanupCount`, `CleanupErrors`, `CleanupKept` to CloudWatch |
 
 ### Workflow Tracking (`studio/app/common/core/workflow/workflow_tracking.py`)
 

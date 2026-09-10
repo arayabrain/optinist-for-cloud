@@ -1969,6 +1969,7 @@ def publish_premium_metrics(
     idle_instances: int,
     tg_port_drift_detected: int = 0,
     tg_port_drift_fixed: int = 0,
+    tg_healed_missing: int = 0,
 ) -> None:
     """
     Publish premium tier monitoring metrics to CloudWatch.
@@ -1980,6 +1981,8 @@ def publish_premium_metrics(
     - IdleInstances: Count of instances with no assigned users
     - TargetGroupPortDriftDetected: drifting per-user TGs observed this cycle
     - TargetGroupPortDriftFixed: drifting per-user TGs converged this cycle
+    - HealedMissingTargetGroup: stranded rows (TG gone) dropped for reprovision
+      this cycle — a non-zero value means a #766-class strand actually occurred
     """
     cloudwatch: "CloudWatchClient" = boto3.client("cloudwatch")
 
@@ -2025,13 +2028,20 @@ def publish_premium_metrics(
                     "Unit": "Count",
                     "Timestamp": datetime.now(timezone.utc),
                 },
+                {
+                    "MetricName": "HealedMissingTargetGroup",
+                    "Value": tg_healed_missing,
+                    "Unit": "Count",
+                    "Timestamp": datetime.now(timezone.utc),
+                },
             ],
         )
         print(
             f"Published metrics: active_users={active_users}, idle_users={idle_users}, "
             f"running_instances={running_instances}, idle_instances={idle_instances}, "
             f"tg_port_drift_detected={tg_port_drift_detected}, "
-            f"tg_port_drift_fixed={tg_port_drift_fixed}"
+            f"tg_port_drift_fixed={tg_port_drift_fixed}, "
+            f"tg_healed_missing={tg_healed_missing}"
         )
 
     except Exception as e:
@@ -2189,6 +2199,7 @@ def handle_scheduled_monitoring(event: Dict[str, Any], context: Any) -> Dict[str
                 idle_instances=idle_instances,
                 tg_port_drift_detected=reconcile_summary.get("drift_detected", 0),
                 tg_port_drift_fixed=reconcile_summary.get("drift_fixed", 0),
+                tg_healed_missing=reconcile_summary.get("healed_missing_tg", 0),
             )
 
             # 11. Stop orphaned EC2 instances not in ECS cluster
@@ -3069,6 +3080,45 @@ def _assign_premium_user_impl(
                     f"falling back to async migration"
                 )
                 invoke_migration_async()
+
+            # If a dedicated assignment's target group is authoritatively gone,
+            # its stored ARNs are dead. Drop the row and fall through to a fresh
+            # assignment that recreates the rule/TG, rather than reusing a broken
+            # route. Shared/pool rows use the shared TG (handled above).
+            # Fail-open: a transient probe error (throttle/5xx) is not a
+            # confirmed miss, so keep reusing rather than 500 or drop the row.
+            if (
+                existing_assignment
+                and not existing_assignment.get("is_shared")
+                and existing_instance_id != PremiumAssignment.AUTOSCALING_POOL
+            ):
+                existing_tg_arn = existing_assignment.get("target_group_arn")
+                try:
+                    tg_confirmed_missing = not target_group_exists(existing_tg_arn)
+                except Exception as tg_probe_error:
+                    tg_confirmed_missing = False
+                    print(
+                        f"Target group probe failed for user {user_id} "
+                        f"({existing_tg_arn}): {tg_probe_error} — reusing "
+                        f"existing assignment (fail-open)"
+                    )
+                if tg_confirmed_missing:
+                    # Drops the DB row only; any orphaned ALB rule is reaped by
+                    # premium_cleanup. Next assign reprovisions rule + TG.
+                    print(
+                        f"Existing assignment for user {user_id} has a missing "
+                        f"target group ({existing_tg_arn}) - dropping the stale "
+                        f"row so a fresh assignment reprovisions ALB routing"
+                    )
+                    try:
+                        remove_user_assignment(user_id)
+                    except Exception as remove_error:
+                        # Row already gone (concurrent heal / second assign) is
+                        # the wanted outcome — fall through. Re-raise real DB
+                        # errors to fail fast.
+                        if "No assignment found" not in str(remove_error):
+                            raise
+                    existing_assignment = None
 
             if existing_assignment:
                 return {
@@ -4513,7 +4563,7 @@ def migrate_user_to_dedicated_instance(user_id: int, new_instance_id: str) -> bo
         )
         return False
 
-    # Reserve target instance first using database-level locking
+    # Lock-based reserve (no RESERVING row written); aborts have nothing to release
     if not try_reserve_instance_for_migration(new_instance_id, user_id):
         print(
             f"Cannot migrate user {user_id}: instance {new_instance_id} not available"
@@ -5506,7 +5556,7 @@ def reconcile_premium_target_group_ports() -> Dict[str, Any]:
         "drift_detected": 0,
         "drift_fixed": 0,
         "skipped_no_host_port": 0,
-        "skipped_missing_tg": 0,
+        "healed_missing_tg": 0,
         "errors": 0,
     }
 
@@ -5546,8 +5596,18 @@ def reconcile_premium_target_group_ports() -> Dict[str, Any]:
 
         try:
             if not target_group_exists(tg_arn):
-                summary["skipped_missing_tg"] += 1
-                print(f"reconcile: user {user_id} TG {tg_arn} gone — skipping")
+                # Heal instead of skip: a missing TG leaves the row a permanent
+                # strand. Drop the row (any orphaned ALB rule is reaped by
+                # premium_cleanup) so the next assign reprovisions the rule/TG.
+                # A transient probe raise is caught below as an error, not a heal.
+                print(
+                    f"reconcile: user {user_id} TG {tg_arn} gone — dropping "
+                    f"stale assignment so next assign reprovisions routing"
+                )
+                # Count the heal only after the drop succeeds; a raise is
+                # caught below as an error, not a heal.
+                remove_user_assignment(user_id)
+                summary["healed_missing_tg"] += 1
                 continue
 
             actual_port = get_host_port_for_instance(instance_id)

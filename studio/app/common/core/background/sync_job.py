@@ -496,10 +496,9 @@ class PublishedExperimentSyncJob:
         if not alb_dns or not internal_secret:
             return False
 
+        base = os.environ.get("INTERNAL_API_BASE_URL") or f"https://{alb_dns}"
         url = (
-            f"https://{alb_dns}"
-            f"/system-internal/sync-experiment"
-            f"/{workspace_id}/{unique_id}"
+            f"{base}" f"/system-internal/sync-experiment" f"/{workspace_id}/{unique_id}"
         )
         headers = {
             "X-Internal-Secret": internal_secret,
@@ -511,8 +510,10 @@ class PublishedExperimentSyncJob:
         }
 
         try:
-            # Skip SSL verification for internal VPC traffic;
-            # ALB cert doesn't match AWS-generated hostname
+            # Skip SSL verification for internal VPC traffic on the prod
+            # HTTPS path; the ALB cert doesn't match the AWS-generated
+            # hostname. On dev the base URL is plain HTTP (:8080), where
+            # verify=False is a no-op.
             response = requests.post(
                 url,
                 headers=headers,

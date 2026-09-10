@@ -970,12 +970,13 @@ subsection is the canonical comparison referenced from the Glossary's
 
 The frontend runs an inactivity monitor in
 `PremiumAssignmentContext.tsx` (the `checkInactivity` effect) that
-observes `lastActivity` across tabs and fires on two hard-coded
-thresholds:
+observes `lastActivity` across tabs and fires on two thresholds
+(`INACTIVITY_WARNING_MINUTES = 60` and `INACTIVITY_RELEASE_MINUTES = 120`
+in `const/Subscription.ts`):
 
 | Threshold | Effect |
 |---|---|
-| 1 hour | Surface the `InactivityWarning` snackbar with a countdown (`INACTIVITY_WARNING_DURATION_MINUTES = 60` from `const/Subscription.ts` drives the countdown display) |
+| 1 hour | Surface the `InactivityWarning` snackbar, counting down the remainder to the release threshold |
 | 2 hours | Call `autoReleaseOnLogout()`, which issues `DELETE /premium/assign` with a beacon token |
 
 The monitor polls every 30 s and listens for cross-tab activity events
@@ -985,11 +986,10 @@ warning on this one. On tab close / hard navigation,
 token -- the auto-release path and the beacon path converge on the
 backend.
 
-> **Threshold coupling.** The 1 h / 2 h thresholds are hard-coded in
-> `PremiumAssignmentContext.tsx`. `INACTIVITY_WARNING_DURATION_MINUTES`
-> controls only the countdown shown in the snackbar; changing it
-> without also changing the hard-coded thresholds would cause the
-> displayed countdown to disagree with the actual auto-release time.
+> **Changing the thresholds.** Both come from `PremiumTiming` in
+> `const/Subscription.ts`, and the snackbar countdown is derived as
+> `release - warning`, so the two cannot disagree. The backend's own
+> idle reclaim is separate and is not moved by them.
 
 #### Server-side grace window (beacon / auto-release path)
 

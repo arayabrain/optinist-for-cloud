@@ -1,0 +1,173 @@
+name: Weekly Regression
+
+# Everything that is not a per-PR gate, run once a week against the default
+# branch: the Playwright release suite, the two opt-in real-database lanes, and
+# a re-run of the per-PR unit lanes so a merge that broke them without opening a
+# PR is still caught.
+# The e2e job runs the LOCAL docker stack in the runner (db + backend via docker
+# compose, frontend via yarn start) — it does NOT test the deployed AWS
+# environment. Scheduled runs fire only from the default branch (develop-main)
+# and check out that branch; workflow_dispatch also defaults to develop-main.
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Mondays 00:00 UTC = 09:00 JST
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-regression
+  cancel-in-progress: false
+
+jobs:
+  # The per-PR suites (backend, lambda, frontend), reused rather than copied.
+  unit:
+    uses: ./.github/workflows/tests.yml
+
+  # Real MySQL GET_LOCK serialization. Opt-in by design (its own compose
+  # project and a throwaway DB), so no per-PR job runs it.
+  premium_lock_it:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the premium lock integration lane
+        run: make premium_lock_it
+
+  # Concurrent workflow counting over real connections. Opt-in for the same
+  # reason: its own compose project and a throwaway migrated database.
+  workflow_count_it:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the workflow count integration lane
+        run: make workflow_count_it
+
+  e2e:
+    runs-on: ubuntu-latest
+    # RUN_SLOW adds the four tutorial runs (5-10 min each) plus the dataview
+    # and public-page mints, and CI retries twice. Playwright's own
+    # globalTimeout ends the run before this fires, so the skip summary and
+    # artifacts still get written.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write gitignored config (Firebase + studio .env)
+        run: |
+          mkdir -p studio/config/auth
+          printf '%s' "$FIREBASE_PRIVATE_JSON" > studio/config/auth/firebase_private.json
+          printf '%s' "$FIREBASE_CONFIG_JSON" > studio/config/auth/firebase_config.json
+          printf '%s' "$STUDIO_ENV" > studio/config/.env
+          # The suite registers throwaway @test.com users, and Firebase would
+          # send real verification mail that bounces into a human's mailbox
+          printf '\nUSE_FIREBASE_EMAIL=False\n' >> studio/config/.env
+        env:
+          FIREBASE_PRIVATE_JSON: ${{ secrets.E2E_FIREBASE_PRIVATE_JSON }}
+          FIREBASE_CONFIG_JSON: ${{ secrets.E2E_FIREBASE_CONFIG_JSON }}
+          STUDIO_ENV: ${{ secrets.E2E_STUDIO_ENV }}
+
+      - name: Start db and backend
+        run: |
+          docker compose -f docker-compose.dev.multiuser.yml up -d --build db studio-dev-be
+          timeout 600 bash -c 'until curl -sf http://localhost:8000/docs > /dev/null; do sleep 5; done'
+
+      - name: Seed plans and bootstrap test users
+        run: .github/scripts/e2e-bootstrap.sh
+        env:
+          SUBSCRIPTION_PLANS_CONFIG: ${{ vars.SUBSCRIPTION_PLANS_CONFIG }}
+          TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+          TEST_PREMIUM_EMAIL: ${{ secrets.E2E_TEST_PREMIUM_EMAIL }}
+          TEST_PREMIUM_PASSWORD: ${{ secrets.E2E_TEST_PREMIUM_PASSWORD }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install frontend and Playwright
+        working-directory: frontend
+        run: |
+          yarn install --frozen-lockfile
+          npx playwright install --with-deps chromium
+
+      - name: Typecheck the e2e specs
+        working-directory: frontend
+        run: yarn typecheck:e2e
+
+      - name: Start frontend dev server
+        working-directory: frontend
+        # frontend/.env is gitignored; without REACT_APP_SERVER_* the app
+        # derives the API URL from window.location and calls :3000 (itself)
+        env:
+          BROWSER: none
+          REACT_APP_SERVER_HOST: localhost
+          REACT_APP_SERVER_PORT: 8000
+          REACT_APP_SERVER_PROTO: http
+        run: |
+          yarn start &
+          timeout 300 bash -c 'until curl -sf http://localhost:3000 > /dev/null; do sleep 5; done'
+
+      - name: Run e2e tests
+        working-directory: frontend
+        run: npx playwright test
+        env:
+          BASE_URL: http://localhost:3000
+          # The tutorial runs are the only thing that produces a completed
+          # workflow, and therefore an enabled NWB download button. Without this
+          # REC-07 skips every week and its payload assertion never executes.
+          RUN_SLOW: 1
+          # CLEAN-01 is a mapped row, so a permanent skip leaves it unverified
+          # on the sign-off sheet. 99-cleanup sorts last, and the runner's stack
+          # is thrown away afterwards, so there is nothing to inspect.
+          RUN_CLEANUP: 1
+          TEST_USER_EMAIL: ${{ secrets.E2E_TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+          TEST_PREMIUM_EMAIL: ${{ secrets.E2E_TEST_PREMIUM_EMAIL }}
+          TEST_PREMIUM_PASSWORD: ${{ secrets.E2E_TEST_PREMIUM_PASSWORD }}
+          TEST_LIFECYCLE_EMAIL: e2e_ci_lifecycle@test.com
+          TEST_LIFECYCLE_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+          # 12-admin.spec.ts registers this account itself and promotes it with
+          # one UPDATE against user_roles: registration always lands as an
+          # operator (crud_users.create_user overwrites role_id whenever the
+          # address is unverified), so there is no API path to an admin.
+          TEST_ADMIN_EMAIL: e2e_ci_admin@test.com
+          TEST_ADMIN_PASSWORD: ${{ secrets.E2E_TEST_USER_PASSWORD }}
+
+      - name: Report tests that did not run
+        if: always()
+        working-directory: frontend
+        # Mapped rows that skipped are unverified, not passing. Surfaced in the
+        # job summary so a release sign-off reconciles them against the sheet.
+        run: |
+          if [ -s test-results/skipped-tests.txt ]; then
+            {
+              echo "### Playwright tests that did NOT run"
+              echo
+              echo '| ID | Test | Reason |'
+              echo '| -- | ---- | ------ |'
+              awk -F'\t' '{print "| " $1 " | " $2 " | " $3 " |"}' \
+                test-results/skipped-tests.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No tests were skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Dump backend logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.multiuser.yml logs --tail 300 studio-dev-be db
+
+      - name: Upload Playwright report
+        if: always()
+        # The report is diagnostic: an artifact-service timeout must not red a run whose tests passed
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 14

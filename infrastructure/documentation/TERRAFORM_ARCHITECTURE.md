@@ -22,12 +22,13 @@ infrastructure/terraform/
 ├── compute_domain.tf            # Route53, ACM certificate (conditional — production only)
 ├── security.tf                  # IAM roles/policies, security groups, key pairs, Secrets Manager
 ├── monitoring.tf                # CloudWatch log groups, alarms, dashboard
-├── deployment.tf                # SSM document for app_setup.sh deployment
+├── deployment.tf                # SSM document + association running app_setup.sh on each host every 30 min
 ├── background_service.tf        # Background job ECS service and task definition
 ├── premium_manager.tf           # Premium tier Lambda functions and scheduling
 ├── free_manager.tf              # Free tier Lambda functions and scheduling
 ├── common_user_manager.tf       # Shared user lifecycle Lambda function
 ├── lambda_layers.tf             # Shared Lambda layer (aws_constants)
+├── deploy_info.tf               # Apply-time git provenance → ECS cluster tags (see "Deployment Provenance")
 │
 ├── backends/
 │   ├── production.hcl           # S3 backend config → subscr-optinist-for-cloud-tfstate
@@ -110,9 +111,37 @@ locals {
 }
 
 # Examples:
-# Production: subscr-optinist-app-storage, subscr-optinist-cloud-ecs-cluster
-# Development: development-optinist-app-storage, development-optinist-cloud-ecs-cluster
+# Production: subscr-optinist-app-storage, subscr-optinist-cloud-cluster
+# Development: development-optinist-app-storage, development-optinist-cloud-cluster
 ```
+
+---
+
+## Deployment Provenance (Apply Traceability)
+
+To make the *actually-applied* infrastructure version verifiable from the running
+environment, each `terraform apply` records which `infrastructure/` git revision it was
+applied from. This mirrors the Docker `/app/BUILD_INFO` concept (image provenance) at the
+infrastructure layer.
+
+| File | Role |
+| --- | --- |
+| `scripts/terraform_build_info.sh` | Emits the apply-time git commit/branch/dirty as JSON (no `jq` dependency) |
+| `deploy_info.tf` | `data.external.tf_build_info` runs the script at apply time |
+| `compute.tf` (`aws_ecs_cluster.main`) | Stamps `TfGitCommit` / `TfGitBranch` tags from that data |
+
+Design notes:
+
+- The commit is stamped onto a **single** long-lived resource (the ECS cluster), not via
+  `provider.default_tags`, so only that one resource changes on a real deploy instead of
+  every taggable resource.
+- The tag value changes **only when the git commit changes**, so no-op applies produce no
+  diff.
+- No timestamp is stored in the tag — "when was the last change-bearing apply" is already
+  answered by the state file's `LastModified` in the S3 backend bucket.
+
+See [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md) → "Check Which Git
+Revision Was Applied" for how to read it back.
 
 ---
 
@@ -180,7 +209,7 @@ The core blocker is domain management, not cost (~$0.50/month is negligible). A 
 
 ## How Firebase Configuration Flows
 
-Firebase config must reach both the **frontend** (React app, build-time) and **backend** (Python API, runtime). The source of truth is the `firebase_config_json` and `firebase_private_json` variables in each environment's `.tfvars` file, which Terraform stores in AWS Secrets Manager.
+Firebase config reaches the **backend only** (Python API, runtime). The frontend has no Firebase dependency and no `REACT_APP_FIREBASE_*` variables: every Firebase call is proxied by the backend, as described in [FIREBASE_AUTH_ARCHITECTURE.md](FIREBASE_AUTH_ARCHITECTURE.md). The source of truth is the `firebase_config_json` and `firebase_private_json` variables in each environment's `.tfvars` file, which Terraform stores in AWS Secrets Manager.
 
 ### Config Flow Diagram
 
@@ -192,27 +221,21 @@ Secrets Manager
     ├── ${env}-optinist/firebase/config        (web config JSON)
     └── ${env}-optinist/firebase/private-key   (service account JSON)
     │
-    ├──────────────────────────┐
-    │  BUILD TIME (frontend)   │  RUNTIME (backend)
-    │                          │
-    ▼                          ▼
-ecr_build_push.sh          cloud-startup.sh
-    │                          │
-    │  Reads from Secrets      │  Reads from Secrets
-    │  Manager, injects into   │  Manager, writes to
-    │  .env.production as      │  /app/studio/config/auth/
-    │  REACT_APP_FIREBASE_*    │  firebase_config.json
-    │                          │  firebase_private.json
-    ▼                          ▼
-React app (baked into JS)  Python API (loaded at startup)
+    ▼
+cloud-startup.sh   (RUNTIME, backend)
+    │
+    │  Reads from Secrets Manager, writes to
+    │  /app/studio/config/auth/firebase_config.json
+    │                          firebase_private.json
+    ▼
+Python API (loaded at startup)
 ```
 
 ### Why This Is Necessary
 
-The Docker image is shared across environments (single ECR repository). Without Secrets Manager injection:
+The Docker image is shared across environments (single ECR repository) and contains **no** Firebase credentials at all: `.dockerignore` excludes `studio/config/auth/*.json` and keeps only the `*.example.json` templates. `cloud-startup.sh` creates both real files at container startup from the correct environment's secrets.
 
-- **Frontend**: The React build would use `frontend/.env` defaults, which may point to the wrong Firebase project. Since React env vars are baked into the JS bundle at build time, there is no way to change them at runtime.
-- **Backend**: The Docker image contains `studio/config/auth/firebase_config.json` and `firebase_private.json` from the source repo. `cloud-startup.sh` overwrites these files at container startup with the correct environment's config from Secrets Manager.
+The failure mode therefore is not "wrong Firebase project", it is "no credentials". If the fetch fails, `firebase_config.json` and `firebase_private.json` never exist, Admin SDK initialization fails silently, and every authenticated request returns `401`. Note that the `Using defaults` wording in the script's own warning is misleading: there are no defaults to fall back on. See Edge Case 1 in [FIREBASE_AUTH_ARCHITECTURE.md](FIREBASE_AUTH_ARCHITECTURE.md).
 
 ### IAM Permissions
 
@@ -274,7 +297,7 @@ Subnets are derived automatically via `cidrsubnet(var.vpc_cidr, 4, N)`:
 | Category           | Resources                                                                                    | Named As                                                           |
 | ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | **Networking**     | VPC, 2 public + 2 private subnets, IGW, NAT instances, route tables                          | `${env}-optinist-cloud-*`                                          |
-| **Compute**        | ECS cluster, ASG, launch template, 2 ECS services (free + premium), EC2 premium instances    | `${env}-optinist-cloud-*`                                          |
+| **Compute**        | ECS cluster, ASG, launch template, 4 ECS services (main, premium, public, background), EC2 premium instances | `${env}-optinist-cloud-*`                          |
 | **Load Balancing** | ALB, target groups, listeners                                                                | `${env}-optinist-lb`, `${env}-optinist-tg`                         |
 | **Database**       | RDS MySQL, RDS Proxy, subnet group                                                           | `${env}-optinist-rds-*`                                            |
 | **Storage**        | S3 bucket, EFS filesystem                                                                    | `${env}-optinist-app-storage`, `${env}-optinist-cloud-snmk-volume` |

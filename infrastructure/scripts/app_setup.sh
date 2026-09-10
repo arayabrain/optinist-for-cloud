@@ -44,16 +44,6 @@ ECS_AGENT_RETRY_DELAY=30
 DEFAULT_ORG_ID=1
 ADMIN_ROLE_ID=1
 
-# Role Definitions
-ROLE_ADMIN_ID=1
-ROLE_ADMIN_NAME="admin"
-ROLE_DATA_MANAGER_ID=10
-ROLE_DATA_MANAGER_NAME="data manager"
-ROLE_OPERATOR_ID=20
-ROLE_OPERATOR_NAME="operator"
-ROLE_GUEST_OPERATOR_ID=30
-ROLE_GUEST_OPERATOR_NAME="guest operator"
-
 # Tax Configuration
 TAX_TYPE="sales_tax"
 TAX_NAME="Sales Tax"
@@ -284,26 +274,31 @@ FLUSH PRIVILEGES;
 CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
 USE ${MYSQL_DATABASE};
 
--- Insert initial data
-INSERT IGNORE INTO organization (name) VALUES ('${OPTINIST_ORG_NAME}');
-INSERT IGNORE INTO roles (id, role) VALUES
-  (${ROLE_ADMIN_ID}, '${ROLE_ADMIN_NAME}'),
-  (${ROLE_DATA_MANAGER_ID}, '${ROLE_DATA_MANAGER_NAME}'),
-  (${ROLE_OPERATOR_ID}, '${ROLE_OPERATOR_NAME}'),
-  (${ROLE_GUEST_OPERATOR_ID}, '${ROLE_GUEST_OPERATOR_NAME}');
+-- Organization/roles rows are seeded by migration; only the env-specific org name is applied here
+UPDATE organization SET name = '${OPTINIST_ORG_NAME}' WHERE id = ${DEFAULT_ORG_ID};
+
+-- NOT EXISTS guards below: this file re-runs every 30 min, and a bare INSERT IGNORE
+-- burns an auto_increment id (or leaks a row on tables with no unique key) per re-run
 
 -- Default admin user with S3 bucket info
 INSERT IGNORE INTO users (uid, organization_id, name, email, active, attributes)
-VALUES ('${OPTINIST_ADMIN_UID}', ${DEFAULT_ORG_ID}, '${OPTINIST_ADMIN_NAME}', '${OPTINIST_ADMIN_EMAIL}', true, '{"remote_bucket_name": "${S3_BUCKET}"}');
+SELECT '${OPTINIST_ADMIN_UID}', ${DEFAULT_ORG_ID}, '${OPTINIST_ADMIN_NAME}', '${OPTINIST_ADMIN_EMAIL}', true, '{"remote_bucket_name": "${S3_BUCKET}"}'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE uid = '${OPTINIST_ADMIN_UID}');
 
 INSERT IGNORE INTO user_roles (user_id, role_id)
-SELECT id, ${ADMIN_ROLE_ID} FROM users WHERE uid = '${OPTINIST_ADMIN_UID}';
+SELECT u.id, ${ADMIN_ROLE_ID} FROM users u
+WHERE u.uid = '${OPTINIST_ADMIN_UID}'
+  AND NOT EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role_id = ${ADMIN_ROLE_ID});
 
 UPDATE users SET attributes = JSON_MERGE_PATCH(IFNULL(attributes,'{}'), '{"remote_bucket_name": "${S3_BUCKET}"}') WHERE uid = '${OPTINIST_ADMIN_UID}';
 
--- Tax rates initialization
+-- Tax rates initialization; keyed on (tax_type, tax_rate) so a rate change inserts
+-- a new row with a fresh effective_date instead of being silently skipped
 INSERT IGNORE INTO taxes (tax_type, tax_name, tax_rate, is_active, effective_date)
-VALUES ('${TAX_TYPE}', '${TAX_NAME}', ${TAX_RATE}, ${TAX_IS_ACTIVE}, CURDATE());
+SELECT '${TAX_TYPE}', '${TAX_NAME}', ${TAX_RATE}, ${TAX_IS_ACTIVE}, CURDATE()
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM taxes WHERE tax_type = '${TAX_TYPE}' AND tax_rate = ${TAX_RATE});
 
 -- Admin user storage quota initialization
 INSERT IGNORE INTO user_storage_usage (user_id, storage_usage_bytes, storage_quota_bytes)
@@ -312,7 +307,10 @@ ON DUPLICATE KEY UPDATE storage_quota_bytes = ${ADMIN_STORAGE_QUOTA_BYTES};
 
 -- Admin user free subscription
 INSERT IGNORE INTO subscription_users (plan_id, user_id, expiration)
-SELECT ${FREE_PLAN_ID}, id, DATE_ADD(NOW(), INTERVAL ${ADMIN_SUBSCRIPTION_DAYS} DAY) FROM users WHERE uid = '${OPTINIST_ADMIN_UID}';
+SELECT ${FREE_PLAN_ID}, u.id, DATE_ADD(NOW(), INTERVAL ${ADMIN_SUBSCRIPTION_DAYS} DAY)
+FROM users u
+WHERE u.uid = '${OPTINIST_ADMIN_UID}'
+  AND NOT EXISTS (SELECT 1 FROM subscription_users s WHERE s.user_id = u.id);
 
 INIT_SQL
 
@@ -322,8 +320,6 @@ INIT_SQL
 export MYSQL_USER MYSQL_PASSWORD MYSQL_DATABASE
 export OPTINIST_ORG_NAME OPTINIST_ADMIN_UID OPTINIST_ADMIN_NAME OPTINIST_ADMIN_EMAIL
 export S3_BUCKET DB_INIT_SQL_FILE
-export ROLE_ADMIN_ID ROLE_ADMIN_NAME ROLE_DATA_MANAGER_ID ROLE_DATA_MANAGER_NAME
-export ROLE_OPERATOR_ID ROLE_OPERATOR_NAME ROLE_GUEST_OPERATOR_ID ROLE_GUEST_OPERATOR_NAME
 export DEFAULT_ORG_ID ADMIN_ROLE_ID
 export TAX_TYPE TAX_NAME TAX_RATE TAX_IS_ACTIVE
 export ADMIN_STORAGE_USAGE_BYTES ADMIN_STORAGE_QUOTA_BYTES
@@ -352,14 +348,6 @@ var_names = [
     'OPTINIST_ADMIN_NAME',
     'OPTINIST_ADMIN_EMAIL',
     'S3_BUCKET',
-    'ROLE_ADMIN_ID',
-    'ROLE_ADMIN_NAME',
-    'ROLE_DATA_MANAGER_ID',
-    'ROLE_DATA_MANAGER_NAME',
-    'ROLE_OPERATOR_ID',
-    'ROLE_OPERATOR_NAME',
-    'ROLE_GUEST_OPERATOR_ID',
-    'ROLE_GUEST_OPERATOR_NAME',
     'DEFAULT_ORG_ID',
     'ADMIN_ROLE_ID',
     'TAX_TYPE',

@@ -21,6 +21,7 @@ import {
   MenuItem,
   Select,
   styled,
+  Switch,
   Tooltip,
   Typography,
 } from "@mui/material"
@@ -55,6 +56,11 @@ import {
 import { selectCurrentUser, selectLoading } from "store/slice/User/UserSelector"
 import { AppDispatch } from "store/store"
 import { convertBytes } from "utils"
+import {
+  getAnalyticsConsent,
+  isGtmEnabled,
+  setAnalyticsConsent,
+} from "utils/analytics"
 
 const Account = () => {
   const user = useSelector(selectCurrentUser)
@@ -73,6 +79,8 @@ const Account = () => {
   const [isEditName, setIsEditName] = useState(false)
   const [isEditDeletionPriority, setIsEditDeletionPriority] = useState(false)
   const [isName, setIsName] = useState<string>()
+  const [analyticsConsent, setAnalyticsConsentState] =
+    useState(getAnalyticsConsent)
 
   const ref = useRef<HTMLInputElement>(null)
 
@@ -360,6 +368,7 @@ const Account = () => {
             autoFocus
             onBlur={onBlur}
             placeholder="Name"
+            inputProps={{ "aria-label": "Name" }}
             value={isName}
             onChange={onEditName}
             onKeyDown={handleName}
@@ -368,7 +377,11 @@ const Account = () => {
         ) : (
           <>
             <Box>{isName ? isName : user?.name}</Box>
-            <IconButton sx={{ ml: 1 }} onClick={() => setIsEditName(true)}>
+            <IconButton
+              sx={{ ml: 1 }}
+              aria-label="Edit name"
+              onClick={() => setIsEditName(true)}
+            >
               <Edit />
             </IconButton>
           </>
@@ -395,7 +408,7 @@ const Account = () => {
             alignItems: "flex-start",
           }}
         >
-          <BoxData>
+          <BoxData data-testid="account-plan-name">
             {userSubscription?.plan_name && !userSubscription.is_expired
               ? userSubscription.plan_name
               : PlanName.FREE}
@@ -474,6 +487,7 @@ const Account = () => {
             </BoxData>
             <IconButton
               sx={{ ml: 1 }}
+              aria-label="Edit deletion priority"
               onClick={() => setIsEditDeletionPriority(true)}
               disabled={deletionPriorityLoading}
             >
@@ -482,6 +496,21 @@ const Account = () => {
           </>
         )}
       </BoxFlex>
+      {/* ponytail: shown only once a decision exists, so this and the notice cannot disagree without any shared state. */}
+      {isGtmEnabled() && analyticsConsent !== null && (
+        <BoxFlex>
+          <TitleData>Analytics Cookies</TitleData>
+          <Switch
+            checked={analyticsConsent === "granted"}
+            onChange={(e) => {
+              const decision = e.target.checked ? "granted" : "denied"
+              setAnalyticsConsent(decision)
+              setAnalyticsConsentState(decision)
+            }}
+            inputProps={{ "aria-label": "Allow analytics cookies" }}
+          />
+        </BoxFlex>
+      )}
       <BoxFlex sx={{ justifyContent: "space-between", mt: 10, maxWidth: 600 }}>
         <Button variant="contained" color="primary" onClick={onChangePwClick}>
           Change Password

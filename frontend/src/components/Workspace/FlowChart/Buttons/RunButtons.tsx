@@ -49,7 +49,7 @@ export enum StorageCheckResult {
   CONFIRM_NEEDED = "confirm_needed",
 }
 
-const RUN_REQUEST_DEBOUNCE_MS = 3000
+export const RUN_REQUEST_DEBOUNCE_MS = 3000
 
 export const RunButtons = memo(function RunButtons(
   props: UseRunPipelineReturnType,
@@ -130,14 +130,21 @@ export const RunButtons = memo(function RunButtons(
     pendingRunActionRef.current = null
   }, [])
 
-  const executeRunByUid = useCallback(() => {
+  // Both run paths go through here, so the cooldown cannot be applied to one and
+  // forgotten on the other.
+  const sendRunRequestOnce = useCallback((send: () => void) => {
     if (sendingRunRequest.current) return
     sendingRunRequest.current = true
-    handleRunPipelineByUid()
+    send()
     setTimeout(() => {
       sendingRunRequest.current = false
     }, RUN_REQUEST_DEBOUNCE_MS)
-  }, [handleRunPipelineByUid])
+  }, [])
+
+  const executeRunByUid = useCallback(
+    () => sendRunRequestOnce(handleRunPipelineByUid),
+    [sendRunRequestOnce, handleRunPipelineByUid],
+  )
 
   const handleClick = async () => {
     let errorMessage: string | null = null
@@ -189,22 +196,14 @@ export const RunButtons = memo(function RunButtons(
 
     if (checkResult === StorageCheckResult.CONFIRM_NEEDED) {
       pendingRunActionRef.current = () => {
-        sendingRunRequest.current = true
-        handleRunPipeline(name)
-        setTimeout(() => {
-          sendingRunRequest.current = false
-        }, RUN_REQUEST_DEBOUNCE_MS)
+        sendRunRequestOnce(() => handleRunPipeline(name))
         setDialogOpen(false)
       }
       setStorageCheckFailedDialogOpen(true)
       return
     }
 
-    sendingRunRequest.current = true
-    handleRunPipeline(name)
-    setTimeout(() => {
-      sendingRunRequest.current = false
-    }, RUN_REQUEST_DEBOUNCE_MS)
+    sendRunRequestOnce(() => handleRunPipeline(name))
     setDialogOpen(false)
   }
   const onClickCancel = () => {
@@ -310,7 +309,6 @@ export const RunButtons = memo(function RunButtons(
         handleRun={onClickDialogRun}
         handleClose={() => setDialogOpen(false)}
       />
-      {/* Case 39 fix: Confirmation dialog when storage check fails */}
       <StorageCheckFailedDialog
         open={storageCheckFailedDialogOpen}
         onProceed={handleStorageCheckFailedProceed}

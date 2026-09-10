@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_pagination import LimitOffsetPage
 from sqlmodel import Session
 
@@ -90,6 +90,17 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_admin_user),
 ):
+    # The deletion pipeline drops the Firebase account first, so an admin who
+    # reaches it with their own id destroys their own login mid-request.
+    if user_id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "An admin cannot delete their own account here. "
+                "Use the account settings page instead."
+            ),
+        )
+
     return await crud_users.delete_user(
         db, user_id, organization_id=current_admin.organization.id
     )

@@ -38,7 +38,8 @@ export const logout = async ({
   const setLoggingOut = await getSetLoggingOut()
   setLoggingOut(true)
 
-  // Call backend logout endpoint for free tier users (fire and forget).
+  // Call backend logout endpoint for free tier users (awaited; the API call
+  // itself is bounded by API_TIMEOUT.LOGOUT).
   // Skip for premium users - they have their own release mechanism.
   // skipBackendLogout is set by the premium-expiry auto-logout path, which
   // already releases the instance via sendBeacon; by then routingInfo reports
@@ -103,6 +104,8 @@ const PUBLIC_ROUTES = [
   /^\/account-deleted$/,
   /^\/subscription\/thanks$/, // Checkout success - validates via session_id
   /^\/subscription\/failed$/, // Checkout failed - validates via session_id
+  /^\/terms$/,
+  /^\/privacy$/,
 ]
 
 export const isPublicRoute = (pathname: string): boolean => {

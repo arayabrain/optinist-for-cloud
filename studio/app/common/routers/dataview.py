@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import List, Optional, Sequence, Tuple
 
@@ -14,9 +15,11 @@ from studio.app.common.core.dataview.dataview_services import (
     DataviewService,
     PublishValidator,
 )
+from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteExperimentNotFoundError,
+    RemoteExperimentSyncMode,
     RemoteStorageController,
     RemoteStorageDownloadUtils,
     RemoteStorageLockError,
@@ -47,6 +50,10 @@ router = APIRouter(tags=["Dataview"], prefix="/api/dataview")
 public_router = APIRouter(tags=["Dataview"], prefix="/api/public/dataview")
 
 logger = AppLogger.get_logger()
+
+# Max concurrent S3 pre-sync operations during bulk publish (bounds the
+# per-request fan-out of RemoteStorageReader clients on one uvicorn process).
+PUBLISH_PRESYNC_CONCURRENCY = 8
 
 
 RECORDS_SORT_MAPPING = {
@@ -104,23 +111,25 @@ def get_records_filtered_query(
 ) -> Select:
     if options.uid:
         query = query.filter(
-            models.ExperimentRecord.uid.like("%{0}%".format(options.uid))
+            models.ExperimentRecord.uid.contains(options.uid, autoescape=True)
         )
 
     if options.name:
         query = query.filter(
-            models.ExperimentRecord.name.like("%{0}%".format(options.name))
+            models.ExperimentRecord.name.contains(options.name, autoescape=True)
         )
 
     if options.user_name:
-        query = query.filter(models.User.name.like("%{0}%".format(options.user_name)))
+        query = query.filter(
+            models.User.name.contains(options.user_name, autoescape=True)
+        )
 
     if options.workspace_id:
         query = query.filter(models.Workspace.id == int(options.workspace_id))
 
     if options.workspace_name:
         query = query.filter(
-            models.Workspace.name.like("%{0}%".format(options.workspace_name))
+            models.Workspace.name.contains(options.workspace_name, autoescape=True)
         )
 
     if options.publish_status is not None:
@@ -264,6 +273,38 @@ async def public_reproduce_experiment(
         unique_id=unique_id,
     )
     if not display_validation.is_displayable:
+        # A 'synced' row that won't display may have lost its files from S3 after
+        # publishing; confirm on S3 and demote so the background sync job re-checks it.
+        if (
+            RemoteStorageController.is_available()
+            and hasattr(record, "local_sync_status")
+            and record.local_sync_status == LocalSyncStatus.synced.value
+        ):
+            bucket = _resolve_workspace_remote_bucket_name(db, workspace_id)
+            exists = None
+            s3_error = None
+            if bucket:
+                exists, s3_error = await _validate_experiment_exists_in_s3(
+                    workspace_id, unique_id, bucket
+                )
+            if exists is False:
+                logger.error(
+                    f"Experiment {workspace_id}/{unique_id} marked synced but not "
+                    f"present in S3 ({s3_error}); demoting to error"
+                )
+                db.execute(
+                    update(models.ExperimentRecord)
+                    .where(models.ExperimentRecord.id == record.id)
+                    .where(
+                        models.ExperimentRecord.publish_status == PublishStatus.on.value
+                    )
+                    .where(
+                        models.ExperimentRecord.local_sync_status
+                        == LocalSyncStatus.synced.value
+                    )
+                    .values(local_sync_status=LocalSyncStatus.error.value)
+                )
+                db.commit()
         # Data is not available locally - check if we should return pending or error
         if hasattr(record, "local_sync_status"):
             if record.local_sync_status == LocalSyncStatus.pending.value:
@@ -340,6 +381,83 @@ def _resolve_workspace_remote_bucket_name(db: Session, workspace_id: str) -> str
     return owner_bucket or os.environ.get("S3_DEFAULT_BUCKET_NAME")
 
 
+def _local_config_can_publish(workspace_id: str, unique_id: str) -> bool:
+    """Whether the local experiment.yaml already passes publish validation.
+
+    Uses the same PublishValidator the handler uses, so the pre-sync skip
+    condition matches the validator's notion of "valid" (a config that merely
+    parses may still be missing required fields or be stale).
+    """
+    return PublishValidator.validate(
+        workspace_id=workspace_id,
+        unique_id=unique_id,
+        user_has_s3_bucket=True,
+        check_files_on_disk=True,
+    ).can_publish
+
+
+async def _sync_experiment_config_for_publish(
+    workspace_id: str, unique_id: str, remote_bucket_name: str
+) -> None:
+    """
+    Sync metadata from S3 so publish validation reads a valid experiment.yaml.
+
+    Repairs a local config that is missing or fails validation (empty stub,
+    missing required fields, stale success state) by downloading fresh metadata
+    from S3. An existing invalid config is moved aside first (the download skips
+    files that already exist) and restored if the download produces nothing, so
+    the only local copy is never lost when S3 has no replacement.
+
+    Best-effort: any failure is logged and swallowed. If the experiment cannot
+    be synced the local config is left as-is and PublishValidator.validate
+    reports the real 400. The caller resolves the bucket, so this helper does no
+    DB access (safe to run concurrently over one Session via asyncio.gather).
+    """
+    if not RemoteStorageController.is_available() or not remote_bucket_name:
+        return
+
+    try:
+        config_path = ExptConfigReader.get_config_yaml_path(workspace_id, unique_id)
+
+        # Skip when the local config already passes publish validation.
+        if os.path.exists(config_path) and _local_config_can_publish(
+            workspace_id, unique_id
+        ):
+            return
+
+        # Move an existing (invalid) config aside so the download re-fetches it,
+        # keeping a backup to restore if the download yields no replacement.
+        backup_path = None
+        if os.path.exists(config_path):
+            backup_path = f"{config_path}.bak"
+            try:
+                os.replace(config_path, backup_path)
+            except FileNotFoundError:
+                # Raced with another remover; nothing to move.
+                backup_path = None
+
+        try:
+            async with RemoteStorageReader(
+                remote_bucket_name,
+                workspace_id,
+                unique_id,
+                sync_mode=RemoteExperimentSyncMode.METADATA_ONLY,
+            ) as controller:
+                await controller.download_experiment_meta(workspace_id, unique_id)
+        finally:
+            # Discard the backup on a successful download; restore it otherwise.
+            if backup_path and os.path.exists(backup_path):
+                if os.path.exists(config_path):
+                    os.remove(backup_path)
+                else:
+                    os.replace(backup_path, config_path)
+    except Exception as e:
+        logger.warning(
+            f"Publish pre-sync failed for {workspace_id}/{unique_id}: {e}",
+            exc_info=True,
+        )
+
+
 async def _ensure_experiment_downloaded(
     db: Session, workspace_id: str, unique_id: str
 ) -> Optional[JSONResponse]:
@@ -394,7 +512,7 @@ async def _ensure_experiment_downloaded(
 
 async def _validate_experiment_exists_in_s3(
     workspace_id: str, unique_id: str, bucket_name: str
-) -> Tuple[bool, Optional[str]]:
+) -> Tuple[Optional[bool], Optional[str]]:
     """
     Check if experiment data exists in S3.
 
@@ -404,26 +522,17 @@ async def _validate_experiment_exists_in_s3(
         bucket_name: The S3 bucket name
 
     Returns:
-        Tuple of (exists, error_message). If exists is True, error_message is None.
+        Tuple of (exists, error_message):
+        - True: data confirmed present (error_message is None)
+        - False: data confirmed absent
+        - None: could not check (transient/S3 error) - caller must not treat as absent
     """
     if not RemoteStorageController.is_available():
         return True, None  # Skip validation if S3 not configured
 
-    s3_controller = S3StorageController(bucket_name)
-    s3_path = S3StorageController.make_s3_output_prefix(workspace_id, unique_id)
-
-    try:
-        async with s3_controller._S3StorageController__get_s3_client() as client:
-            result = await client.list_objects_v2(
-                Bucket=bucket_name, Prefix=s3_path, MaxKeys=5
-            )
-            if result.get("KeyCount", 0) == 0:
-                return False, f"No data found in S3 for {workspace_id}/{unique_id}"
-    except Exception as e:
-        logger.error(f"S3 validation error for {workspace_id}/{unique_id}: {e}")
-        return False, f"Could not verify S3 data: {str(e)}"
-
-    return True, None
+    return await S3StorageController(bucket_name).experiment_prefix_exists(
+        workspace_id, unique_id
+    )
 
 
 @router.get(
@@ -489,6 +598,18 @@ async def publish_dataview_records(
 
             # Validate publish eligibility when publishing
             if flag == PublishFlags.on:
+                # Repair missing/stub local config from S3 before validating.
+                # Guard on is_available() so the bucket lookup (a DB join) is
+                # skipped when remote storage is off.
+                if RemoteStorageController.is_available():
+                    await _sync_experiment_config_for_publish(
+                        str(record.workspace_id),
+                        record.uid,
+                        _resolve_workspace_remote_bucket_name(
+                            db, str(record.workspace_id)
+                        ),
+                    )
+
                 validation = PublishValidator.validate(
                     workspace_id=str(record.workspace_id),
                     unique_id=record.uid,
@@ -496,6 +617,14 @@ async def publish_dataview_records(
                     check_files_on_disk=True,
                 )
                 if not validation.can_publish:
+                    logger.warning(
+                        "Publish rejected for experiment %s (%s/%s, name=%s): %s",
+                        record.id,
+                        record.workspace_id,
+                        record.uid,
+                        record.name,
+                        validation.reason,
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=validation.reason,
@@ -613,7 +742,7 @@ async def publish_dataview_records(
 - Validates each record before publishing; fails if any record cannot be published
 """,
 )
-def multiple_publish_dataview_records(
+async def multiple_publish_dataview_records(
     ids: List[int],
     flag: PublishFlags,
     db: Session = Depends(get_db),
@@ -629,15 +758,54 @@ def multiple_publish_dataview_records(
                 "for your account. Please contact support to enable publishing.",
             )
 
-        # Validate each record
-        failed_records = []
+        # Resolve owned records once, de-duplicating ids (select-all across
+        # pages can repeat ids; duplicates would collide on the sync lock file).
+        owned_records = []
+        seen_ids = set()
         for record_id in ids:
+            if record_id in seen_ids:
+                continue
+            seen_ids.add(record_id)
             record = DataviewService.find_user_owned_dataview_record(
                 db, record_id, current_user.id
             )
-            if not record:
-                continue  # Skip records not owned by user
+            if record:
+                owned_records.append((record_id, record))
 
+        # Repair missing/stub local config from S3 before validating.
+        # Guarded on is_available() so bucket lookups (DB joins) are skipped when
+        # remote storage is off.
+        if RemoteStorageController.is_available():
+            # Resolve the owner bucket once per workspace (bulk is typically a
+            # single workspace) and keep DB access out of the gathered coroutines.
+            bucket_by_workspace = {}
+            for _, record in owned_records:
+                ws_id = str(record.workspace_id)
+                if ws_id not in bucket_by_workspace:
+                    bucket_by_workspace[ws_id] = _resolve_workspace_remote_bucket_name(
+                        db, ws_id
+                    )
+
+            # Bound the fan-out of concurrent RemoteStorageReader clients.
+            semaphore = asyncio.Semaphore(PUBLISH_PRESYNC_CONCURRENCY)
+
+            async def _bounded_sync(record):
+                async with semaphore:
+                    await _sync_experiment_config_for_publish(
+                        str(record.workspace_id),
+                        record.uid,
+                        bucket_by_workspace[str(record.workspace_id)],
+                    )
+
+            # return_exceptions keeps one record's failure from aborting the batch.
+            await asyncio.gather(
+                *(_bounded_sync(record) for _, record in owned_records),
+                return_exceptions=True,
+            )
+
+        # Validate each record
+        failed_records = []
+        for record_id, record in owned_records:
             validation = PublishValidator.validate(
                 workspace_id=str(record.workspace_id),
                 unique_id=record.uid,
@@ -654,6 +822,14 @@ def multiple_publish_dataview_records(
                 )
 
         if failed_records:
+            logger.warning(
+                "Bulk publish rejected %d record(s): %s",
+                len(failed_records),
+                "; ".join(
+                    f"{rec['name']} ({rec['id']}): {rec['reason']}"
+                    for rec in failed_records
+                ),
+            )
             # Return error with details about which records failed
             detail = "Some experiments cannot be published:\n"
             for rec in failed_records[:5]:  # Limit to first 5

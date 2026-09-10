@@ -5,6 +5,7 @@ import {
   combineReducers,
 } from "@reduxjs/toolkit"
 
+import { analyticsMiddleware } from "store/analyticsMiddleware"
 import {
   algorithmListReducer,
   algorithmNodeReducer,
@@ -67,7 +68,7 @@ export const store = configureStore({
       // Ignore serializable checks because serializing fails
       // on rejectedWith value
       serializableCheck: false,
-    }),
+    }).concat(analyticsMiddleware),
 })
 
 export type AppDispatch = typeof store.dispatch

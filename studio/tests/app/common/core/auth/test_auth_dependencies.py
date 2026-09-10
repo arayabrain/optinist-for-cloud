@@ -2,17 +2,25 @@
 Unit tests for auth dependencies, specifically for public outputs bucket resolution.
 """
 
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from studio.app.common.core.auth.auth_dependencies import (
+    _enrich_user_with_subscription_status,
     _get_user_remote_bucket_name,
     get_current_user_for_dataview_outputs,
     get_current_user_with_dataview_outputs_check,
     get_outputs_remote_bucket_name,
 )
+from studio.app.common.core.subscription.constants import (
+    PlanName,
+    SubscriptionPlanIds,
+    SubscriptionStatus,
+)
+from studio.app.common.core.utils.datetime_utils import get_current_datetime
 
 
 def create_mock_request(url_path: str, query_params: dict = None):
@@ -575,3 +583,36 @@ class TestOutputsAuthReleasesConnection:
 
         assert result == mock_user
         mock_db.close.assert_called_once()
+
+
+class TestEnrichUserWithSubscriptionStatus:
+    """The /users/me enrichment, at the two points it used to get wrong.
+
+    `subscription_expiration` was set by crud_users but not here, so the same
+    account reported an expiration on /api/subsc/mgmts and null on /users/me;
+    and the status came from a truncated day count, so a paying user under 24
+    hours from renewal read as being in the grace period.
+    """
+
+    @staticmethod
+    def _enrich(expiration):
+        user = SimpleNamespace(__dict__={})
+        _enrich_user_with_subscription_status(
+            user, expiration, SubscriptionPlanIds.PREMIUM, PlanName.PREMIUM.value
+        )
+        return user.__dict__
+
+    def test_users_me_carries_the_expiration(self):
+        expiration = get_current_datetime() + timedelta(days=5)
+        assert self._enrich(expiration)["subscription_expiration"] == expiration
+
+    def test_paying_user_inside_the_final_day_is_still_premium(self):
+        fields = self._enrich(get_current_datetime() + timedelta(hours=23))
+        assert fields["subscription_status"] == SubscriptionStatus.PREMIUM.value
+        assert fields["subscription_days_remaining"] == 1
+
+    def test_free_user_carries_a_null_expiration_rather_than_omitting_it(self):
+        user = SimpleNamespace(__dict__={})
+        _enrich_user_with_subscription_status(user, None, None, None)
+        assert user.__dict__["subscription_expiration"] is None
+        assert user.__dict__["subscription_status"] == SubscriptionStatus.FREE.value

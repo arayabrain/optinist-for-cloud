@@ -5,10 +5,10 @@ import signal
 import time
 from abc import ABCMeta, abstractmethod
 from dataclasses import asdict
-from datetime import datetime
 from glob import glob
 from typing import Dict, List
 
+import yaml
 from fastapi import HTTPException, status
 from psutil import AccessDenied, NoSuchProcess, Process, ZombieProcess, process_iter
 
@@ -27,6 +27,7 @@ from studio.app.common.core.utils.datetime_utils import (
     TIMEZONE_KEY,
     datetime_from_timestamp,
     get_datetime_for_timezone_formatted,
+    parse_datetime_for_timezone,
 )
 from studio.app.common.core.utils.filepath_creater import (
     join_filepath,
@@ -70,10 +71,22 @@ class WorkflowResult:
           - Check and update the workflow execution status
           - Response with the confirmed workflow execution status
         """
-        expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
-
         # validate args
         if not observe_node_ids:
+            return {}
+
+        try:
+            expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
+        except (AssertionError, ValueError, KeyError, yaml.YAMLError):
+            # No usable status yet, which during polling is not an error: the
+            # process can die before writing one, or mid-write and leave a torn
+            # file. Answering no results keeps the poller polling rather than
+            # 500ing in a loop. observe_overall() deliberately does not do this -
+            # at finalization an unreadable config is a real failure.
+            logger.debug(
+                f"experiment.yaml is missing or unreadable: "
+                f"[{self.workspace_id}/{self.unique_id}]"
+            )
             return {}
 
         # check for workflow errors
@@ -525,8 +538,11 @@ class WorkflowMonitor:
             # Refer experiment_data instead of pid_data
             expt_config = ExptConfigReader.read(self.workspace_id, self.unique_id)
             try:
-                expt_started_time = datetime.strptime(
-                    expt_config.started_at, DATE_FORMAT
+                # Read back in the zone it was written in: a naive parse resolves
+                # against the container's TZ, inflating elapsed_time by that
+                # offset and expiring the startup grace on the very first poll
+                expt_started_time = parse_datetime_for_timezone(
+                    expt_config.started_at, DATE_FORMAT, expt_config.timezone
                 )
             except ValueError:
                 expt_started_time = datetime_from_timestamp(0)

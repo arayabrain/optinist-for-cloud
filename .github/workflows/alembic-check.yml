@@ -1,0 +1,25 @@
+name: Alembic Check
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - develop-main
+      - future
+      - "future/**"
+    paths:
+      - "studio/app/common/models/**"
+      - "studio/alembic/**"
+      - "docker-compose.alembic-check.yml"
+      - ".github/workflows/alembic-check.yml"
+
+jobs:
+  alembic_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run alembic check
+        shell: bash
+        run: make alembic_check

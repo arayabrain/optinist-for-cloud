@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
+from typing import Type, TypeVar
 
 from fastapi import HTTPException
 from fastapi_pagination.ext.sqlmodel import paginate
 from firebase_admin import auth as firebase_auth
-from firebase_admin.auth import UserNotFoundError, UserRecord
+from firebase_admin.auth import EmailAlreadyExistsError, UserNotFoundError, UserRecord
 from firebase_admin.exceptions import FirebaseError
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from studio.app.common.core.auth.auth import authenticate_user
@@ -20,14 +22,13 @@ from studio.app.common.core.subscription.constants import (
     PlanName,
     StorageQuota,
     StorageSize,
-    SubscriptionPeriods,
     SubscriptionPlanIds,
-    SubscriptionStatus,
 )
 from studio.app.common.core.subscription.stripe_service import StripeService
 from studio.app.common.core.subscription.subscription_service import (
     SubscriptionService,
     SubscriptionUserStatus,
+    derive_subscription_status,
 )
 from studio.app.common.core.utils.datetime_utils import get_current_datetime
 from studio.app.common.core.workspace.workspace_services import WorkspaceService
@@ -114,44 +115,16 @@ def _transform_user_row(item) -> UserModel:
 
     user.__dict__["subscription_expiration"] = subscription_expiration
 
-    # Calculate subscription status and days remaining
-    now = get_current_datetime()
-    if subscription_expiration and subscription_plan_id:
-        # Make sure expiration is timezone-aware
-        if subscription_expiration.tzinfo is None:
-            subscription_expiration = subscription_expiration.replace(
-                tzinfo=timezone.utc
-            )
-
-        days_remaining = (subscription_expiration - now).days
-
-        if subscription_plan_id == SubscriptionPlanIds.FREE:
-            user.__dict__["subscription_status"] = SubscriptionStatus.FREE.value
-            user.__dict__["subscription_days_remaining"] = None
-        elif subscription_plan_id == SubscriptionPlanIds.PREMIUM:
-            if days_remaining > 0:
-                user.__dict__["subscription_status"] = SubscriptionStatus.PREMIUM.value
-                user.__dict__["subscription_days_remaining"] = days_remaining
-            elif days_remaining >= -SubscriptionPeriods.GRACE_PERIOD_DAYS:
-                user.__dict__[
-                    "subscription_status"
-                ] = SubscriptionStatus.LIMIT_GRACE.value
-                user.__dict__["subscription_days_remaining"] = (
-                    SubscriptionPeriods.GRACE_PERIOD_DAYS + days_remaining
-                )  # Days left in grace period
-            else:
-                user.__dict__["subscription_status"] = SubscriptionStatus.EXPIRED.value
-                user.__dict__["subscription_days_remaining"] = None
-        else:
-            user.__dict__["subscription_status"] = (
-                subscription_plan_name or PlanName.UNKNOWN.value
-            )
-            user.__dict__["subscription_days_remaining"] = (
-                days_remaining if days_remaining > 0 else None
-            )
-    else:
-        user.__dict__["subscription_status"] = SubscriptionStatus.FREE.value
-        user.__dict__["subscription_days_remaining"] = None
+    # One derivation, shared with crud_users: this block existed twice, so the
+    # day-truncation bug it used to carry existed twice too.
+    status, days_remaining = derive_subscription_status(
+        subscription_expiration,
+        subscription_plan_id,
+        subscription_plan_name,
+        get_current_datetime(),
+    )
+    user.__dict__["subscription_status"] = status
+    user.__dict__["subscription_days_remaining"] = days_remaining
 
     return user
 
@@ -254,6 +227,16 @@ async def get_user_with_context(db: Session, user_id: int) -> User:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# Both role columns live on joined tables while the list query groups by
+# users.id, so they have to be ordered by an aggregate: MySQL's
+# only_full_group_by rejects a bare joined column here (1055) and the request
+# fails outright. min() matches the role_id the query already selects.
+USER_LIST_SORT_MAPPING = {
+    "role_id": func.min(UserRoleModel.role_id),
+    "role": func.min(RoleModel.role),
+}
+
+
 async def list_user(
     db: Session,
     organization_id: int,
@@ -270,7 +253,7 @@ async def list_user(
     try:
         sa_sort_list = sortOptions.get_sa_sort_list(
             sa_table=UserModel,
-            mapping={"role_id": UserRoleModel.role_id, "role": RoleModel.role},
+            mapping=USER_LIST_SORT_MAPPING,
         )
         users = paginate(
             db,
@@ -299,8 +282,8 @@ async def list_user(
                 UserModel.organization_id == organization_id,
             )
             .filter(
-                UserModel.name.like("%{0}%".format(options.name)),
-                UserModel.email.like("%{0}%".format(options.email)),
+                UserModel.name.contains(options.name, autoescape=True),
+                UserModel.email.contains(options.email, autoescape=True),
             )
             .group_by(UserModel.id)
             .order_by(*sa_sort_list),
@@ -340,9 +323,12 @@ async def create_user(
                 f"Firebase error during user creation: {error_code} - {error_message}"
             )
 
-            # Map Firebase error codes to user-friendly messages
+            # Map Firebase error codes to user-friendly messages. The SDK
+            # raises the typed error with code ALREADY_EXISTS, so the string
+            # checks alone never match a real duplicate.
             if (
-                error_code == "EMAIL_ALREADY_EXISTS"
+                isinstance(firebase_error, EmailAlreadyExistsError)
+                or error_code == "EMAIL_ALREADY_EXISTS"
                 or "email-already-exists" in error_message.lower()
             ):
                 raise HTTPException(
@@ -548,6 +534,30 @@ async def update_user(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+_UniqueRow = TypeVar("_UniqueRow")
+
+
+def _insert_or_reselect(
+    db: Session, row: _UniqueRow, model: Type[_UniqueRow], user_id: int
+) -> _UniqueRow:
+    """Insert ``row`` (a UserSubscription or UserStorageUsage instance) inside a
+    SAVEPOINT. Both tables are unique on user_id, so a concurrent writer can win
+    the race; on conflict, re-select and return the existing row instead of
+    surfacing a 500."""
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+        return row
+    except IntegrityError:
+        existing = (
+            db.query(model).filter(model.user_id == user_id).with_for_update().first()
+        )
+        if existing is None:
+            raise
+        return existing
+
+
 async def update_user_subscription_admin(
     db: Session,
     user_id: int,
@@ -575,46 +585,96 @@ async def update_user_subscription_admin(
             raise HTTPException(
                 status_code=400, detail=f"Invalid plan_id: {data.plan_id}"
             )
+        if data.plan_id == SubscriptionPlanIds.PREMIUM and data.expiration is None:
+            raise HTTPException(
+                status_code=400, detail="expiration is required for the premium plan"
+            )
 
         subscription = (
             db.query(UserSubscription)
             .filter(UserSubscription.user_id == user_id)
             .first()
         )
-        if subscription is None:
-            raise HTTPException(
-                status_code=400, detail="User has no subscription record"
-            )
+        subscription_existed = subscription is not None
 
         storage = (
             db.query(UserStorageUsage)
             .filter(UserStorageUsage.user_id == user_id)
             .first()
         )
-        if storage is None:
-            raise HTTPException(status_code=400, detail="User has no storage record")
+        storage_existed = storage is not None
 
-        # Capture old values before applying changes
-        # Normalize expiration to UTC ISO string for consistent audit format
+        # These rows should already exist from signup provisioning; the admin
+        # path materializing them repairs a state that "shouldn't happen", so
+        # surface it in case rows are going missing from a systemic cause.
+        if not subscription_existed or not storage_existed:
+            missing = [
+                name
+                for name, existed in (
+                    ("subscription_users", subscription_existed),
+                    ("user_storage_usage", storage_existed),
+                )
+                if not existed
+            ]
+            logger.warning(
+                "Admin subscription update creating missing %s row(s) for user %s",
+                ", ".join(missing),
+                user_id,
+            )
+
+        # Capture old values before applying changes.
+        # A missing row is recorded as None so the audit reflects that the
+        # record was created rather than edited.
+        old_plan_id = None
         old_expiration_str = None
-        if subscription.expiration:
-            old_exp = subscription.expiration
-            if old_exp.tzinfo is None:
-                old_exp = old_exp.replace(tzinfo=timezone.utc)
-            old_expiration_str = old_exp.isoformat()
+        if subscription_existed:
+            old_plan_id = subscription.plan_id
+            # Normalize expiration to UTC ISO string for consistent audit format
+            if subscription.expiration:
+                old_exp = subscription.expiration
+                if old_exp.tzinfo is None:
+                    old_exp = old_exp.replace(tzinfo=timezone.utc)
+                old_expiration_str = old_exp.isoformat()
 
         old_value = SubscriptionAuditSnapshot(
-            plan_id=subscription.plan_id,
+            plan_id=old_plan_id,
             expiration=old_expiration_str,
-            storage_quota_bytes=storage.storage_quota_bytes,
+            storage_quota_bytes=(
+                storage.storage_quota_bytes if storage_existed else None
+            ),
         )
 
         # Apply changes
         # For Free plan, expiration is not meaningful — default to now
         expiration = data.expiration or datetime.now(timezone.utc)
+        # This admin repair path does not provision an S3 bucket; it only fixes
+        # subscription/quota rows. A user missing these rows in practice already
+        # has a bucket from signup. Add ensure_user_bucket_exists here if that
+        # assumption ever stops holding.
+        if not subscription_existed:
+            subscription = _insert_or_reselect(
+                db,
+                UserSubscription(
+                    user_id=user_id, plan_id=data.plan_id, expiration=expiration
+                ),
+                UserSubscription,
+                user_id,
+            )
         subscription.plan_id = data.plan_id
         subscription.expiration = expiration
         subscription.scheduled_downgrade = False
+
+        if not storage_existed:
+            storage = _insert_or_reselect(
+                db,
+                UserStorageUsage(
+                    user_id=user_id,
+                    storage_usage_bytes=0,
+                    storage_quota_bytes=data.storage_quota_bytes,
+                ),
+                UserStorageUsage,
+                user_id,
+            )
         storage.storage_quota_bytes = data.storage_quota_bytes
 
         # Write audit log

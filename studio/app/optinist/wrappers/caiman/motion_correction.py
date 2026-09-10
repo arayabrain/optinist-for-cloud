@@ -62,7 +62,10 @@ def caiman_mc(
     mmap_file_new = save_memmap(
         mc.mmap_file, base_name=function_id, order="C", border_to_0=border_to_0
     )
-    stop_server(dview=dview)
+    # In single-thread mode dview is None and there is no cluster to stop;
+    # stop_server() would shell out to a nonexistent `ipcluster` and log errors.
+    if dview is not None:
+        stop_server(dview=dview)
 
     # now load the file
     Yr, dims, T = load_memmap(mmap_file_new)

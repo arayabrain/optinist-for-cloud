@@ -5,9 +5,11 @@ Runs every hour, deletes data for users logged out >1 hour ago.
 
 COMPREHENSIVE SAFETY CHECKS:
 1. Only processes users with active_workflow_count = 0 (no running workflows)
-2. Verifies S3 backup exists before deleting experiment outputs
+2. Verifies S3 backup exists before deleting experiment outputs AND input data
 3. Keeps local data if S3 verification fails (prevents data loss)
-4. Always deletes input data (already backed up to S3 on upload)
+4. Deletes an assignment only after this instance actually removed its local
+   data; "no local data on this instance" never closes a record, so cleanup
+   on another instance can never orphan data
 
 This ensures:
 - No data deletion while workflows are running (even long 2+ hour workflows)
@@ -18,7 +20,8 @@ This ensures:
 import os
 import shutil
 from datetime import timedelta
-from typing import List, Tuple
+from enum import Enum
+from typing import List, Optional, Tuple
 
 from sqlalchemy import func, update
 from sqlmodel import select
@@ -28,6 +31,7 @@ from studio.app.common.core.storage.s3_storage_controller import S3StorageContro
 from studio.app.common.core.subscription.constants import SyncStatusConstants
 from studio.app.common.core.utils.datetime_utils import get_current_datetime
 from studio.app.common.core.utils.filepath_creater import join_filepath
+from studio.app.common.core.utils.instance_utils import resolve_instance_id
 from studio.app.common.db.database import session_scope
 from studio.app.common.models import (
     FreeUserAssignment,
@@ -41,8 +45,47 @@ from studio.app.dir_path import DIRPATH
 logger = AppLogger.get_logger()
 
 
+class CleanupOutcome(Enum):
+    """Outcome of attempting to clean up one user's local data.
+
+    - ``CLEANED``: local data was removed; the assignment may be closed.
+    - ``KEPT``: nothing was closed on purpose — no local data on this instance,
+      or the user logged back in. A routine, expected outcome, NOT an error.
+    - ``ERROR``: cleanup could not complete safely — an unexpected exception, or
+      data retained because its S3 backup could not be verified (an actionable
+      condition worth alerting on; the local disk is not being reclaimed).
+    """
+
+    CLEANED = "cleaned"
+    KEPT = "kept"
+    ERROR = "error"
+
+
 class DataCleanupJob:
     """Background job to clean up data for logged-out free users"""
+
+    # Cache the resolved instance id (constant for a process lifetime) to
+    # avoid repeating IMDS round-trips when INSTANCE_ID is unset.
+    _instance_id_cache = None
+
+    # Whether the grace-less orphan sweep has been skipped once at startup.
+    # The first run now fires ~10s after boot (INITIAL_RUN_DELAY_SECONDS),
+    # inside the deploy window; skip orphan detection on that first run so a
+    # rolling deploy's instance handoff can complete before we sweep.
+    _orphan_sweep_warmup_done = False
+
+    @classmethod
+    def _get_current_instance_id(cls) -> str:
+        """Return the EC2 instance ID for the current host (cached).
+
+        Delegates to the shared ``resolve_instance_id`` (env → IMDSv2 →
+        IMDSv1 → "local") so the worker resolves the *same* id the
+        middleware writes into ``FreeUserAssignment.instance_id``; a
+        divergence would silently drop the per-instance cleanup filter.
+        """
+        if cls._instance_id_cache is None:
+            cls._instance_id_cache = resolve_instance_id()
+        return cls._instance_id_cache
 
     @classmethod
     async def run(cls):
@@ -53,11 +96,28 @@ class DataCleanupJob:
         3. Delete user's workspace data from local storage
         4. Mark data as cleaned in database
         """
-        logger.info("Starting data cleanup job for logged-out free users")
+        instance_id = cls._get_current_instance_id()
+        logger.info(
+            f"Starting data cleanup job for logged-out free users "
+            f"(instance: {instance_id})"
+        )
 
         try:
-            # First, handle orphaned data from terminated instances
-            cls._handle_orphaned_data()
+            # Handle orphaned data only on the background service.
+            # Free-tier cleanup workers (ENABLE_LOCAL_CLEANUP=1) should not
+            # run orphan detection — that responsibility stays with the
+            # background service which has EC2 describe permissions.
+            if os.environ.get("ENABLE_LOCAL_CLEANUP") != "1":
+                # Defer the grace-less sweep past the first (startup) run so it
+                # does not delete assignments for an instance still handing off
+                # during a rolling deploy. Resumes on the next interval.
+                if cls._orphan_sweep_warmup_done:
+                    cls._handle_orphaned_data()
+                else:
+                    cls._orphan_sweep_warmup_done = True
+                    logger.info(
+                        "Skipping orphaned-data sweep on first run (startup warm-up)"
+                    )
 
             # Get users eligible for cleanup
             users_to_cleanup = cls._get_users_for_cleanup()
@@ -71,6 +131,7 @@ class DataCleanupJob:
             # Clean up each user
             cleaned_count = 0
             error_count = 0
+            kept_count = 0
 
             for user_id, workspace_ids in users_to_cleanup:
                 try:
@@ -81,17 +142,20 @@ class DataCleanupJob:
                         )
                         continue
 
-                    success = cls._cleanup_user_data(user_id, workspace_ids)
+                    outcome = cls._cleanup_user_data(user_id, workspace_ids)
 
-                    if success:
+                    if outcome == CleanupOutcome.CLEANED:
                         # Re-check workflow count and re-login before marking cleaned
                         # Prevents race condition where workflow/login during cleanup
                         if cls._check_user_relogin(user_id):
-                            logger.warning(
+                            # User returned during cleanup — a routine event, not
+                            # an error (same bucket as the relogin abort inside
+                            # _cleanup_user_data).
+                            logger.info(
                                 f"Skipping cleanup completion for user {user_id}: "
                                 f"user logged back in during cleanup"
                             )
-                            error_count += 1
+                            kept_count += 1
                         elif cls._verify_no_active_workflows(user_id):
                             cls._mark_cleaned(user_id)
                             cleaned_count += 1
@@ -101,6 +165,10 @@ class DataCleanupJob:
                                 f"workflow started during cleanup"
                             )
                             error_count += 1
+                    elif outcome == CleanupOutcome.KEPT:
+                        # Nothing closed on purpose (no local data here, or the
+                        # user returned). Expected, not an error.
+                        kept_count += 1
                     else:
                         error_count += 1
 
@@ -112,11 +180,11 @@ class DataCleanupJob:
 
             logger.info(
                 f"Cleanup job completed: {cleaned_count} users cleaned, "
-                f"{error_count} errors"
+                f"{kept_count} kept, {error_count} errors"
             )
 
             # Publish CloudWatch metrics
-            cls._publish_metrics(cleaned_count, error_count)
+            cls._publish_metrics(cleaned_count, error_count, kept_count)
 
         except Exception as e:
             logger.error(f"Fatal error in cleanup job: {e}", exc_info=True)
@@ -155,8 +223,20 @@ class DataCleanupJob:
                 .where(FreeUserAssignment.active_workflow_count == 0)
                 .where(User.active == 1)
                 .where(Workspace.deleted == 0)
-                .group_by(FreeUserAssignment.user_id)
-                .limit(SyncStatusConstants.MAX_USERS_PER_RUN)
+            )
+
+            # Filter by instance_id so each cleanup worker only processes
+            # users assigned to *this* instance.  In local dev (no
+            # INSTANCE_ID env var) the filter is skipped for backward
+            # compatibility.
+            current_instance_id = cls._get_current_instance_id()
+            if current_instance_id != "local":
+                statement = statement.where(
+                    FreeUserAssignment.instance_id == current_instance_id
+                )
+
+            statement = statement.group_by(FreeUserAssignment.user_id).limit(
+                SyncStatusConstants.MAX_USERS_PER_RUN
             )
 
             result = db.execute(statement)
@@ -179,11 +259,132 @@ class DataCleanupJob:
             return users
 
     @classmethod
-    def _verify_s3_backup_exists(cls, workspace_id: str, experiment_id: str) -> bool:
+    def _resolve_user_bucket_name(cls, user_id: str) -> Optional[str]:
+        """
+        Resolve the S3 bucket that holds a user's experiment backups.
+
+        Experiment outputs live in a per-user bucket, not the shared
+        ``S3_DEFAULT_BUCKET_NAME``. Resolution order (most authoritative
+        first):
+
+        1. ``users.attributes.remote_bucket_name`` — the exact bucket the
+           upload path recorded on the user row.
+        2. ``create_user_bucket_name`` — the deterministic formula the writer
+           uses (needs ``S3_USER_BUCKET_PREFIX`` / ``S3_USER_BUCKET_SECRET``
+           to match).
+        3. ``S3_DEFAULT_BUCKET_NAME`` — legacy single-bucket deployments.
+
+        Returns the bucket name, or None if none could be resolved (caller
+        then keeps the data rather than risking deletion).
+        """
+        # 1) Authoritative: bucket recorded on the user row.
+        try:
+            with session_scope() as db:
+                result_row = db.execute(
+                    select(User).where(User.id == int(user_id))
+                ).first()
+                user = result_row[0] if result_row else None
+                if user and user.remote_bucket_name:
+                    return user.remote_bucket_name
+        except Exception as e:
+            logger.warning(f"Could not read remote_bucket_name for user {user_id}: {e}")
+
+        # 2) Deterministic fallback: same formula the writer uses.
+        try:
+            from studio.app.common.core.storage.remote_storage_controller import (
+                RemoteStorageController,
+            )
+
+            prefix = os.environ.get("S3_USER_BUCKET_PREFIX", "optinist-user")
+            return RemoteStorageController.create_user_bucket_name(
+                id=int(user_id), prefix=prefix
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not derive per-user bucket name for user {user_id}: {e}"
+            )
+
+        # 3) Last resort: legacy shared bucket.
+        return os.environ.get("S3_DEFAULT_BUCKET_NAME")
+
+    @classmethod
+    def _verify_s3_input_backup_exists(
+        cls, s3_bucket: Optional[str], workspace_id: str
+    ) -> bool:
+        """
+        Verify every local input file has an S3 backup before deletion.
+
+        Input uploads are pushed to S3 synchronously on the free-tier upload
+        path, but verify here (symmetric with experiment outputs) so a
+        failed/rolled-back upload can never cause silent input data loss.
+
+        Returns:
+            True only if the bucket resolves and every regular file under the
+            workspace input dir (excluding the ``.locks`` working dir) is
+            present in S3. False on any missing file or verification error.
+        """
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+
+            if not s3_bucket:
+                logger.warning(
+                    "No S3 bucket resolved for input verification; "
+                    "keeping data to prevent loss"
+                )
+                return False
+
+            input_dir = join_filepath([DIRPATH.INPUT_DIR, workspace_id])
+            if not os.path.isdir(input_dir):
+                return True
+
+            from studio.app.common.core.storage.remote_storage_controller import (
+                InputFileLock,
+            )
+
+            s3 = boto3.client("s3")
+            s3_prefix = (
+                f"{S3StorageController.S3_BASE_PATH}"
+                f"/{S3StorageController.S3_INPUT_DIR}/{workspace_id}/"
+            )
+
+            for root, dirs, files in os.walk(input_dir):
+                # Skip the per-file flock working dir; it is never uploaded.
+                dirs[:] = [d for d in dirs if d != InputFileLock.LOCKS_DIRNAME]
+                for filename in files:
+                    rel_path = os.path.relpath(os.path.join(root, filename), input_dir)
+                    s3_key = f"{s3_prefix}{rel_path}"
+                    try:
+                        s3.head_object(Bucket=s3_bucket, Key=s3_key)
+                    except ClientError as e:
+                        if e.response["Error"]["Code"] == "404":
+                            logger.warning(
+                                f"Input file not found in S3: {s3_key}. "
+                                f"Skipping deletion to prevent data loss."
+                            )
+                            return False
+                        raise
+
+            logger.debug(f"Verified S3 input backup exists for {workspace_id}")
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Error verifying S3 input backup for workspace {workspace_id}: {e}",
+                exc_info=True,
+            )
+            # If we can't verify, err on the side of caution and don't delete
+            return False
+
+    @classmethod
+    def _verify_s3_backup_exists(
+        cls, s3_bucket: Optional[str], workspace_id: str, experiment_id: str
+    ) -> bool:
         """
         Verify that experiment data exists in S3 before deleting from local storage.
 
         Args:
+            s3_bucket: The user's S3 bucket (see ``_resolve_user_bucket_name``)
             workspace_id: Workspace ID
             experiment_id: Experiment unique ID
 
@@ -194,10 +395,10 @@ class DataCleanupJob:
             import boto3
             from botocore.exceptions import ClientError
 
-            s3_bucket = os.environ.get("S3_DEFAULT_BUCKET_NAME")
             if not s3_bucket:
                 logger.warning(
-                    "S3_DEFAULT_BUCKET_NAME not set, skipping S3 verification"
+                    "No S3 bucket resolved for verification; "
+                    "keeping data to prevent loss"
                 )
                 return False
 
@@ -237,7 +438,9 @@ class DataCleanupJob:
             return False
 
     @classmethod
-    def _cleanup_user_data(cls, user_id: str, workspace_ids: List[str]) -> bool:
+    def _cleanup_user_data(
+        cls, user_id: str, workspace_ids: List[str]
+    ) -> CleanupOutcome:
         """
         Delete user's workspace data from local storage.
 
@@ -251,29 +454,64 @@ class DataCleanupJob:
             workspace_ids: List of workspace IDs to clean
 
         Returns:
-            True if ALL data was successfully cleaned, False if any data remains
-            or errors occurred
+            CleanupOutcome.CLEANED if all local data was removed (assignment may
+            be closed); CleanupOutcome.KEPT if nothing was closed on purpose (no
+            local data here, data intentionally retained pending S3
+            verification, or the user logged back in); CleanupOutcome.ERROR on
+            an unexpected failure. KEPT is a routine outcome, not an error.
         """
         logger.info(f"Cleaning up data for user {user_id}, workspaces: {workspace_ids}")
 
         fully_cleaned = True
+        data_found = False
+        had_error = False
         total_experiments_kept = 0
+
+        # Experiment outputs live in the user's own bucket, not the shared
+        # default bucket. Resolved lazily on first need and cached, so users
+        # with no output data incur no bucket lookup.
+        s3_bucket = None
+        s3_bucket_resolved = False
 
         for workspace_id in workspace_ids:
             # Check if user logged back in before processing workspace
             if cls._check_user_relogin(user_id):
                 logger.info(f"Aborting cleanup for user {user_id}: user logged back in")
-                return False
+                return CleanupOutcome.KEPT
             try:
-                # Clean input data (always safe to delete - user uploads are in S3)
+                # Clean input data. Uploads are pushed to S3 synchronously on
+                # the free-tier upload path, but verify the backup before
+                # deleting (symmetric with experiment outputs) so a failed or
+                # rolled-back upload can't cause silent data loss.
                 input_dir = join_filepath([DIRPATH.INPUT_DIR, workspace_id])
                 if os.path.exists(input_dir):
-                    logger.debug(f"Deleting input directory: {input_dir}")
-                    shutil.rmtree(input_dir)
+                    data_found = True
+
+                    # Resolve the user's bucket once (shared with outputs).
+                    if not s3_bucket_resolved:
+                        s3_bucket = cls._resolve_user_bucket_name(user_id)
+                        s3_bucket_resolved = True
+
+                    if cls._verify_s3_input_backup_exists(s3_bucket, workspace_id):
+                        logger.debug(f"Deleting input directory: {input_dir}")
+                        shutil.rmtree(input_dir)
+                    else:
+                        fully_cleaned = False
+                        logger.warning(
+                            f"Keeping input directory {input_dir} for user "
+                            f"{user_id} (S3 backup not verified)"
+                        )
 
                 # Clean output data (with S3 verification)
                 output_dir = join_filepath([DIRPATH.OUTPUT_DIR, workspace_id])
                 if os.path.exists(output_dir):
+                    data_found = True
+
+                    # Resolve the user's bucket once, on first output data.
+                    if not s3_bucket_resolved:
+                        s3_bucket = cls._resolve_user_bucket_name(user_id)
+                        s3_bucket_resolved = True
+
                     # Verify each experiment has S3 backup before deletion
                     experiments_to_delete = []
                     experiments_to_keep = []
@@ -286,7 +524,7 @@ class DataCleanupJob:
 
                             # Verify S3 backup exists
                             if cls._verify_s3_backup_exists(
-                                workspace_id, experiment_id
+                                s3_bucket, workspace_id, experiment_id
                             ):
                                 experiments_to_delete.append(experiment_id)
                             else:
@@ -332,6 +570,7 @@ class DataCleanupJob:
                     exc_info=True,
                 )
                 fully_cleaned = False
+                had_error = True
 
         if total_experiments_kept > 0:
             logger.warning(
@@ -339,7 +578,26 @@ class DataCleanupJob:
                 f"{total_experiments_kept} experiments kept (S3 backup not verified)"
             )
 
-        return fully_cleaned
+        # Check errors first so a genuine failure is never classified as KEPT.
+        if had_error:
+            return CleanupOutcome.ERROR
+
+        if not data_found:
+            # No local data here → KEEP the record (never treat as cleaned):
+            # instance_id is activity-driven, so a match doesn't prove the data
+            # was written here; closing would orphan real data on the owner.
+            # Worst case: reclaimable local disk (freed on recycle, or earlier
+            # if the user is active there before logout); S3 keeps a backup.
+            logger.info(
+                f"No local data for user {user_id} on this instance; "
+                f"keeping DB record (data may live on the owning instance)."
+            )
+            return CleanupOutcome.KEPT
+
+        # Data present: fully removed → CLEANED; otherwise some was retained
+        # (S3 backup unverified) → ERROR, not KEPT — an S3 outage / missing
+        # backup is actionable and the local disk is not reclaimed.
+        return CleanupOutcome.CLEANED if fully_cleaned else CleanupOutcome.ERROR
 
     @classmethod
     def _verify_no_active_workflows(cls, user_id: str) -> bool:
@@ -436,7 +694,12 @@ class DataCleanupJob:
     @classmethod
     def _cleanup_orphaned_assignment(cls, db, assignment: FreeUserAssignment):
         """
-        Clean up user data for an orphaned assignment (terminated instance).
+        Remove the DB record for an orphaned assignment (terminated instance).
+
+        When an EC2 instance is terminated its local EBS is destroyed, so
+        there is no filesystem data to clean up.  This method only removes
+        the stale ``FreeUserAssignment`` row and closes the open
+        ``InstanceUsageLog``.
 
         Args:
             db: Database session
@@ -446,32 +709,6 @@ class DataCleanupJob:
             True if cleanup successful, False otherwise
         """
         try:
-            # Only clean if no active workflows
-            if assignment.active_workflow_count != 0:
-                logger.info(
-                    f"Skipping cleanup for user {assignment.user_id}: "
-                    f"has {assignment.active_workflow_count} active workflows"
-                )
-                return False
-
-            # Get user's workspaces
-            from studio.app.common.models import User, Workspace
-
-            user = db.get(User, int(assignment.user_id))
-            if not user:
-                logger.warning(f"User {assignment.user_id} not found")
-                return False
-
-            workspaces_result = db.execute(
-                select(Workspace).where(
-                    Workspace.user_id == user.id,
-                    Workspace.deleted == 0,
-                )
-            ).all()
-
-            workspace_ids = [str(row[0].id) for row in workspaces_result]
-            cls._cleanup_user_data(assignment.user_id, workspace_ids)
-
             # Close usage log before deleting assignment
             db.execute(
                 update(InstanceUsageLog)
@@ -487,8 +724,9 @@ class DataCleanupJob:
             db.delete(assignment)
             db.commit()
             logger.info(
-                f"Cleaned orphaned data for user {assignment.user_id} "
-                f"from terminated instance"
+                f"Removed orphaned assignment for user {assignment.user_id} "
+                f"from terminated instance {assignment.instance_id} "
+                f"(EBS already destroyed, DB record only)"
             )
             return True
 
@@ -513,8 +751,10 @@ class DataCleanupJob:
             import boto3
             from botocore.exceptions import ClientError
 
-            # Get current instance ID
-            instance_id = os.environ.get("INSTANCE_ID")
+            # Get current instance ID via the shared resolver (env → IMDS →
+            # "local") so orphan detection uses the same id as the rest of the
+            # job rather than depending on INSTANCE_ID being exported.
+            instance_id = cls._get_current_instance_id()
             if not instance_id or instance_id == "local":
                 return
 
@@ -568,14 +808,22 @@ class DataCleanupJob:
             logger.error(f"Error handling orphaned data: {e}", exc_info=True)
 
     @classmethod
-    def _publish_metrics(cls, cleaned_count: int, error_count: int):
-        """Publish cleanup job metrics to CloudWatch"""
+    def _publish_metrics(cls, cleaned_count: int, error_count: int, kept_count: int):
+        """Publish cleanup job metrics to CloudWatch.
+
+        ``CleanupKept`` counts benign "keep the record" outcomes (no local data
+        on this instance, or the user returned) so they are not conflated with
+        ``CleanupErrors``. ``CleanupErrors`` stays the actionable-failure signal
+        and still includes S3-backup-unverified retention (data that could not
+        be safely deleted).
+        """
         try:
             import boto3
 
             cloudwatch = boto3.client("cloudwatch")
 
             env_prefix = os.environ.get("ENV_PREFIX", "default")
+            now = get_current_datetime()
             cloudwatch.put_metric_data(
                 Namespace=f"OptiNiSt/BackgroundJobs/{env_prefix}",
                 MetricData=[
@@ -583,19 +831,25 @@ class DataCleanupJob:
                         "MetricName": "DataCleanupCount",
                         "Value": cleaned_count,
                         "Unit": "Count",
-                        "Timestamp": get_current_datetime(),
+                        "Timestamp": now,
                     },
                     {
                         "MetricName": "CleanupErrors",
                         "Value": error_count,
                         "Unit": "Count",
-                        "Timestamp": get_current_datetime(),
+                        "Timestamp": now,
+                    },
+                    {
+                        "MetricName": "CleanupKept",
+                        "Value": kept_count,
+                        "Unit": "Count",
+                        "Timestamp": now,
                     },
                 ],
             )
             logger.debug(
                 f"Published CloudWatch metrics: {cleaned_count} cleaned, "
-                f"{error_count} errors"
+                f"{kept_count} kept, {error_count} errors"
             )
         except Exception as e:
             logger.warning(f"Failed to publish metrics: {e}")

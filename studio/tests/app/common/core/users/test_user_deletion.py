@@ -147,10 +147,12 @@ def test_user_deletion_record_defaults():
 @pytest.mark.asyncio
 async def test_delete_user_success(mock_db, mock_user):
     """Test successful user deletion with correct ordering."""
+    mock_workspace = Mock()
+    mock_workspace.id = 7
     mock_query_result = Mock()
     mock_query_result.filter.return_value = mock_query_result
     mock_query_result.first.return_value = mock_user
-    mock_query_result.all.return_value = []
+    mock_query_result.all.return_value = [mock_workspace]
     mock_db.query.return_value = mock_query_result
 
     steps_executed = []
@@ -181,12 +183,32 @@ async def test_delete_user_success(mock_db, mock_user):
                 "studio.app.common.core.users.crud_users.RemoteStorageController"
             ) as mock_storage:
                 mock_storage.is_available.return_value = False
+                with patch(
+                    "studio.app.common.core.users.crud_users.WorkspaceService"
+                ) as mock_workspaces:
+                    mock_workspaces.initiate_workspace_deletion = AsyncMock(
+                        return_value=(True, "ok")
+                    )
 
-                result = await delete_user(mock_db, 1, 1)
+                    result = await delete_user(mock_db, 1, 1)
 
     assert result is True
     mock_fb.delete_user.assert_called_once_with(mock_user.uid)
     mock_stripe.handle_cancel_user_subscription.assert_called_once()
+    mock_workspaces.initiate_workspace_deletion.assert_awaited_once_with(
+        mock_db, mock_user.remote_bucket_name, 7, 1
+    )
+    assert mock_user.active is False
+    assert deletion_record.status == DeletionStatus.COMPLETED.value
+    assert steps_executed == [
+        DeletionStep.STARTED.value,
+        DeletionStep.FIREBASE_PENDING.value,
+        DeletionStep.FIREBASE_DELETED.value,
+        DeletionStep.STRIPE_CANCELLED.value,
+        DeletionStep.S3_DELETED.value,
+        DeletionStep.WORKSPACES_DELETED.value,
+        DeletionStep.COMPLETED.value,
+    ]
 
 
 @pytest.mark.asyncio
@@ -921,3 +943,175 @@ class TestUserDeletionContract:
         assert deletion_record.error is not None
         # User must still be active (nothing was deleted)
         assert mock_user.active is True
+
+
+# ============================================================================
+# Tests: deleting a user who owns data, against a real database
+# ============================================================================
+
+
+class TestDeleteUserWhoOwnsData:
+    """``delete_user`` over a real session, with rows to lose.
+
+    Everything else in this file drives a ``Mock`` session, where the user stays
+    active, the workspace query answers ``[]`` and no subscription row exists.
+    Three claims are only provable against a database: the user ends inactive,
+    the deletion record reaches ``completed``, and the billing history is left
+    standing.
+    """
+
+    PLAN_PREMIUM = 2
+
+    @pytest.fixture()
+    def db(self):
+        from studio.app.common.models import Organization as OrganizationModel
+        from studio.app.common.models import User as UserModel
+        from studio.app.common.models import Workspace
+        from studio.app.common.models.subscription import (
+            SubscriptionUserPurchase,
+            UserSubscription,
+        )
+        from studio.app.common.models.user_preferences import UserPreferences
+        from studio.tests.app.common.sqlite_harness import sqlite_session
+
+        tables = [
+            OrganizationModel.__table__,
+            UserModel.__table__,
+            Workspace.__table__,
+            UserPreferences.__table__,
+            UserSubscription.__table__,
+            SubscriptionUserPurchase.__table__,
+            UserDeletionRecord.__table__,
+        ]
+        with sqlite_session(tables) as session:
+            session.add(OrganizationModel(id=1, name="Test Org"))
+            session.add(
+                UserModel(
+                    id=1,
+                    organization_id=1,
+                    uid="uid-owns-data",
+                    name="Owner",
+                    email="owner@example.com",
+                    attributes={},
+                    active=True,
+                )
+            )
+            session.commit()
+            session.add(
+                UserSubscription(
+                    id=11,
+                    user_id=1,
+                    plan_id=self.PLAN_PREMIUM,
+                    expiration=get_current_datetime() + timedelta(days=20),
+                )
+            )
+            session.add(
+                SubscriptionUserPurchase(id=21, user_id=1, plan_id=self.PLAN_PREMIUM)
+            )
+            session.add(
+                Workspace(id=31, name="Owned workspace", user_id=1, deleted=False)
+            )
+            session.add(UserPreferences(id=41, user_id=1))
+            session.commit()
+            yield session
+
+    @pytest.fixture()
+    def externals(self):
+        """Firebase, Stripe, S3 and the workspace pipeline stubbed at the seam."""
+        with patch(
+            "studio.app.common.core.users.crud_users.firebase_auth"
+        ) as firebase, patch(
+            "studio.app.common.core.users.crud_users.StripeService"
+        ) as stripe, patch(
+            "studio.app.common.core.users.crud_users.RemoteStorageController"
+        ) as storage, patch(
+            "studio.app.common.core.users.crud_users.WorkspaceService"
+        ) as workspaces:
+            stripe.handle_cancel_user_subscription = AsyncMock()
+            storage.is_available.return_value = False
+            workspaces.initiate_workspace_deletion = AsyncMock(
+                return_value=(True, "ok")
+            )
+            yield Mock(
+                firebase=firebase, stripe=stripe, storage=storage, workspaces=workspaces
+            )
+
+    @pytest.mark.asyncio
+    async def test_owned_workspace_is_handed_to_the_deletion_pipeline(
+        self, db, externals
+    ):
+        assert await delete_user(db, 1, 1) is True
+
+        externals.workspaces.initiate_workspace_deletion.assert_awaited_once()
+        args = externals.workspaces.initiate_workspace_deletion.await_args.args
+        assert args[2] == 31
+        assert args[3] == 1
+
+    @pytest.mark.asyncio
+    async def test_the_user_ends_inactive_and_the_record_reaches_completed(
+        self, db, externals
+    ):
+        await delete_user(db, 1, 1)
+
+        from studio.app.common.models import User as UserModel
+
+        user = db.get(UserModel, 1)
+        assert user.active is False
+
+        record = db.query(UserDeletionRecord).one()
+        assert record.step == DeletionStep.COMPLETED.value
+        assert record.status == DeletionStatus.COMPLETED.value
+        assert record.completed_at is not None
+        assert record.error is None
+
+    @pytest.mark.asyncio
+    async def test_user_preferences_are_removed(self, db, externals):
+        from studio.app.common.models.user_preferences import UserPreferences
+
+        await delete_user(db, 1, 1)
+
+        assert db.query(UserPreferences).count() == 0
+
+    @pytest.mark.asyncio
+    async def test_the_subscription_and_purchase_history_survive_unchanged(
+        self, db, externals
+    ):
+        """Billing history is the audit trail for a paid account and
+        must outlive the account itself."""
+        from studio.app.common.models.subscription import (
+            SubscriptionUserPurchase,
+            UserSubscription,
+        )
+
+        columns = [
+            "id",
+            "user_id",
+            "plan_id",
+            "expiration",
+            "scheduled_downgrade",
+            "sync_status",
+            "deletion_processed_at",
+        ]
+        before_subscription = {
+            c: getattr(db.query(UserSubscription).one(), c) for c in columns
+        }
+        purchase_columns = ["id", "user_id", "plan_id", "created_at"]
+        before_purchase = {
+            c: getattr(db.query(SubscriptionUserPurchase).one(), c)
+            for c in purchase_columns
+        }
+
+        await delete_user(db, 1, 1)
+        db.expire_all()
+
+        assert db.query(UserSubscription).count() == 1
+        assert db.query(SubscriptionUserPurchase).count() == 1
+        after_subscription = {
+            c: getattr(db.query(UserSubscription).one(), c) for c in columns
+        }
+        after_purchase = {
+            c: getattr(db.query(SubscriptionUserPurchase).one(), c)
+            for c in purchase_columns
+        }
+        assert after_subscription == before_subscription
+        assert after_purchase == before_purchase

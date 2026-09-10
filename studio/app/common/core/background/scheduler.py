@@ -11,6 +11,7 @@ API services disable their schedulers via DISABLE_BACKGROUND_SCHEDULER=1.
 """
 
 import os
+from datetime import timedelta
 from typing import Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -19,6 +20,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.storage.remote_storage_controller import RemoteStorageType
+from studio.app.common.core.subscription.constants import SyncStatusConstants
+from studio.app.common.core.utils.datetime_utils import get_current_datetime
 
 logger = AppLogger.get_logger()
 
@@ -143,10 +146,21 @@ class BackgroundScheduler:
 
         NOTE: AsyncIOScheduler automatically detects if func is an async function
         and handles it correctly. No special configuration needed for async jobs.
+
+        First run defaults to now + INITIAL_RUN_DELAY_SECONDS (shortly after
+        startup) instead of now + interval. Pass next_run_time to override.
         """
         if cls._scheduler is None:
             logger.warning("Scheduler not initialized, cannot add job")
             return
+
+        # Apply the default when next_run_time is absent OR explicitly None:
+        # APScheduler treats next_run_time=None as "paused" (never fires), so
+        # setdefault alone would let a None slip through. get()-check covers both.
+        if kwargs.get("next_run_time") is None:
+            kwargs["next_run_time"] = get_current_datetime() + timedelta(
+                seconds=SyncStatusConstants.INITIAL_RUN_DELAY_SECONDS
+            )
 
         cls._scheduler.add_job(
             func,

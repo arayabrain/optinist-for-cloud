@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -6,20 +7,30 @@ from studio.app.common.core.auth.auth_dependencies import (
     get_current_user,
     get_user_remote_bucket_name,
 )
+from studio.app.common.core.cloud.cloud_utils import get_effective_quota_bytes
 from studio.app.common.core.cloud.storage_tracking import (
     get_current_user_storage_usage,
     get_user_storage_usage,
 )
+from studio.app.common.core.experiment.experiment import ExptConfig
 from studio.app.common.core.experiment.experiment_reader import ExptConfigReader
+from studio.app.common.core.experiment.experiment_record_services import (
+    ExperimentRecordService,
+)
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.storage.remote_storage_controller import (
     RemoteStorageController,
     RemoteStorageLockError,
     RemoteSyncStatusFileUtil,
 )
+from studio.app.common.core.utils.datetime_utils import (
+    TIMEZONE_KEY,
+    get_datetime_for_timezone,
+)
 from studio.app.common.core.workflow.workflow import DataFilterParam, NodeItem, RunItem
 from studio.app.common.core.workflow.workflow_filter import WorkflowNodeDataFilter
 from studio.app.common.core.workflow.workflow_result import (
+    NodeResult,
     WorkflowMonitor,
     WorkflowResult,
 )
@@ -33,19 +44,38 @@ from studio.app.common.core.workspace.workspace_dependencies import (
 )
 from studio.app.common.schemas.users import User
 from studio.app.common.schemas.workflow import CompleteStatus, PollRunResultResponse
+from studio.app.const import DATE_FORMAT
 
 router = APIRouter(prefix="/run", tags=["run"])
 
 logger = AppLogger.get_logger()
+
+# Max wait for the executor's async record write before the poll completes
+# anyway, so a dead post-process can't strand the run in a spinner. Sized to
+# cover thumbnail generation on large experiments.
+RECORD_WRITE_GRACE_SEC = 300
+
+
+def _finished_within_grace(expt_config: ExptConfig) -> bool:
+    finished_at = getattr(expt_config, "finished_at", None)
+    if not finished_at:
+        return False
+    try:
+        finished = datetime.strptime(finished_at, DATE_FORMAT)
+    except (ValueError, TypeError):
+        return False
+    tz = getattr(expt_config, TIMEZONE_KEY, None)
+    now = get_datetime_for_timezone(tz).replace(tzinfo=None)
+    return (now - finished).total_seconds() < RECORD_WRITE_GRACE_SEC
 
 
 async def _check_storage_quota(user_id: int) -> None:
     """Raise 403 if user has exceeded their storage quota."""
     current_usage = await get_current_user_storage_usage(user_id, force_live=False)
     storage_info = get_user_storage_usage(user_id)
+    quota_limit = get_effective_quota_bytes(user_id, storage_info=storage_info)
 
-    if storage_info and storage_info["storage_quota_bytes"] > 0:
-        quota_limit = storage_info["storage_quota_bytes"]
+    if quota_limit > 0:
         usage_percent = (current_usage / quota_limit) * 100
 
         if usage_percent >= 100:
@@ -211,6 +241,35 @@ async def run_result(
             if sync_status:
                 # Create CompleteStatus (converted from RemoteSyncStatus)
                 complete_status = CompleteStatus(sync_status.value)
+
+        # A poll can see all nodes finished before the executor's async record
+        # write lands; hold "processing" until it exists so the dataview isn't
+        # opened against a missing record, but only within the grace window.
+        try:
+            if ExperimentRecordService.is_available() and complete_status not in (
+                CompleteStatus.PROCESSING,
+                CompleteStatus.ERROR,
+            ):
+                expt_config = ExptConfigReader.read(workspace_id, uid)
+                if NodeResult.is_all_nodes_already_finished(
+                    expt_config
+                ) and not ExperimentRecordService.record_exists(workspace_id, uid):
+                    if _finished_within_grace(expt_config):
+                        complete_status = CompleteStatus.PROCESSING
+                    else:
+                        logger.warning(
+                            "experiment_records row still absent for finished run "
+                            "[%s/%s]; completing poll without it",
+                            workspace_id,
+                            uid,
+                        )
+        except Exception as e:
+            logger.warning(
+                "Poll-time record existence check failed [%s/%s]: %s",
+                workspace_id,
+                uid,
+                e,
+            )
 
         return PollRunResultResponse(
             nodeResults=node_results,

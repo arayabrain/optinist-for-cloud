@@ -209,17 +209,20 @@ describe("LimitAlert", () => {
       })
     })
 
-    it("should show progress bar when days_remaining is undefined", async () => {
+    it("should not show progress bar when days_remaining is undefined", async () => {
       mockGetMyLimitAlertApi.mockResolvedValue(
         createMockAlert({ days_remaining: undefined as unknown as number }),
       )
 
       renderLimitAlert()
 
-      await waitFor(() => {
-        // Progress bar should not be shown for undefined
-        expect(screen.queryByRole("progressbar")).toBeFalsy()
-      })
+      // The alert itself must have rendered, otherwise the absent progress bar
+      // proves nothing.
+      expect(
+        await screen.findByText("Your subscription has expired"),
+      ).toBeTruthy()
+      expect(screen.queryByRole("progressbar")).toBeFalsy()
+      expect(screen.queryByText("Time Remaining")).toBeFalsy()
     })
   })
 
@@ -357,7 +360,7 @@ describe("LimitAlert", () => {
       expect(screen.queryByRole("checkbox")).toBeFalsy()
     })
 
-    it("should show close button for non-OVERDUE alerts", async () => {
+    it("should show a working close button for non-OVERDUE alerts", async () => {
       mockGetMyLimitAlertApi.mockResolvedValue(
         createMockAlert({ alert_type: LimitAlertType.STORAGE }),
       )
@@ -368,9 +371,16 @@ describe("LimitAlert", () => {
         expect(screen.getByText("Your subscription has expired")).toBeTruthy()
       })
 
-      // There should be buttons available (including close)
-      const buttons = screen.queryAllByRole("button")
-      expect(buttons.length).toBeGreaterThan(0)
+      const closeIconButton = screen
+        .queryAllByRole("button")
+        .find((btn) => btn.querySelector("[data-testid=\"CloseIcon\"]") !== null)
+      expect(closeIconButton).toBeTruthy()
+
+      fireEvent.click(closeIconButton!)
+
+      await waitFor(() => {
+        expect(screen.queryByText("Your subscription has expired")).toBeFalsy()
+      })
     })
   })
 

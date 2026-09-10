@@ -1,10 +1,21 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from sqlalchemy import BIGINT, INTEGER, JSON, TIMESTAMP, Boolean, DateTime
+from sqlalchemy import (
+    BIGINT,
+    DECIMAL,
+    INTEGER,
+    JSON,
+    TIMESTAMP,
+    Boolean,
+    Date,
+    DateTime,
+)
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.mysql import TINYINT
 from sqlalchemy.sql import func
 from sqlalchemy.sql.functions import current_timestamp
 from sqlmodel import Column, Field, SQLModel
@@ -15,7 +26,7 @@ from studio.app.common.core.utils.datetime_utils import get_current_datetime
 
 class SubscriptionPlans(SQLModel, table=True):
     __tablename__ = "subscription_plans"
-    __table_args__ = (UniqueConstraint("id", name="idx_id"),)
+    __table_args__ = (Index("idx_subscription_plans_name", "name"),)
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
@@ -39,7 +50,8 @@ class SubscriptionPlans(SQLModel, table=True):
         description="True=Active, False=Inactive",
     )
     currency: int = Field(
-        sa_column=Column(BIGINT, nullable=False, default=1),  # Fixed: Use BIGINT
+        # TINYINT UNSIGNED: currency is a small enum (1=USD, 2=JPY).
+        sa_column=Column(TINYINT(unsigned=True), nullable=False, default=1),
         description="Currency code in enum format (e.g., 1 for USD, 2 for JPY)",
     )
     stripe_product_id: Optional[str] = Field(
@@ -53,7 +65,7 @@ class SubscriptionPlans(SQLModel, table=True):
         description="Stripe price ID for this subscription plan",
     )
     created_at: Optional[datetime] = Field(
-        sa_column_kwargs={"server_default": current_timestamp()},
+        sa_column=Column(TIMESTAMP, nullable=False, server_default=current_timestamp()),
     )
 
     @property
@@ -64,16 +76,32 @@ class SubscriptionPlans(SQLModel, table=True):
 class UserSubscription(SQLModel, table=True):
     __tablename__ = "subscription_users"
     __table_args__ = (
-        UniqueConstraint("id", name="idx_id"),
         UniqueConstraint("user_id", name="idx_user_id_unique"),
+        Index("idx_subscription_users_user_id", "user_id"),
+        Index("idx_subscription_users_plan_id", "plan_id"),
+        Index("idx_subscription_users_expiration", "expiration"),
+        Index("idx_subscription_users_user_plan", "user_id", "plan_id"),
+        Index("idx_subscription_users_user_expiration", "user_id", "expiration"),
     )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
     )
-    plan_id: int = Field(sa_column=Column(BIGINT, nullable=False))
-    user_id: int = Field(sa_column=Column(BIGINT, nullable=False))
+    plan_id: int = Field(
+        sa_column=Column(
+            BIGINT,
+            ForeignKey("subscription_plans.id", name="fk_subscription_users_plan"),
+            nullable=False,
+        )
+    )
+    user_id: int = Field(
+        sa_column=Column(
+            BIGINT,
+            ForeignKey("users.id", name="fk_subscription_users_user"),
+            nullable=False,
+        )
+    )
     expiration: datetime = Field(sa_column=Column(DateTime, nullable=False))
     scheduled_downgrade: bool = Field(
         sa_column=Column(Boolean, nullable=False, default=False),
@@ -95,9 +123,11 @@ class UserSubscription(SQLModel, table=True):
     created_at: Optional[datetime] = Field(
         sa_column_kwargs={"server_default": current_timestamp()},
     )
+    # DATETIME (not TIMESTAMP); changing the type needs a migration.
+    # See DATABASE_DATETIME_TYPE_CONVENTIONS.md
     updated_at: Optional[datetime] = Field(
         sa_column=Column(
-            TIMESTAMP,
+            DateTime,
             server_default=func.current_timestamp(),
             onupdate=func.current_timestamp(),
         ),
@@ -116,15 +146,16 @@ class SubscriptionProvider(SQLModel, table=True):
         default=None,
     )
     name: str = Field(
-        sa_column=Column(String(50), nullable=False),
+        sa_column=Column(String(100), nullable=False),
         description="Provider name (e.g., 'stripe', 'paypal')",
     )
     created_at: Optional[datetime] = Field(
-        sa_column_kwargs={"server_default": current_timestamp()},
+        sa_column=Column(TIMESTAMP, nullable=False, server_default=current_timestamp()),
     )
     updated_at: Optional[datetime] = Field(
         sa_column=Column(
             TIMESTAMP,
+            nullable=False,
             server_default=func.current_timestamp(),
             onupdate=func.current_timestamp(),
         ),
@@ -137,15 +168,33 @@ class SubscriptionUserAccount(SQLModel, table=True):
         UniqueConstraint(
             "user_id", "provider_id", name="uq_sub_user_account_user_provider"
         ),
+        UniqueConstraint(
+            "provider_customer_id", name="idx_unique_provider_customer_id"
+        ),
+        Index("idx_subscription_user_accounts_user", "user_id"),
+        Index("idx_subscription_user_accounts_provider", "provider_id"),
     )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
     )
-    user_id: int = Field(sa_column=Column(BIGINT, nullable=False))
+    user_id: int = Field(
+        sa_column=Column(
+            BIGINT,
+            ForeignKey("users.id", name="fk_subscription_user_accounts_user"),
+            nullable=False,
+        )
+    )
     provider_id: int = Field(
-        sa_column=Column(BIGINT, nullable=False),
+        sa_column=Column(
+            BIGINT,
+            ForeignKey(
+                "subscription_providers.id",
+                name="fk_subscription_user_accounts_provider",
+            ),
+            nullable=False,
+        ),
         description="FK to subscription_providers.id",
     )
     provider_customer_id: str = Field(
@@ -153,11 +202,12 @@ class SubscriptionUserAccount(SQLModel, table=True):
         description="Provider's customer ID (e.g., Stripe customer ID)",
     )
     created_at: Optional[datetime] = Field(
-        sa_column_kwargs={"server_default": current_timestamp()},
+        sa_column=Column(TIMESTAMP, nullable=False, server_default=current_timestamp()),
     )
     updated_at: Optional[datetime] = Field(
         sa_column=Column(
             TIMESTAMP,
+            nullable=False,
             server_default=func.current_timestamp(),
             onupdate=func.current_timestamp(),
         ),
@@ -166,22 +216,50 @@ class SubscriptionUserAccount(SQLModel, table=True):
 
 class SubscriptionUserPurchase(SQLModel, table=True):
     __tablename__ = "subscription_user_purchases"
+    __table_args__ = (
+        Index("idx_subscription_purchase_history_user_id", "user_id"),
+        Index("idx_subscription_purchase_history_plan", "plan_id"),
+        Index("idx_subscription_purchase_history_created", "created_at"),
+        Index("idx_subscription_user_purchases_user_id", "user_id"),
+        Index(
+            "idx_subscription_user_purchases_user_plan_created",
+            "user_id",
+            "plan_id",
+            "created_at",
+        ),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
     )
     plan_id: int = Field(
-        sa_column=Column(BIGINT, nullable=False), description="1=FREE, 2=Premium"
+        sa_column=Column(
+            BIGINT,
+            ForeignKey(
+                "subscription_plans.id", name="fk_subscription_user_purchases_plan"
+            ),
+            nullable=False,
+        ),
+        description="1=FREE, 2=Premium",
     )
-    user_id: int = Field(sa_column=Column(BIGINT, nullable=False))
+    user_id: int = Field(
+        sa_column=Column(
+            BIGINT,
+            ForeignKey("users.id", name="fk_subscription_purchase_history_user"),
+            nullable=False,
+        )
+    )
     created_at: Optional[datetime] = Field(
         default_factory=get_current_datetime,
-        sa_column=Column(TIMESTAMP, server_default=func.current_timestamp()),
+        sa_column=Column(
+            TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+        ),
     )
     updated_at: Optional[datetime] = Field(
         sa_column=Column(
             TIMESTAMP,
+            nullable=False,
             server_default=func.current_timestamp(),
             onupdate=func.current_timestamp(),
         ),
@@ -190,19 +268,41 @@ class SubscriptionUserPurchase(SQLModel, table=True):
 
 class SubscriptionCancellation(SQLModel, table=True):
     __tablename__ = "subscription_cancellations"
+    __table_args__ = (
+        Index("idx_subscription_cancellations_user", "cancelled_by_user_id"),
+        Index("idx_subscription_cancellations_purchase", "purchases_id"),
+        Index("idx_subscription_cancellations_cancelled_at", "cancelled_at"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
     )
-    cancelled_by_user_id: int = Field(sa_column=Column(BIGINT, nullable=False))
+    cancelled_by_user_id: int = Field(
+        sa_column=Column(
+            BIGINT,
+            ForeignKey(
+                "users.id", name="fk_subscription_cancellations_cancelled_by_user"
+            ),
+            nullable=False,
+        )
+    )
     purchases_id: int = Field(
-        sa_column=Column(BIGINT, nullable=False),
+        sa_column=Column(
+            BIGINT,
+            ForeignKey(
+                "subscription_user_purchases.id",
+                name="fk_subscription_cancellations_purchase",
+            ),
+            nullable=False,
+        ),
         description="FK to subscription_user_purchases.id",
     )
     cancelled_at: Optional[datetime] = Field(
         default_factory=get_current_datetime,
-        sa_column=Column(TIMESTAMP, server_default=func.current_timestamp()),
+        sa_column=Column(
+            TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+        ),
     )
     reason: Optional[CancellationReason] = Field(
         sa_column=Column(
@@ -226,7 +326,10 @@ class SubscriptionCancellation(SQLModel, table=True):
 
 class UserStorageUsage(SQLModel, table=True):
     __tablename__ = "user_storage_usage"
-    __table_args__ = (UniqueConstraint("id", name="idx_id"),)
+    __table_args__ = (
+        UniqueConstraint("id", name="idx_id"),
+        Index("idx_user_storage_usage_user_id", "user_id"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
@@ -298,6 +401,11 @@ class StorageOperation(SQLModel, table=True):
 
     __tablename__ = "storage_operations"
 
+    __table_args__ = (
+        Index("idx_storage_ops_status_created", "status", "created_at"),
+        Index("idx_storage_ops_status_retry", "status", "retry_count"),
+    )
+
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
@@ -307,7 +415,13 @@ class StorageOperation(SQLModel, table=True):
         description="User ID for this storage operation",
     )
     idempotency_key: str = Field(
-        sa_column=Column(String(255), nullable=False, unique=True, index=True),
+        sa_column=Column(
+            String(255),
+            nullable=False,
+            unique=True,
+            index=True,
+            comment="Unique key to prevent duplicate operations",
+        ),
         description="Unique key to prevent duplicate operations",
     )
     operation_type: str = Field(
@@ -321,7 +435,11 @@ class StorageOperation(SQLModel, table=True):
         ),
     )
     bytes_delta: int = Field(
-        sa_column=Column(BIGINT, nullable=False),
+        sa_column=Column(
+            BIGINT,
+            nullable=False,
+            comment="Number of bytes to add or remove",
+        ),
         description="Number of bytes to add (positive) or remove (negative)",
     )
     status: str = Field(
@@ -338,19 +456,30 @@ class StorageOperation(SQLModel, table=True):
         default=StorageOperationStatus.PENDING.value,
     )
     error_message: Optional[str] = Field(
-        sa_column=Column(String(500), nullable=True),
+        sa_column=Column(
+            String(500),
+            nullable=True,
+            comment="Error message if operation failed",
+        ),
         default=None,
         description="Error message if operation failed",
     )
     # Retry tracking for failed storage operations
     retry_count: int = Field(
-        sa_column=Column(INTEGER, nullable=False, default=0),
+        sa_column=Column(
+            INTEGER,
+            nullable=False,
+            default=0,
+            comment="Number of retry attempts for failed operations",
+        ),
         default=0,
         description="Number of retry attempts for failed operations",
     )
     created_at: Optional[datetime] = Field(
         default_factory=get_current_datetime,
-        sa_column=Column(TIMESTAMP, server_default=func.current_timestamp()),
+        sa_column=Column(
+            TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+        ),
     )
     completed_at: Optional[datetime] = Field(
         sa_column=Column(DateTime, nullable=True),
@@ -392,6 +521,10 @@ class UserDeletionRecord(SQLModel, table=True):
     """
 
     __tablename__ = "user_deletion_records"
+    __table_args__ = (
+        Index("idx_user_deletion_records_user_id", "user_id"),
+        Index("idx_user_deletion_records_status_started", "status", "started_at"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
@@ -402,7 +535,11 @@ class UserDeletionRecord(SQLModel, table=True):
         description="FK to users.id being deleted",
     )
     user_uid: str = Field(
-        sa_column=Column(String(128), nullable=False),
+        sa_column=Column(
+            String(128),
+            nullable=False,
+            comment="Firebase UID for recovery checks",
+        ),
         description="Firebase UID for recovery checks",
     )
     step: str = Field(
@@ -436,13 +573,19 @@ class UserDeletionRecord(SQLModel, table=True):
         default=DeletionStatus.IN_PROGRESS.value,
     )
     error: Optional[str] = Field(
-        sa_column=Column(Text, nullable=True),
+        sa_column=Column(
+            Text,
+            nullable=True,
+            comment="Error message if deletion failed",
+        ),
         default=None,
         description="Error message if deletion failed",
     )
     started_at: Optional[datetime] = Field(
         default_factory=get_current_datetime,
-        sa_column=Column(TIMESTAMP, server_default=func.current_timestamp()),
+        sa_column=Column(
+            TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+        ),
     )
     completed_at: Optional[datetime] = Field(
         sa_column=Column(DateTime, nullable=True),
@@ -451,6 +594,7 @@ class UserDeletionRecord(SQLModel, table=True):
     updated_at: Optional[datetime] = Field(
         sa_column=Column(
             TIMESTAMP,
+            nullable=False,
             server_default=func.current_timestamp(),
             onupdate=func.current_timestamp(),
         ),
@@ -464,34 +608,98 @@ class SubscriptionAuditLog(SQLModel, table=True):
     """
 
     __tablename__ = "subscription_audit_log"
+    __table_args__ = (Index("idx_subscription_audit_log_user_id", "user_id"),)
 
     id: Optional[int] = Field(
         sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
         default=None,
     )
     user_id: int = Field(
-        sa_column=Column(BIGINT, nullable=False, index=True),
+        sa_column=Column(
+            BIGINT,
+            nullable=False,
+            comment="The user whose subscription was changed",
+        ),
         description="The user whose subscription was changed. "
         "No FK constraint — audit records must survive user deletion.",
     )
     changed_by: int = Field(
-        sa_column=Column(BIGINT, nullable=False),
+        sa_column=Column(
+            BIGINT,
+            nullable=False,
+            comment="Admin user ID who made the change",
+        ),
         description="Admin user ID who made the change. "
         "No FK constraint — audit records must survive user deletion.",
     )
     old_value: Dict[str, Any] = Field(
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(
+            JSON,
+            nullable=False,
+            comment="Subscription state before the change",
+        ),
         description="Subscription state before the change",
     )
     new_value: Dict[str, Any] = Field(
-        sa_column=Column(JSON, nullable=False),
+        sa_column=Column(
+            JSON,
+            nullable=False,
+            comment="Subscription state after the change",
+        ),
         description="Subscription state after the change",
     )
     reason: str = Field(
-        sa_column=Column(Text, nullable=False),
+        sa_column=Column(
+            Text,
+            nullable=False,
+            comment="Admin-provided reason for the manual edit",
+        ),
         description="Admin-provided reason for the manual edit",
     )
     created_at: Optional[datetime] = Field(
         default_factory=get_current_datetime,
         sa_column=Column(TIMESTAMP, server_default=func.current_timestamp()),
+    )
+
+
+class Taxes(SQLModel, table=True):
+    """
+    UNUSED / dead schema. Created by migration
+    `af8c4144cd54_add_stripe_integration_tables` but never wired to any code:
+    tax calculation is handled by Stripe (session.total_details.breakdown.taxes),
+    not this table. Mapped here only so `alembic check` matches the DB without
+    a destructive migration. Candidate for an explicit drop in a future PR.
+    """
+
+    __tablename__ = "taxes"
+    __table_args__ = (
+        Index("idx_taxes_type", "tax_type"),
+        Index("idx_taxes_active", "is_active"),
+    )
+
+    id: Optional[int] = Field(
+        sa_column=Column(BIGINT, primary_key=True, nullable=False, autoincrement=True),
+        default=None,
+    )
+    tax_type: str = Field(sa_column=Column(String(50), nullable=False))
+    tax_name: str = Field(sa_column=Column(String(100), nullable=False))
+    tax_rate: Decimal = Field(
+        sa_column=Column(DECIMAL(precision=5, scale=4), nullable=False)
+    )
+    is_active: bool = Field(
+        sa_column=Column(Boolean, nullable=False, server_default="1"), default=True
+    )
+    effective_date: date = Field(sa_column=Column(Date, nullable=False))
+    created_at: Optional[datetime] = Field(
+        sa_column=Column(
+            TIMESTAMP, nullable=False, server_default=func.current_timestamp()
+        ),
+    )
+    updated_at: Optional[datetime] = Field(
+        sa_column=Column(
+            TIMESTAMP,
+            nullable=False,
+            server_default=func.current_timestamp(),
+            onupdate=func.current_timestamp(),
+        ),
     )

@@ -207,23 +207,6 @@ if [ ! -d "optinist-for-cloud" ]; then
 fi
 cd optinist-for-cloud
 
-# Create Firebase configuration files on the host
-echo "$(date): Creating Firebase configuration files"
-mkdir -p /opt/optinist-for-cloud/studio/config/auth
-
-# Create firebase_config.json
-cat > /opt/optinist-for-cloud/studio/config/auth/firebase_config.json << 'FIREBASE_CONFIG'
-${firebase_config_json}
-FIREBASE_CONFIG
-
-# Create firebase_private.json
-cat > /opt/optinist-for-cloud/studio/config/auth/firebase_private.json << 'FIREBASE_PRIVATE'
-${firebase_private_json}
-FIREBASE_PRIVATE
-
-# Set proper permissions
-chmod 644 /opt/optinist-for-cloud/studio/config/auth/firebase_*.json
-
 # Add AWS Batch plugins to Dockerfile
 echo "$(date): Adding AWS Batch plugins to Dockerfile"
 # Build the Docker image

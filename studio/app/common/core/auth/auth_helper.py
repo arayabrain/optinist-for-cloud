@@ -48,6 +48,10 @@ _token_cache: Dict[str, Dict[str, any]] = {}
 # Cache TTL in seconds (5 minutes)
 _CACHE_TTL_SECONDS = 300
 
+# Google stamps `iat` from its own clock, so a host running even a second
+# behind rejects a token the client just received. Firebase allows 0-60.
+_CLOCK_SKEW_SECONDS = 10
+
 
 def _compute_token_hash(token: str) -> str:
     """
@@ -116,7 +120,9 @@ def _verify_firebase_token_sync(token: str) -> Optional[str]:
         User ID if verification succeeds, None otherwise
     """
     try:
-        user = firebase_auth.verify_id_token(token)
+        user = firebase_auth.verify_id_token(
+            token, clock_skew_seconds=_CLOCK_SKEW_SECONDS
+        )
         return user.get("uid")
     except Exception:
         return None
@@ -160,7 +166,9 @@ def extract_uid_from_firebase_credential(
         Tuple of (uid, error_message). If successful, error_message is None.
     """
     try:
-        user = firebase_auth.verify_id_token(credential.credentials)
+        user = firebase_auth.verify_id_token(
+            credential.credentials, clock_skew_seconds=_CLOCK_SKEW_SECONDS
+        )
         uid = user.get("uid")
         return uid, None
     except Exception as e:
@@ -281,7 +289,9 @@ def extract_uid_from_request(request: Request) -> Optional[str]:
 
             # Verify token and cache result
             try:
-                user = firebase_auth.verify_id_token(token)
+                user = firebase_auth.verify_id_token(
+                    token, clock_skew_seconds=_CLOCK_SKEW_SECONDS
+                )
                 uid = user.get("uid")
                 _cache_uid(token, uid)
                 return uid

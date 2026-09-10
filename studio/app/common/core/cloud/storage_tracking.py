@@ -6,6 +6,9 @@ Extracted from cloud_utils.py for module cohesion.
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from fastapi import HTTPException
+from sqlalchemy import update
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlmodel import select
 
 from studio.app.common.core.logger import AppLogger
@@ -25,6 +28,18 @@ from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserStorageUsage, UserSubscription
 
 logger = AppLogger.get_logger()
+
+
+class StorageOwnerInactive(Exception):
+    """No active user owns the storage row being reconciled.
+
+    Raised rather than returned as 0 so a deleted account's row is left alone
+    instead of being reconciled to "0 bytes", which reads as a real measurement.
+    """
+
+    def __init__(self, user_id: int):
+        super().__init__(f"no active user row for user {user_id}")
+        self.user_id = user_id
 
 
 def _get_fallback_storage_quota(user_id: int) -> Dict[str, Any]:
@@ -168,23 +183,39 @@ def update_user_storage_usage(user_id: int, new_usage_bytes: int) -> bool:
     Update storage usage for a user.
     Returns True if successful or if table doesn't exist
     (fallback scenario).
+
+    Writes via a Core UPDATE keyed on user_id so concurrent writers (full
+    scan, incremental updates from multiple processes) do not race on an ORM
+    load-mutate-flush, which raises a stale-data error when a concurrent commit
+    leaves the target row unchanged at flush time. The success is logged only
+    after the commit lands.
     """
     try:
         with session_scope() as db:
             try:
-                query_result = db.execute(
-                    select(UserStorageUsage).where(UserStorageUsage.user_id == user_id)
+                # Existence is checked with a SELECT rather than the UPDATE
+                # rowcount: MySQL reports rows *changed*, so an update to an
+                # identical value returns 0 even though the row exists.
+                exists = (
+                    db.execute(
+                        select(UserStorageUsage.id).where(
+                            UserStorageUsage.user_id == user_id
+                        )
+                    ).first()
+                    is not None
                 )
-                result_row = query_result.first()
-                existing_usage = result_row[0] if result_row else None
 
-                if existing_usage:
-                    existing_usage.storage_usage_bytes = new_usage_bytes
-                    existing_usage.last_updated = (
-                        SubscriptionService.get_current_datetime()
+                if exists:
+                    db.execute(
+                        update(UserStorageUsage)
+                        .where(UserStorageUsage.user_id == user_id)
+                        .values(
+                            storage_usage_bytes=new_usage_bytes,
+                            last_updated=SubscriptionService.get_current_datetime(),
+                        )
                     )
-                    db.add(existing_usage)
                 else:
+                    # No row for this user yet: create it with a plan-based quota.
                     statement = (
                         select(SubscriptionPlans.name.label("plan_name"))
                         .select_from(UserModel)
@@ -205,9 +236,9 @@ def update_user_storage_usage(user_id: int, new_usage_bytes: int) -> bool:
                             UserModel.active.is_(True),
                         )
                     )
-                    result = db.execute(statement).first()
+                    plan_result = db.execute(statement).first()
 
-                    if result and result.plan_name == PlanName.PREMIUM:
+                    if plan_result and plan_result.plan_name == PlanName.PREMIUM:
                         default_quota = StorageQuota.PREMIUM * StorageSize.GB
                     else:
                         default_quota = StorageQuota.FREE * StorageSize.GB
@@ -219,18 +250,19 @@ def update_user_storage_usage(user_id: int, new_usage_bytes: int) -> bool:
                     )
                     db.add(new_storage_usage)
 
-                logger.info(
-                    f"Updated storage usage for user "
-                    f"{user_id}: {new_usage_bytes} bytes"
-                )
-                return True
-
-            except Exception as orm_error:
+            except (ProgrammingError, OperationalError) as orm_error:
+                # Benign fallback for a missing/inaccessible table only; genuine
+                # write errors (StaleDataError, etc.) propagate and return False.
                 logger.warning(
                     f"UserStorageUsage table not accessible:"
                     f" {orm_error}, skipping storage update"
                 )
                 return True
+
+        logger.info(
+            f"Updated storage usage for user " f"{user_id}: {new_usage_bytes} bytes"
+        )
+        return True
 
     except Exception as e:
         logger.warning(f"Failed to update storage usage for " f"user {user_id}: {e}")
@@ -426,6 +458,11 @@ async def get_current_user_storage_usage(user_id: int, force_live: bool = False)
 
         return live_usage
 
+    except StorageOwnerInactive:
+        # The storage row outlives the account, so this is not a failed read
+        logger.info(f"Skipped live storage usage for inactive user {user_id}")
+        storage_info = get_user_storage_usage(user_id)
+        return storage_info.get("storage_usage_bytes", 0) if storage_info else 0
     except Exception as e:
         logger.error(f"Failed to get current storage usage for " f"user {user_id}: {e}")
         storage_info = get_user_storage_usage(user_id)
@@ -490,7 +527,14 @@ async def _calculate_live_storage_usage(
             from studio.app.common.core.users.crud_users import get_user_with_context
 
             with session_scope() as db:
-                user = await get_user_with_context(db, user_id)
+                try:
+                    user = await get_user_with_context(db, user_id)
+                except HTTPException as lookup_error:
+                    if lookup_error.status_code != 404:
+                        raise
+                    # Deleting an account leaves its storage row behind, so the
+                    # reconciliation job still selects it. Routine, not a fault.
+                    raise StorageOwnerInactive(user_id) from None
                 if (
                     user
                     and user.attributes
@@ -512,9 +556,13 @@ async def _calculate_live_storage_usage(
         else:
             return await _calculate_local_user_storage(user_id)
 
+    except StorageOwnerInactive:
+        raise
     except Exception as e:
+        # Use repr(e) so the exception type is visible even when str(e) is empty.
         logger.error(
-            f"Failed to calculate live storage usage for " f"user {user_id}: {e}"
+            f"Failed to calculate live storage usage for user {user_id}: {e!r}",
+            exc_info=True,
         )
         return 0
 
@@ -724,6 +772,8 @@ async def _perform_full_scan_and_reset_delta(
                     {"lock_name": lock_name},
                 )
 
+    except StorageOwnerInactive:
+        raise
     except Exception as e:
         logger.error(f"Failed to perform full scan for " f"user {user_id}: {e}")
 

@@ -25,35 +25,34 @@ import {
 } from "store/slice/Experiments/ExperimentsActions"
 import { selectExperimentList } from "store/slice/Experiments/ExperimentsSelectors"
 import { Experiments } from "store/slice/Experiments/ExperimentsType"
+import { clearCurrentPipeline } from "store/slice/Pipeline/PipelineSlice"
 import { reset } from "store/slice/VisualizeItem/VisualizeItemSlice"
 import { reproduceWorkflow } from "store/slice/Workflow/WorkflowActions"
 import { RootState } from "store/store"
 
+// One factory per module. There used to be three for ExperimentsActions and two
+// for the api module, and jest keeps only the last of each - which is how
+// `deleteExperimentByUid` came to be undefined at the point a test called it.
+//
+// The implementations are installed in beforeEach rather than here, because CRA
+// sets `resetMocks: true`: jest.resetAllMocks() strips the implementation passed
+// to jest.fn(impl), so anything defined in a module factory is already gone by
+// the time a test body runs, and every mocked creator returns undefined.
 jest.mock("api/experiments/Experiments", () => ({
-  renameExperimentApi: jest.fn(), // Mock the renameExperimentApi function
+  renameExperimentApi: jest.fn(),
 }))
 
-// Mock the getExperiments action
 jest.mock("store/slice/Experiments/ExperimentsActions", () => ({
-  getExperiments: jest.fn(() => ({ type: "getExperiments" })), // Return plain object action
-}))
-
-// Mock the deleteExperimentByUid and clearCurrentPipeline actions
-jest.mock("store/slice/Experiments/ExperimentsActions", () => ({
+  getExperiments: jest.fn(),
   deleteExperimentByUid: jest.fn(),
-}))
-
-jest.mock("store/slice/Experiments/ExperimentsActions", () => ({
-  getExperiments: jest.fn(() => ({ type: "getExperiments" })), // Return plain object action
 }))
 
 jest.mock("store/slice/Pipeline/PipelineSlice", () => ({
   clearCurrentPipeline: jest.fn(),
 }))
 
-// Mock necessary actions and selectors
 jest.mock("store/slice/Workflow/WorkflowActions", () => ({
-  reproduceWorkflow: jest.fn(() => ({ unwrap: jest.fn() })),
+  reproduceWorkflow: jest.fn(),
 }))
 
 jest.mock("store/slice/VisualizeItem/VisualizeItemSlice", () => ({
@@ -65,11 +64,6 @@ jest.mock("store/slice/Experiments/ExperimentsSelectors", () => ({
   selectExperimentsStatusIsUninitialized: jest.fn(),
   selectExperimentsStatusIsError: jest.fn(),
   selectExperimentList: jest.fn(),
-}))
-
-// Mock necessary actions and API
-jest.mock("api/experiments/Experiments", () => ({
-  renameExperimentApi: jest.fn(),
 }))
 
 const mockStore = configureStore<RootState, AnyAction>([])
@@ -99,6 +93,7 @@ describe("ExperimentTable", () => {
             hasIntermediates: true,
             hasOutputs: true,
             hasInputs: true,
+            isRemoteSynced: true,
           },
           2: {
             uid: "2",
@@ -117,6 +112,7 @@ describe("ExperimentTable", () => {
             hasIntermediates: true,
             hasOutputs: true,
             hasInputs: true,
+            isRemoteSynced: false,
           },
         },
       } as Experiments,
@@ -234,6 +230,28 @@ describe("ExperimentTable", () => {
         open: false,
       },
     })
+
+    // redux-mock-store has no thunk middleware here and returns the action from
+    // dispatch, so a creator whose result is chained has to hand back an object
+    // carrying `unwrap` itself.
+    ;(getExperiments as unknown as jest.Mock).mockReturnValue({
+      type: "experiments/getExperiments",
+    })
+    ;(deleteExperimentByUid as unknown as jest.Mock).mockReturnValue({
+      type: "experiments/deleteExperimentByUid",
+      unwrap: () => Promise.resolve(),
+    })
+    ;(reproduceWorkflow as unknown as jest.Mock).mockReturnValue({
+      type: "workflow/reproduceWorkflow",
+      unwrap: () => Promise.resolve(),
+    })
+    ;(reset as unknown as jest.Mock).mockReturnValue({
+      type: "visualizeItem/reset",
+    })
+    ;(clearCurrentPipeline as unknown as jest.Mock).mockReturnValue({
+      type: "pipeline/clearCurrentPipeline",
+    })
+    ;(renameExperimentApi as jest.Mock).mockResolvedValue(undefined)
     ;(selectExperimentList as jest.Mock).mockReturnValue({
       1: {
         uid: "1",
@@ -484,7 +502,7 @@ describe("ExperimentTable", () => {
   })
 
   // TODO: WIP - Fix the test
-  it.skip("renders and handles reproduction", async () => {
+  it("renders and handles reproduction", async () => {
     render(
       <Provider store={store}>
         <ExperimentUidContext.Provider value="1">
@@ -515,7 +533,7 @@ describe("ExperimentTable", () => {
   })
 
   // TODO: WIP - Fix the test
-  it.skip("should delete a single experiment when confirmed in the dialog", async () => {
+  it("should delete a single experiment when confirmed in the dialog", async () => {
     render(
       <Provider store={store}>
         <ExperimentTable />
@@ -543,7 +561,7 @@ describe("ExperimentTable", () => {
   })
 
   // TODO: WIP - Fix the test
-  it.skip("should dispatch the getExperiments action when the Reload button is clicked", () => {
+  it("should dispatch the getExperiments action when the Reload button is clicked", () => {
     render(
       <Provider store={store}>
         <ExperimentTable />
@@ -560,7 +578,7 @@ describe("ExperimentTable", () => {
     expect(getExperiments).toHaveBeenCalledTimes(1)
   })
 
-  it.skip("allows renaming an experiment", async () => {
+  it("allows renaming an experiment", async () => {
     render(
       <Provider store={store}>
         <ExperimentTable />
@@ -594,5 +612,20 @@ describe("ExperimentTable", () => {
 
     // After renaming, the UI should update with the new name
     expect(screen.getByText("New Experiment Name")).toBeInTheDocument()
+  })
+
+  it("does not offer renaming for a record whose data is not synced", async () => {
+    // Renaming writes through to remote storage, so a record that is not synced
+    // there is deliberately not editable. Experiment 2 is the unsynced row.
+    render(
+      <Provider store={store}>
+        <ExperimentTable />
+      </Provider>,
+    )
+
+    fireEvent.click(screen.getByText("Experiment 2"))
+
+    expect(screen.queryByPlaceholderText("Name")).not.toBeInTheDocument()
+    expect(renameExperimentApi).not.toHaveBeenCalled()
   })
 })

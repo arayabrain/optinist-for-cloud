@@ -91,6 +91,13 @@ class TestInstanceModePublic:
         paths = _registered_paths("public")
         assert not any(p.startswith("/subscriptions") for p in paths)
 
+    def test_experiments_router_is_not_registered(self):
+        """A public task has no access to a user's experiment records, and
+        ``/experiments`` was the one prefix left unchecked while every other
+        one was covered."""
+        paths = _registered_paths("public")
+        assert not any(p.startswith("/experiments") for p in paths)
+
     def test_optinist_routers_are_not_registered(self):
         paths = _registered_paths("public")
         for prefix in ("/hdf5", "/mat", "/nwb"):

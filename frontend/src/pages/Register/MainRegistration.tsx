@@ -30,6 +30,7 @@ import {
   regexIgnoreS,
   regexPassword,
 } from "const/Auth"
+import { FONT_WEIGHT, TEXT_COLOR } from "const/Style"
 import {
   registerUser,
   resendVerificationEmail,
@@ -78,6 +79,7 @@ const RegistrationForm = () => {
 
   const [validationError, setValidationError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [showResendSnackbar, setShowResendSnackbar] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({})
   const [resendCooldown, setResendCooldown] = useState(false)
@@ -173,6 +175,13 @@ const RegistrationForm = () => {
     if (formData.password !== formData.confirmPassword) {
       setValidationError("password is not match")
       setFieldErrors({ confirmPassword: true })
+      return false
+    }
+
+    if (!agreedToTerms) {
+      setValidationError(
+        "You must agree to the Terms of Service and Privacy Policy",
+      )
       return false
     }
 
@@ -413,6 +422,38 @@ const RegistrationForm = () => {
               </CheckboxLabel>
             </CheckboxWrapper>
 
+            {/* Terms of Service / Privacy Policy agreement */}
+            <CheckboxWrapper>
+              <Checkbox
+                type="checkbox"
+                id="agree-to-terms"
+                checked={agreedToTerms}
+                onChange={(e) => {
+                  setAgreedToTerms(e.target.checked)
+                  if (validationError) setValidationError("")
+                }}
+                disabled={loading}
+              />
+              <CheckboxLabel htmlFor="agree-to-terms">
+                I agree to the{" "}
+                <PolicyLink
+                  to="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Terms of Service
+                </PolicyLink>{" "}
+                and{" "}
+                <PolicyLink
+                  to="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Privacy Policy
+                </PolicyLink>
+              </CheckboxLabel>
+            </CheckboxWrapper>
+
             {/* Submit button */}
             <SubmitButton type="submit" disabled={loading}>
               {loading ? "Registering..." : "Sign Up"}
@@ -603,6 +644,12 @@ const LoginLink = styled(Link)({
   textDecoration: "none",
   fontWeight: 500,
   ":hover": { textDecoration: "underline" },
+})
+
+const PolicyLink = styled(Link)({
+  color: TEXT_COLOR.BLACK,
+  textDecoration: "underline",
+  fontWeight: FONT_WEIGHT.MEDIUM,
 })
 
 const SuccessContent = styled(Box)({ textAlign: "center" })

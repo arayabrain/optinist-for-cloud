@@ -2,7 +2,21 @@
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+
+
+def split_boto3_clients(mock_boto3):
+    """Wire boto3.client to return a distinct mock per service name.
+
+    The Lambda creates separate elbv2 and cloudwatch clients; sharing one mock
+    would let an alarm delete on the wrong client pass undetected.
+    """
+    clients = {"elbv2": MagicMock(), "cloudwatch": MagicMock()}
+    mock_boto3.client.side_effect = lambda service, *a, **k: clients[service]
+    return clients["elbv2"], clients["cloudwatch"]
 
 
 class TestRecoverStaleWorkflowCounts:
@@ -184,12 +198,18 @@ class TestCheckPremiumUserInactivity:
             assert "error" not in result
 
     def test_logout_with_alb_cleanup(self, mock_env_vars_common):
-        """Inactive premium user triggers ALB rule + TG delete."""
+        """Inactive premium user triggers ALB rule + TG delete, and the TG's
+        unhealthy-host alarm goes with it. The alarm delete is best-effort in
+        the Lambda (exceptions are swallowed), so without this assertion a
+        leaked alarm would page on a target group that no longer exists."""
         mock_conn, mock_cursor = self._setup_db_mock()
         mock_cursor.fetchall.return_value = [
             {
-                "user_id": "premium1",
-                "target_group_arn": "arn:aws:tg/user-tg",
+                "user_id": 123,
+                "target_group_arn": (
+                    "arn:aws:elasticloadbalancing:region:account:"
+                    "targetgroup/premium-123-tg/xyz"
+                ),
                 "alb_rule_arn": "arn:aws:rule/user-rule",
             }
         ]
@@ -198,8 +218,7 @@ class TestCheckPremiumUserInactivity:
             "common_user_manager.get_db_connection"
         ) as mock_db, patch("common_user_manager.boto3") as mock_boto3:
             mock_db.return_value = mock_conn
-            mock_elbv2 = MagicMock()
-            mock_boto3.client.return_value = mock_elbv2
+            mock_elbv2, mock_cloudwatch = split_boto3_clients(mock_boto3)
 
             from common_user_manager import check_premium_user_inactivity
 
@@ -209,6 +228,9 @@ class TestCheckPremiumUserInactivity:
             assert result.get("failed", 0) == 0
             mock_elbv2.delete_rule.assert_called_once()
             mock_elbv2.delete_target_group.assert_called_once()
+            mock_cloudwatch.delete_alarms.assert_called_once_with(
+                AlarmNames=["test-premium-123-tg-unhealthy-hosts"]
+            )
             mock_conn.commit.assert_called_once()
 
     def test_skips_standby_markers(self, mock_env_vars_common):
@@ -226,8 +248,7 @@ class TestCheckPremiumUserInactivity:
             "common_user_manager.get_db_connection"
         ) as mock_db, patch("common_user_manager.boto3") as mock_boto3:
             mock_db.return_value = mock_conn
-            mock_elbv2 = MagicMock()
-            mock_boto3.client.return_value = mock_elbv2
+            mock_elbv2, mock_cloudwatch = split_boto3_clients(mock_boto3)
 
             from common_user_manager import check_premium_user_inactivity
 
@@ -236,6 +257,7 @@ class TestCheckPremiumUserInactivity:
             assert result["logged_out"] == 1
             mock_elbv2.delete_rule.assert_not_called()
             mock_elbv2.delete_target_group.assert_not_called()
+            mock_cloudwatch.delete_alarms.assert_not_called()
 
     def test_skips_autoscaling_tg(self, mock_env_vars_common):
         """Autoscaling TG is never deleted during cleanup."""
@@ -253,8 +275,7 @@ class TestCheckPremiumUserInactivity:
             "common_user_manager.get_db_connection"
         ) as mock_db, patch("common_user_manager.boto3") as mock_boto3:
             mock_db.return_value = mock_conn
-            mock_elbv2 = MagicMock()
-            mock_boto3.client.return_value = mock_elbv2
+            mock_elbv2, mock_cloudwatch = split_boto3_clients(mock_boto3)
 
             from common_user_manager import check_premium_user_inactivity
 
@@ -263,6 +284,7 @@ class TestCheckPremiumUserInactivity:
             assert result["logged_out"] == 1
             mock_elbv2.delete_rule.assert_called_once()
             mock_elbv2.delete_target_group.assert_not_called()
+            mock_cloudwatch.delete_alarms.assert_not_called()
 
     def test_partial_failure(self, mock_env_vars_common):
         """One user fails, other succeeds."""
@@ -352,6 +374,43 @@ class TestHandler:
             assert result["statusCode"] == 500
             body = json.loads(result["body"])
             assert "Unexpected crash" in body["error"]
+
+    def test_step_failure_does_not_fail_the_sweep(self, mock_env_vars_common):
+        """A step that fails internally reports its error in the body while the
+        handler still returns 200, so one broken step never stops the sweep
+        (and the 10-minute schedule keeps retrying). Drives the real step
+        functions against a failing DB rather than stubbing their results."""
+        mock_cursor = MagicMock()
+        mock_cursor.execute.side_effect = Exception("Critical database error")
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = Mock(return_value=mock_conn)
+        mock_conn.__exit__ = Mock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = Mock(return_value=False)
+
+        with patch.dict("os.environ", mock_env_vars_common), patch(
+            "common_user_manager.get_db_connection", return_value=mock_conn
+        ), patch(
+            "common_user_manager.get_sqlalchemy_session",
+            side_effect=Exception("Critical database error"),
+        ), patch(
+            "common_user_manager.reap_terminated_ecs_registrations",
+            return_value={"deregistered": 0},
+        ), patch(
+            "common_user_manager.boto3"
+        ), patch(
+            "common_user_manager.traceback.print_exc"
+        ):
+            from common_user_manager import handler
+
+            result = handler({"source": "aws.events"}, MagicMock())
+
+            assert result["statusCode"] == 200
+            results = json.loads(result["body"])["results"]
+            for step in ("workflow_recovery", "free_inactivity", "premium_inactivity"):
+                assert "error" in results[step]
+            assert results["free_inactivity"]["logged_out"] == 0
+            assert results["premium_inactivity"]["logged_out"] == 0
 
 
 class TestHandlerGhostReap:
@@ -672,3 +731,141 @@ class TestGetRequiredEnvVar:
         with patch.dict("os.environ", {"EMPTY_TEST": ""}):
             with pytest.raises(ValueError, match="Missing required"):
                 common_user_manager.get_required_env_var("EMPTY_TEST")
+
+
+class TestRecoverStaleWorkflowCountsPredicates:
+    """Which rows the sweep is willing to touch.
+
+    The tests above assert the returned counts against a mocked `rowcount`, which
+    holds whatever the mock was told to hold - so the conditions deciding *which*
+    rows get reset are invisible to them. The statement is inspected here instead,
+    because the deciding values reach the database as bind parameters.
+
+    What makes this worth pinning: resetting `active_workflow_count` on a user
+    whose workflow is still running lets them start a second one on an instance
+    already busy with the first. The guard against that is the conjunction below,
+    not any single condition in it.
+    """
+
+    def compiled_statements(self, mock_env_vars_common):
+        with patch.dict("os.environ", mock_env_vars_common):
+            import common_user_manager
+
+            with patch.object(
+                common_user_manager, "get_sqlalchemy_session"
+            ) as mock_ctx:
+                session = MagicMock()
+                mock_ctx.return_value.__enter__ = Mock(return_value=session)
+                mock_ctx.return_value.__exit__ = Mock(return_value=False)
+                result = MagicMock()
+                result.rowcount = 0
+                session.execute.return_value = result
+
+                common_user_manager.recover_stale_workflow_counts()
+
+        return [
+            call.args[0].compile(compile_kwargs={"literal_binds": False})
+            for call in session.execute.call_args_list
+        ]
+
+    def test_both_tiers_are_swept(self, mock_env_vars_common):
+        statements = self.compiled_statements(mock_env_vars_common)
+
+        assert len(statements) == 2
+        tables = [str(statement).split()[1] for statement in statements]
+        assert tables == ["free_user_assignments", "premium_user_assignments"]
+
+    @pytest.mark.parametrize("tier", [0, 1])
+    def test_only_a_nonzero_counter_is_touched(self, mock_env_vars_common, tier):
+        """A row already at zero is not stale work, and rewriting it to zero would
+        report a recovery that did not happen."""
+        statement = str(self.compiled_statements(mock_env_vars_common)[tier])
+
+        assert "active_workflow_count > " in statement
+
+    @pytest.mark.parametrize("tier", [0, 1])
+    def test_the_counter_is_reset_rather_than_decremented(
+        self, mock_env_vars_common, tier
+    ):
+        statements = self.compiled_statements(mock_env_vars_common)
+        params = statements[tier].params
+
+        assert params["active_workflow_count"] == 0
+
+    @pytest.mark.parametrize("tier", [0, 1])
+    def test_a_user_with_a_live_session_is_left_alone(self, mock_env_vars_common, tier):
+        """The heartbeat is the whole reason a legitimate four-hour run survives
+        the sweep: `last_activity` recent means the user is still at the keyboard,
+        so the workflow is presumed alive however long it has been going."""
+        statement = str(self.compiled_statements(mock_env_vars_common)[tier])
+
+        assert "last_activity IS NOT NULL" in statement
+        assert "last_activity < " in statement
+
+    @pytest.mark.parametrize("tier", [0, 1])
+    def test_inactivity_alone_is_not_enough(self, mock_env_vars_common, tier):
+        """Inactivity is ANDed with a disjunction of two positive signals that the
+        workflow is over. Dropping the OR would reset the counter of every idle
+        user with a running workflow."""
+        statement = str(self.compiled_statements(mock_env_vars_common)[tier])
+
+        assert " OR " in statement
+        assert "last_workflow_end >= " in statement
+        assert "last_workflow_start < " in statement
+
+    @pytest.mark.parametrize("tier", [0, 1])
+    def test_null_timestamps_are_excluded_rather_than_swept(
+        self, mock_env_vars_common, tier
+    ):
+        """A row with no `last_workflow_start` has no evidence either way. MySQL
+        compares NULL as unknown, so an unguarded comparison silently drops it -
+        the explicit checks keep that from depending on SQL trivia."""
+        statement = str(self.compiled_statements(mock_env_vars_common)[tier])
+
+        assert "last_workflow_end IS NOT NULL" in statement
+        assert "last_workflow_start IS NOT NULL" in statement
+
+    def test_the_cutoffs_are_the_configured_thresholds_back_from_now(
+        self, mock_env_vars_common
+    ):
+        with patch.dict("os.environ", mock_env_vars_common):
+            import common_user_manager
+
+        before = datetime.now(timezone.utc)
+        statements = self.compiled_statements(mock_env_vars_common)
+        after = datetime.now(timezone.utc)
+
+        params = statements[0].params
+        cutoffs = sorted(
+            value for value in params.values() if isinstance(value, datetime)
+        )
+        assert len(cutoffs) == 2
+        very_old, inactive = cutoffs
+        assert (
+            before - timedelta(hours=common_user_manager.WORKFLOW_USER_INACTIVITY_HOURS)
+            <= inactive
+            <= after
+            - timedelta(hours=common_user_manager.WORKFLOW_USER_INACTIVITY_HOURS)
+        )
+        assert (
+            before - timedelta(hours=common_user_manager.WORKFLOW_VERY_OLD_HOURS)
+            <= very_old
+            <= after - timedelta(hours=common_user_manager.WORKFLOW_VERY_OLD_HOURS)
+        )
+
+    def test_the_very_old_cutoff_outlasts_a_legitimate_long_run(
+        self, mock_env_vars_common
+    ):
+        """A real analysis run can take hours. The "very old" arm is what reclaims
+        a crashed one, so it has to sit beyond the longest run a user could
+        plausibly still be waiting on - and beyond the inactivity window, or the
+        arm fires on workflows the inactivity check already covers.
+        """
+        with patch.dict("os.environ", mock_env_vars_common):
+            import common_user_manager
+
+        assert common_user_manager.WORKFLOW_VERY_OLD_HOURS >= 4
+        assert (
+            common_user_manager.WORKFLOW_VERY_OLD_HOURS
+            > common_user_manager.WORKFLOW_USER_INACTIVITY_HOURS
+        )

@@ -16,7 +16,6 @@ import {
   UnreachableSnapshot,
   computeNextProbeDelayMs,
   computeProbeFailure,
-  isStaleFailure,
   shouldClearUnreachableForAssignment,
   shouldHydrateFromSnapshot,
   unreachableMachineReducer,
@@ -66,7 +65,7 @@ export interface UseInstanceUnreachableMachineArgs {
 export interface InstanceUnreachableHandle {
   state: UnreachableMachineState
   retryProbe: () => void
-  // Clears the refs the reducer doesn't own (hydrated, watermark, snapshot, prev-instance). Use on explicit release/logout.
+  // Clears the refs the reducer doesn't own (hydrated, snapshot, prev-instance). Use on explicit release/logout.
   reset: () => void
 }
 
@@ -88,14 +87,11 @@ export function useInstanceUnreachableMachine({
   const hydratedFromSnapshotRef = useRef(false)
   // Gate for snapshot writes — a fresh tab must not wipe a peer's snapshot before hydrating.
   const hasEverBeenUnreachableRef = useRef(false)
-  // Watermark for suppressing out-of-order failures older than the last success.
-  const lastReachableSentAtRef = useRef(0)
   // Last dedicated instance_id — lets the effect below detect a reassignment to a different instance.
   const prevDedicatedInstanceIdRef = useRef<string | undefined>(undefined)
-  // Distinguishes a true shared → dedicated migration from an initial mount
-  // already on dedicated (no warm-up to absorb in the latter).
-  const hasSeenNonDedicatedRef = useRef(false)
-  // Timestamp of the most recent shared → dedicated transition.
+  // Timestamp of the most recent transition onto a dedicated instance (initial
+  // assignment, shared → dedicated migration, or reassignment). Opens the
+  // warm-up grace window during which transient 5xx are suppressed.
   const dedicatedSinceRef = useRef<number | null>(null)
 
   // Consolidated state → refs mirror (one effect for three refs).
@@ -113,10 +109,6 @@ export function useInstanceUnreachableMachine({
     if (shouldClearUnreachableForAssignment(assignment)) {
       prevDedicatedInstanceIdRef.current = undefined
       dedicatedSinceRef.current = null
-      // Only a concrete assignment counts — null is "unknown", not shared.
-      if (assignment != null) {
-        hasSeenNonDedicatedRef.current = true
-      }
       if (unreachableRef.current || probingRef.current) {
         unreachableRef.current = false
         probingRef.current = false
@@ -136,15 +128,22 @@ export function useInstanceUnreachableMachine({
       failedProbesRef.current = 0
       dispatch({ type: "CLEAR" })
       routingService.setPremiumAssigned(true)
-      // Reassignment onto a different dedicated instance — start a fresh grace.
+      // Reassignment onto a different dedicated instance — fresh grace.
       dedicatedSinceRef.current = Date.now()
+      routingService.startPremiumWarmup()
     } else if (
       isDedicated &&
-      prevDedicatedInstanceIdRef.current === undefined &&
-      hasSeenNonDedicatedRef.current
+      prevDedicatedInstanceIdRef.current === undefined
     ) {
-      // Shared → dedicated migration: arm the warm-up grace.
+      // First dedicated transition: initial sign-in, shared→dedicated migration,
+      // or reload/new-tab onto an existing instance.
+      // Co-arm the axios warm-up window with this grace (lock-step): on
+      // reload/new-tab the hash is unchanged (hydrated from localStorage), so
+      // setPremiumInstanceId does not arm axios by itself. Without co-arming, a
+      // transient 5xx tears routing down while this grace suppresses the
+      // unreachable event — stranding routing with no probe to recover it.
       dedicatedSinceRef.current = Date.now()
+      routingService.startPremiumWarmup()
     }
     prevDedicatedInstanceIdRef.current = assignment?.instance_id
   }, [assignment])
@@ -158,24 +157,22 @@ export function useInstanceUnreachableMachine({
         return
       }
 
-      if (
-        isStaleFailure(
-          detail.sentAt,
-          lastReachableSentAtRef.current,
-          Date.now(),
-        )
-      ) {
+      // Stale/out-of-order failure — suppressed at the same watermark the axios
+      // teardown choke-point uses (single source of truth in RoutingService).
+      if (routingService.isStalePremiumFailure(detail.sentAt)) {
         return
       }
 
-      // Single-shot warm-up grace — absorbs one transient 5xx within
+      // Warm-up grace window — absorbs every transient 5xx within
       // DEDICATED_HANDOFF_GRACE_MS of a handoff before flipping unreachable.
+      // Kept armed for the full window (not single-shot) so multiple warm-up
+      // flaps from a freshly-assigned instance are all suppressed; the window
+      // expires naturally once the timestamp ages out.
       if (
         !unreachableRef.current &&
         dedicatedSinceRef.current !== null &&
         Date.now() - dedicatedSinceRef.current < DEDICATED_HANDOFF_GRACE_MS
       ) {
-        dedicatedSinceRef.current = null
         logPremiumUiEvent("instance_unreachable_warmup_suppressed", {
           instance_id: a.instance_id ?? null,
           url: detail.url ?? null,
@@ -234,12 +231,9 @@ export function useInstanceUnreachableMachine({
       })
     })
 
-    const unsubReachable = routingService.onPremiumReachable((detail) => {
-      // Update watermark even when healthy — a later stale failure still needs suppression.
-      const sentAt = detail.sentAt ?? Date.now()
-      if (sentAt > lastReachableSentAtRef.current) {
-        lastReachableSentAtRef.current = sentAt
-      }
+    const unsubReachable = routingService.onPremiumReachable(() => {
+      // The reachable watermark is advanced in RoutingService.emitPremiumReachable
+      // (before listeners run), so no local bookkeeping is needed here.
       if (!unreachableRef.current) return
       probingRef.current = false
       unreachableRef.current = false
@@ -401,9 +395,7 @@ export function useInstanceUnreachableMachine({
     probingRef.current = false
     hydratedFromSnapshotRef.current = false
     hasEverBeenUnreachableRef.current = false
-    lastReachableSentAtRef.current = 0
     prevDedicatedInstanceIdRef.current = undefined
-    hasSeenNonDedicatedRef.current = false
     dedicatedSinceRef.current = null
     dispatch({ type: "CLEAR" })
     lsWriteUnreachableSnapshot(null)

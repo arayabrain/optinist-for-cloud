@@ -249,7 +249,10 @@ def caiman_cnmf(
         idx_good = []
         idx_bad = []
 
-    stop_server(dview=dview)
+    # In single-thread mode dview is None and there is no cluster to stop;
+    # stop_server() would shell out to a nonexistent `ipcluster` and log errors.
+    if dview is not None:
+        stop_server(dview=dview)
 
     # contours plot
     Cn = local_correlations(mmap_images.transpose(1, 2, 0))

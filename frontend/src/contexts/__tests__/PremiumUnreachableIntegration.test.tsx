@@ -45,6 +45,7 @@ jest.mock("react-redux", () => ({
   useSelector: (selector: (s: unknown) => unknown) =>
     selector({
       user: { currentUser: mockUser, logoutGeneration: 0 },
+      pipeline: { run: { status: "StartUninitialized" } },
     }),
   useDispatch: () => mockDispatchFn,
 }))
@@ -93,6 +94,21 @@ jest.mock("api/premium/PremiumAssignmentApi", () => ({
 jest.mock("hooks/useSleepDetection", () => ({
   __esModule: true,
   useSleepDetection: () => undefined,
+}))
+
+// Neutralize the dedicated warm-up grace here: these are raw machine-transition
+// integration tests that flip unreachable immediately after a fresh dedicated
+// assignment. The grace (which now covers the initial undefined → dedicated
+// case too) would otherwise suppress that first 5xx. The grace itself is
+// covered in useInstanceUnreachableMachineLeader.test.tsx.
+// "mock" prefix required for Jest's out-of-scope factory guard.
+const mockUnreachableConstants = jest.requireActual(
+  "contexts/premium/unreachableConstants",
+) as typeof import("contexts/premium/unreachableConstants")
+jest.mock("contexts/premium/unreachableConstants", () => ({
+  __esModule: true,
+  ...mockUnreachableConstants,
+  DEDICATED_HANDOFF_GRACE_MS: 0,
 }))
 
 // Mock tabSync so tests can invoke handlers directly. "mock" prefix required for Jest's out-of-scope guard.
@@ -179,12 +195,23 @@ const mockedAssign = mockAssignPremiumInstance
 const mockedLog = mockLogPremiumUiEvent
 
 const dedicatedStatus: PremiumStatusResult = {
-  user_id: 1,
   subscription_type: UserTier.PREMIUM,
   is_premium: true,
   assignment: {
     instance_id: "inst-A",
     is_shared: false,
+    assigned_at: "2023-01-01T00:00:00Z",
+    status: "active",
+  },
+}
+
+const sharedStatus: PremiumStatusResult = {
+  user_id: 1,
+  subscription_type: UserTier.PREMIUM,
+  is_premium: true,
+  assignment: {
+    instance_id: "inst-shared",
+    is_shared: true,
     assigned_at: "2023-01-01T00:00:00Z",
     status: "active",
   },
@@ -206,6 +233,28 @@ describe("PremiumAssignmentProvider — unreachable state machine", () => {
 
   afterEach(() => {
     jest.clearAllTimers()
+  })
+
+  test("shared /status assignment forwards is_shared to routingService.setPremiumShared", async () => {
+    // Wiring guard: the establishment site must forward is_shared so the axios
+    // teardown gate (isPremiumShared) sees a shared assignment.
+    mockedGetStatus.mockResolvedValue(sharedStatus)
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.is_shared).toBe(true)
+    })
+    expect(routingService.isPremiumShared()).toBe(true)
+  })
+
+  test("dedicated /status assignment leaves premiumShared false", async () => {
+    mockedGetStatus.mockResolvedValue(dedicatedStatus)
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.is_shared).toBe(false)
+    })
+    expect(routingService.isPremiumShared()).toBe(false)
   })
 
   test("HEALTHY → DEGRADED on emitPremiumUnreachable, then clears on emitPremiumReachable", async () => {
@@ -291,6 +340,59 @@ describe("PremiumAssignmentProvider — unreachable state machine", () => {
       "instance_unreachable",
       expect.anything(),
     )
+  })
+
+  test("stale failure that tears routing down must not strand premium routing", async () => {
+    // Phase 2 repro (grievance B). The axios teardown choke-point has no
+    // staleness knowledge: past warm-up it tears premiumAssigned down on any
+    // 5xx. The machine, however, suppresses a stale failure (older sentAt than
+    // the last reachable) and never flips to unreachable — so no recovery probe
+    // arms. Nothing re-arms premiumAssigned → premium routing is stranded on
+    // free tier until the next reload.
+    mockedGetStatus.mockResolvedValue(dedicatedStatus)
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.assigned).toBe(true)
+    })
+
+    // Healthy, dedicated, steady state: clear the warm-up window so the
+    // interceptor teardown is no longer warm-up-suppressed.
+    act(() => {
+      routingService.setPremiumAssigned(true)
+      routingService.clearPremiumWarmup()
+    })
+    expect(routingService.isWithinPremiumWarmup()).toBe(false)
+
+    // A successful premium response sets the reachable watermark at sentAt=2000.
+    act(() => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+    })
+
+    // A request sent earlier (sentAt=1500) 5xxs late. Mirror the axios choke-point
+    // (tearDownPremiumRoutingUnlessWarmup): past warm-up it still skips teardown
+    // for a stale failure, so routing is left intact.
+    act(() => {
+      const detail = { status: 503, sentAt: 1500 }
+      if (
+        !routingService.isWithinPremiumWarmup() &&
+        !routingService.isStalePremiumFailure(detail.sentAt)
+      ) {
+        routingService.setPremiumAssigned(false)
+        routingService.emitPremiumUnreachable(detail)
+      }
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // The failure is recognized as stale (1500 < watermark 2000), so the
+    // choke-point never tears routing down and the machine never flips.
+    expect(routingService.isStalePremiumFailure(1500)).toBe(true)
+    expect(ctxRef.current?.unreachable.state.instanceUnreachable).toBe(false)
+
+    // Invariant: a stale failure must not downgrade routing to free tier.
+    expect(routingService.isPremiumAssigned()).toBe(true)
   })
 
   test("peer UNREACHABLE broadcast applies state including failed_probes/is_terminal", async () => {
@@ -395,6 +497,72 @@ describe("PremiumAssignmentProvider — unreachable state machine", () => {
     })
     expect(ctxRef.current?.unreachable.state.failedProbes).toBe(0)
     expect(ctxRef.current?.unreachable.state.isUnreachableTerminal).toBe(false)
+  })
+
+  test("local reachable recovery (concurrent success, no probe) re-arms premiumAssigned", async () => {
+    // #754: a concurrent premium failure tore routing down, then a concurrent
+    // premium success emits reachable and clears the machine before the
+    // half-open probe arms. The exit side must re-arm premiumAssigned, or the
+    // user is stranded on free tier until reload.
+    mockedGetStatus.mockResolvedValue(dedicatedStatus)
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.assigned).toBe(true)
+    })
+
+    // Teardown choke-point flips the machine and turns routing off, but keeps
+    // the instance identity (only release/logout nulls it).
+    act(() => {
+      routingService.setPremiumInstanceId("inst-A")
+      routingService.setPremiumAssigned(false)
+      routingService.emitPremiumUnreachable({ status: 503, sentAt: 1000 })
+    })
+    await waitFor(() => {
+      expect(ctxRef.current?.unreachable.state.instanceUnreachable).toBe(true)
+    })
+
+    // Concurrent success emits reachable — recovery NOT via the probe.
+    act(() => {
+      routingService.emitPremiumReachable({ status: 200, sentAt: 2000 })
+    })
+    await waitFor(() => {
+      expect(ctxRef.current?.unreachable.state.instanceUnreachable).toBe(false)
+    })
+
+    expect(routingService.isPremiumAssigned()).toBe(true)
+  })
+
+  test("peer reachable recovery also ends with premiumAssigned re-armed", async () => {
+    // Guards the leader/peer symmetry: both reachable paths re-arm routing.
+    mockedGetStatus.mockResolvedValue(dedicatedStatus)
+    const ctxRef = renderProvider()
+
+    await waitFor(() => {
+      expect(ctxRef.current?.assignmentResult?.assigned).toBe(true)
+    })
+
+    act(() => {
+      routingService.setPremiumAssigned(false)
+      fireTabSync("PREMIUM_INSTANCE_UNREACHABLE", {
+        instance_id: "inst-A",
+        unreachable_since: 5000,
+        failed_probes: 0,
+        is_terminal: false,
+      })
+    })
+    await waitFor(() => {
+      expect(ctxRef.current?.unreachable.state.instanceUnreachable).toBe(true)
+    })
+
+    act(() => {
+      fireTabSync("PREMIUM_INSTANCE_REACHABLE", { instance_id: "inst-A" })
+    })
+    await waitFor(() => {
+      expect(ctxRef.current?.unreachable.state.instanceUnreachable).toBe(false)
+    })
+
+    expect(routingService.isPremiumAssigned()).toBe(true)
   })
 
   test("late echo of unreachable does not re-log", async () => {

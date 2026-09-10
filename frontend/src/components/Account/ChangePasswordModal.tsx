@@ -1,4 +1,4 @@
-import { ChangeEvent, FC, useState } from "react"
+import { ChangeEvent, FC, useEffect, useState } from "react"
 
 import {
   Box,
@@ -32,6 +32,18 @@ const ChangePasswordModal: FC<ChangePasswordModalProps> = ({
 }) => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const [values, setValues] = useState<{ [key: string]: string }>({})
+
+  // Clear on every close, not just the Close button: the page also closes this
+  // modal itself once a submit settles. The inputs are uncontrolled and the
+  // Dialog unmounts them, so state left behind here outlives what the user can
+  // see - the next attempt would submit the previous old password from a field
+  // that looks empty.
+  useEffect(() => {
+    if (!open) {
+      setValues({})
+      setErrors({})
+    }
+  }, [open])
   const onChangeValue = (
     event: ChangeEvent<HTMLInputElement>,
     validate?: (value: string) => string,
@@ -77,19 +89,23 @@ const ChangePasswordModal: FC<ChangePasswordModalProps> = ({
     return ""
   }
 
-  const validateReEnterWhenInputPassword = () => {
-    const { reEnter, new_password } = values
-    if (!new_password)
+  // A mismatch is already flagged by onChangeValue as the new password is typed,
+  // so blurring only has to report the field being left empty.
+  const validateNewPasswordOnBlur = () => {
+    if (!values.new_password)
       setErrors((pre) => ({ ...pre, new_password: "This field is required" }))
-    if (reEnter && reEnter !== new_password) {
-      setErrors((pre) => ({ ...pre, reEnter: "Passwords do not match" }))
-    }
   }
 
+  // The mismatch check belongs here and not only in onChangeValue: this is the
+  // whole of submit-time validity, so submission can be gated on this alone.
+  // Consulting the live `errors` state instead would skip the fields it has no
+  // entry for, and report only some of the reasons the form was refused.
   const validateForm = () => {
     const errorPassword = !values.password ? "This field is required" : ""
     const errorNewPass = validatePassword(values.new_password)
-    const errorConfirmPass = validatePassword(values.confirm_password)
+    const errorConfirmPass =
+      validatePassword(values.confirm_password) ||
+      validateReEnter(values.confirm_password)
     return {
       password: errorPassword,
       new_password: errorNewPass,
@@ -99,22 +115,15 @@ const ChangePasswordModal: FC<ChangePasswordModalProps> = ({
 
   const onChangePass = async () => {
     const newErrors: { [key: string]: string } = validateForm()
-    if (errors.new_password || errors.confirm_password) return
-    if (newErrors.new_password || newErrors.confirm_password) {
+    if (Object.values(newErrors).some(Boolean)) {
       setErrors(newErrors)
       return
     }
     await onSubmit(values.password, values.new_password)
   }
 
-  const onCloseModal = () => {
-    setErrors({})
-    setValues({})
-    onClose()
-  }
-
   return (
-    <Dialog open={open} onClose={onCloseModal}>
+    <Dialog open={open} onClose={onClose}>
       <DialogTitle>
         <BoxTitle>
           <Typography sx={{ fontWeight: 600, fontSize: 18 }}>
@@ -148,7 +157,7 @@ const ChangePasswordModal: FC<ChangePasswordModalProps> = ({
               name="new_password"
               error={errors.new_password}
               placeholder="New Password"
-              onBlur={validateReEnterWhenInputPassword}
+              onBlur={validateNewPasswordOnBlur}
             />
           </FormInline>
           <FormInline>
@@ -173,7 +182,7 @@ const ChangePasswordModal: FC<ChangePasswordModalProps> = ({
         </BoxConfirm>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCloseModal} variant={"outlined"}>
+        <Button onClick={onClose} variant={"outlined"}>
           Close
         </Button>
         <Button onClick={() => onChangePass()} variant={"contained"}>

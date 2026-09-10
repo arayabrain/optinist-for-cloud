@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import INTEGER, TIMESTAMP, VARCHAR, Boolean, Enum
+from sqlalchemy import INTEGER, TIMESTAMP, VARCHAR, Boolean, Enum, Index
 from sqlalchemy.dialects.mysql import BIGINT
 from sqlalchemy.sql.functions import current_timestamp
 from sqlmodel import Column, Field, ForeignKey, SQLModel
@@ -9,6 +9,18 @@ from sqlmodel import Column, Field, ForeignKey, SQLModel
 
 class PremiumUserAssignment(SQLModel, table=True):
     __tablename__ = "premium_user_assignments"
+
+    __table_args__ = (
+        Index("idx_instance_id", "instance_id"),
+        Index("idx_last_activity", "last_activity"),
+        Index("idx_status", "status"),
+        Index("idx_instance_state", "instance_state"),
+        Index("idx_is_shared", "is_shared"),
+        Index("idx_last_state_check", "last_state_check"),
+        Index("idx_is_standby", "is_standby"),
+        Index("idx_standby_created_at", "standby_created_at"),
+        Index("idx_workflow_recovery", "active_workflow_count", "last_workflow_start"),
+    )
 
     id: Optional[int] = Field(
         sa_column=Column(
@@ -19,13 +31,14 @@ class PremiumUserAssignment(SQLModel, table=True):
         ),
         default=None,
     )
-    user_id: int = Field(
+    user_id: Optional[int] = Field(
         sa_column=Column(
             BIGINT(unsigned=True),
-            ForeignKey("users.id"),
+            ForeignKey("users.id", name="fk_premium_user"),
             unique=True,
-            nullable=False,
-        )
+            nullable=True,
+        ),
+        default=None,
     )
     instance_id: str = Field(sa_column=Column(VARCHAR(20), nullable=False))
     target_group_arn: str = Field(sa_column=Column(VARCHAR(512), nullable=False))

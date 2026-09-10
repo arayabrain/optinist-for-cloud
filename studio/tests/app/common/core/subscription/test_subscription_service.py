@@ -65,3 +65,34 @@ class TestExpirationDeletion:
         assert len(result) == 1
         assert result[0]["user_id"] == 123
         assert result[0]["excess_bytes"] > 0
+
+
+class TestDetermineLifecycle:
+    """SubscriptionService.determine_lifecycle() classification tests."""
+
+    @staticmethod
+    def _mock_db(expiration):
+        db = Mock()
+        subscription = Mock()
+        subscription.expiration = expiration
+        db.execute.return_value.all.return_value = [[subscription]]
+        return db
+
+    def test_none_expiration_returns_none(self):
+        assert SubscriptionService.determine_lifecycle(self._mock_db(None), 1) is None
+
+    def test_no_premium_rows_is_free(self):
+        from studio.app.common.core.subscription.constants import (
+            SubscriptionLifecycleStatus,
+        )
+        from studio.app.common.core.subscription.subscription_service import (
+            SubscriptionLifecycle,
+        )
+
+        db = Mock()
+        db.execute.return_value.all.return_value = []
+
+        result = SubscriptionService.determine_lifecycle(db, 1)
+
+        assert isinstance(result, SubscriptionLifecycle)
+        assert result.status == SubscriptionLifecycleStatus.FREE

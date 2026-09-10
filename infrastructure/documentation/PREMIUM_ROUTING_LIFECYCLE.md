@@ -269,12 +269,26 @@ This mechanism covers two scenarios:
 **File:** `frontend/src/contexts/PremiumAssignmentContext.tsx`
 **Effect:** `checkInactivity` interval (every 30 seconds)
 
-The inactivity monitor observes `lastActivity` across all tabs and fires on two hard-coded thresholds:
+The inactivity monitor observes `lastActivity` across all tabs and fires on two thresholds, both from `PremiumTiming` in `const/Subscription.ts`:
 
 | Threshold | Effect |
 |-----------|--------|
-| 1 hour | Surface the `InactivityWarning` snackbar with a 60-minute countdown |
+| 1 hour | Surface the `InactivityWarning` snackbar, counting down the remaining 60 minutes |
 | 2 hours | Call `autoReleaseOnLogout()` |
+
+**What resets the inactivity clock:**
+
+| Source | Mechanism |
+|--------|-----------|
+| Genuine user interaction (`pointerdown` / `keydown` / `scroll`) | A throttled listener calls `markLocalActivity()`, which advances `lastActivityTime` (frontend-local) and broadcasts it cross-tab. Throttled to once per minute to avoid state-update / broadcast spam. |
+| Running workflow | While a pipeline run is in progress (`START_PENDING` / `START_SUCCESS`), each 30s `checkInactivity` tick treats the session as active, advancing the clock so the countdown only starts after the run finishes. Covers long unattended analyses with no direct input. |
+| "Stay Active" button | `recordActivity()` — additionally sends a backend heartbeat and advances the clock. |
+
+`markLocalActivity()` is frontend-local (no backend heartbeat): normal API traffic already keeps the backend's `last_activity` fresh, so the passive listener only needs to keep the frontend clock in sync with real activity.
+
+> **Known degradation — stale `START_SUCCESS`.** The running-workflow guard keys off the Redux pipeline status, but the `START_SUCCESS → FINISHED` transition is only applied by `pollRunResult` polling, which is mounted only on the Workspace page (`useRunPipeline`). If the user starts a run and then navigates away before it completes, the frontend status stays `START_SUCCESS` until a reload or a new run, so `checkInactivity` keeps early-returning and the **frontend 2h soft-release never fires** for that session. This is not a permanent leak: the backend has an independent idle mechanism (`DEFAULT_IDLE_TIMEOUT_HOURS = 3` in `premium_manager.py`, driven by real-API-traffic `last_activity`), so a stuck session is reclaimed server-side — the instance is merely held up to ~3h instead of 2h before reconciliation. Combined with the soft-release nature, the impact is bounded. A more precise guard (gating on live `pollRunResult` freshness rather than on `START_SUCCESS` itself) is a possible follow-up.
+
+**Release severity:** The 2h auto-release goes through the beacon endpoint (`POST /premium/release-beacon` → `release_premium_user(hard=False)`), which is a **soft release**: the assignment row is marked `pending_release`, ALB/TG stay intact for the grace period (`PENDING_RELEASE_GRACE_SECONDS`, 120s), and the EC2 instance is **not** stopped or terminated (no scale-down). So a false release is recoverable routing loss, not lost compute — a page refresh or the next gesture-triggered reassignment restores the same instance within the grace window. (A `hard=True` release, used by explicit logout/finalization, is what tears down ALB resources and scales down.)
 
 **`autoReleaseOnLogout()` actions:**
 1. Increment `releaseGenerationRef` (invalidates stale closures)
@@ -287,10 +301,10 @@ The inactivity monitor observes `lastActivity` across all tabs and fires on two 
 8. Clear `SS_HAS_ATTEMPTED` from sessionStorage
 
 **Cross-tab activity sync:**
-- `recordActivity()` sends heartbeat with timestamp to the server and broadcasts via `crossTabSync`
+- `recordActivity()` and `markLocalActivity()` both broadcast the new timestamp via `crossTabSync`
 - `onActivityFromOtherTab()` listener updates `lastActivityTimeRef` so activity in any tab resets the inactivity timer for all tabs
 
-> **Threshold coupling warning:** The 1h / 2h thresholds are hard-coded in `PremiumAssignmentContext.tsx`. `INACTIVITY_WARNING_DURATION_MINUTES` controls only the countdown shown in the snackbar; changing it without also changing the hard-coded thresholds would cause the displayed countdown to disagree with the actual auto-release time.
+> **Changing the thresholds:** `INACTIVITY_WARNING_MINUTES` and `INACTIVITY_RELEASE_MINUTES` are the only two places these live. The snackbar's countdown is derived as `release - warning`, so it cannot disagree with the auto-release time. The backend keeps its own idle reclaim (`DEFAULT_IDLE_TIMEOUT_HOURS` in `premium_manager.py`), which these do not move.
 
 ### 5. Reassignment After Release
 
@@ -703,7 +717,7 @@ Circuit breaker state transitions are broadcast via `crossTabSync`:
 | `RoutingHeaders.ROUTING_ID` | `"X-Routing-ID"` | Routing token header name |
 | `RoutingHeaders.USER_TIER` | `"X-User-Tier"` | User tier header name |
 | `RoutingHeaders.SERVED_BY_INSTANCE` | `"X-Served-By-Instance"` | Instance identity header name |
-| `INACTIVITY_WARNING_DURATION_MINUTES` | `60` | Countdown display in warning snackbar |
+| `INACTIVITY_WARNING_MINUTES` / `INACTIVITY_RELEASE_MINUTES` | `60` / `120` | Idle thresholds; their difference is the countdown shown in the warning snackbar |
 
 **File:** `frontend/src/contexts/PremiumAssignmentContext.tsx`
 
@@ -714,8 +728,8 @@ Circuit breaker state transitions are broadcast via `crossTabSync`:
 | `MAX_RETRIGGER_ATTEMPTS` | `5` | Maximum re-trigger attempts per unreachable period |
 | `MAX_FAILED_PROBES` | `5` | Maximum circuit breaker probes before TERMINAL |
 | `DEDICATED_HANDOFF_GRACE_MS` | `15000` (15s) | Suppress 502 circuit breaker during post-assignment warm-up |
-| Inactivity warning threshold | `1 hour` | Hard-coded in `checkInactivity` |
-| Inactivity release threshold | `2 hours` | Hard-coded in `checkInactivity` |
+| Inactivity warning threshold | `1 hour` | `PremiumTiming.INACTIVITY_WARNING_MINUTES`, read in `checkInactivity` |
+| Inactivity release threshold | `2 hours` | `PremiumTiming.INACTIVITY_RELEASE_MINUTES`, read in `checkInactivity` |
 
 ### Backend Constants
 
@@ -762,8 +776,6 @@ Items with planned improvements. See [PREMIUM_ROUTING_RETROSPECTIVE_v1.1.9.md §
 
 Design trade-offs with known impact boundaries. No corresponding improvement is planned because the impact is minimal or the behavior is intentionally self-correcting.
 
-1. **Inactivity detection is input-based only.** The inactivity timer fires based on mouse/keyboard events. Users running long computational workflows without interaction may be falsely detected as inactive and have their premium instance released. (Inactivity release mechanism introduced in [PR #656](https://github.com/arayabrain/araya-optinist/pull/656) for [#594](https://github.com/arayabrain/araya-optinist/issues/594))
+1. **Startup race gap.** During the brief window between login and the first `/premium/assign` response, `premiumInstanceId` is null and `shouldEmitPremiumReachable()` returns `false`. This means the circuit breaker cannot detect recovery during this window. The practical impact is minimal (seconds-long window). (Instance identity introduced in [PR #649](https://github.com/arayabrain/araya-optinist/pull/649) for [#566](https://github.com/arayabrain/araya-optinist/issues/566))
 
-2. **Startup race gap.** During the brief window between login and the first `/premium/assign` response, `premiumInstanceId` is null and `shouldEmitPremiumReachable()` returns `false`. This means the circuit breaker cannot detect recovery during this window. The practical impact is minimal (seconds-long window). (Instance identity introduced in [PR #649](https://github.com/arayabrain/araya-optinist/pull/649) for [#566](https://github.com/arayabrain/araya-optinist/issues/566))
-
-3. **Warm-up grace suppression delay.** A 502 received within `DEDICATED_HANDOFF_GRACE_MS` (15s) after a new assignment is suppressed to avoid triggering the circuit breaker during instance warm-up. If the instance is genuinely unreachable, detection is delayed until the next 502 outside the grace window. This is self-correcting and the practical delay is at most 15 seconds. (Grace window introduced in [PR #704](https://github.com/arayabrain/araya-optinist/pull/704) for [#628](https://github.com/arayabrain/araya-optinist/issues/628))
+2. **Warm-up grace suppression delay.** A 502 received within `DEDICATED_HANDOFF_GRACE_MS` (15s) after a new assignment is suppressed to avoid triggering the circuit breaker during instance warm-up. If the instance is genuinely unreachable, detection is delayed until the next 502 outside the grace window. This is self-correcting and the practical delay is at most 15 seconds. (Grace window introduced in [PR #704](https://github.com/arayabrain/araya-optinist/pull/704) for [#628](https://github.com/arayabrain/araya-optinist/issues/628))

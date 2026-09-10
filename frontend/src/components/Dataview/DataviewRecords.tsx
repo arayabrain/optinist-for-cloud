@@ -873,17 +873,27 @@ const DataviewRecords = ({
 
   const handlePublish = async (id: number, status: "on" | "off") => {
     const newPublish = getPublishStatusValue(dataParamsFilter.publish_status)
-    await dispatch(
-      postPublish({
-        id,
-        status,
-        params: {
-          ...dataParamsFilter,
-          publish_status: newPublish,
-          ...dataParams,
-        },
-      }),
-    )
+    try {
+      await dispatch(
+        postPublish({
+          id,
+          status,
+          params: {
+            ...dataParamsFilter,
+            publish_status: newPublish,
+            ...dataParams,
+          },
+        }),
+      ).unwrap()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail
+      const action = status === "on" ? "publish" : "unpublish"
+      enqueueSnackbar(detail ?? `Failed to ${action} experiment`, {
+        variant: "error",
+        style: { whiteSpace: "pre-line" },
+      })
+    }
   }
 
   const handleSort = useCallback(
@@ -1001,21 +1011,31 @@ const DataviewRecords = ({
     })
   }
 
-  const handlePublishOk = () => {
+  const handlePublishOk = async () => {
     setOpenPublishAll({
       ...openPublishAll,
       open: false,
     })
-    dispatch(
-      postPublishAll({
-        status: openPublishAll.type,
-        params: {
-          ...dataParamsFilter,
-          ...dataParams,
-        },
-        listCheck,
-      }),
-    )
+    try {
+      await dispatch(
+        postPublishAll({
+          status: openPublishAll.type,
+          params: {
+            ...dataParamsFilter,
+            ...dataParams,
+          },
+          listCheck,
+        }),
+      ).unwrap()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail
+      const action = openPublishAll.type === "on" ? "publish" : "unpublish"
+      enqueueSnackbar(detail ?? `Failed to ${action} experiments`, {
+        variant: "error",
+        style: { whiteSpace: "pre-line" },
+      })
+    }
   }
 
   const ColumnPrivate = () => {
@@ -1224,9 +1244,13 @@ const DataviewRecords = ({
   )
 }
 
+// Vertical space reserved for surrounding chrome; the grid fills the rest of
+// the viewport and scrolls internally.
+export const DATAVIEW_GRID_RESERVED_HEIGHT = 280
+
 const DataviewRecordsWrapper = styled(Box)(() => ({
   width: "100%",
-  height: "calc(100vh - 280px)",
+  height: `calc(100vh - ${DATAVIEW_GRID_RESERVED_HEIGHT}px)`,
   display: "flex",
   flexDirection: "column",
 }))

@@ -6,6 +6,7 @@ import stripe
 from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException
 from sqlalchemy import update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
@@ -28,7 +29,10 @@ from studio.app.common.core.subscription.constants import (
     SyncStatus,
 )
 from studio.app.common.core.subscription.subscription_service import SubscriptionService
-from studio.app.common.core.utils.datetime_utils import datetime_from_timestamp
+from studio.app.common.core.utils.datetime_utils import (
+    datetime_from_timestamp,
+    ensure_utc,
+)
 from studio.app.common.models.subscription import (
     SubscriptionCancellation,
     SubscriptionPlans,
@@ -352,19 +356,15 @@ class WebhookService:
 
             # 10. Update storage quota based on new subscription plan
             storage_quota_bytes = StorageQuota.bytes_for_plan(plan_id)
-            rows_updated = db.execute(
-                update(UserStorageUsage)
-                .where(UserStorageUsage.user_id == user_id)
-                .values(storage_quota_bytes=storage_quota_bytes)
-            ).rowcount
-            if not rows_updated:
-                db.add(
-                    UserStorageUsage(
-                        user_id=user_id,
-                        storage_usage_bytes=0,
-                        storage_quota_bytes=storage_quota_bytes,
-                    )
+            db.execute(
+                mysql_insert(UserStorageUsage)
+                .values(
+                    user_id=user_id,
+                    storage_usage_bytes=0,
+                    storage_quota_bytes=storage_quota_bytes,
                 )
+                .on_duplicate_key_update(storage_quota_bytes=storage_quota_bytes)
+            )
 
             # 11. Commit all changes atomically
             db.commit()
@@ -751,8 +751,9 @@ class WebhookService:
             )
 
         except HTTPException:
+            # bare raise: the generic arm below would turn this into a 500
             db.rollback()
-            raise HTTPException(status_code=400, detail="Invalid webhook data")
+            raise
         except Exception as e:
             logger.error(
                 f"Error processing subscription_schedule.released webhook: {str(e)}"
@@ -959,7 +960,8 @@ class WebhookService:
                 )
 
             except HTTPException:
-                raise HTTPException(status_code=400, detail="Invalid webhook data")
+                # bare raise: the generic arm below would turn this into a 500
+                raise
             except Exception as e:
                 logger.error(f"Webhook: Error finding subscription: {str(e)}")
                 raise HTTPException(
@@ -977,7 +979,8 @@ class WebhookService:
                     )
 
             except HTTPException:
-                raise HTTPException(status_code=400, detail="Invalid webhook data")
+                # bare raise: the generic arm below would turn this into a 500
+                raise
             except Exception as e:
                 logger.error(f"Webhook: Error getting subscription plan: {str(e)}")
                 raise HTTPException(
@@ -1020,6 +1023,31 @@ class WebhookService:
                     f"Webhook: Extending expiration from {current_expiration} "
                     f"to {new_expiration}"
                 )
+
+                # Stripe delivers invoice events out of period order (retries,
+                # late settlements), so a renewal may only ever advance the
+                # stored expiration - never rewind it to an older period's end.
+                # ensure_utc on both sides: the stored value comes back naive
+                # from MySQL while datetime_from_timestamp is UTC-aware, and
+                # comparing the two raises.
+                if current_expiration and new_expiration <= ensure_utc(
+                    current_expiration
+                ):
+                    logger.warning(
+                        f"Webhook: Skipping invoice {invoice_id} - its period end "
+                        f"{new_expiration} does not advance the stored expiration "
+                        f"{current_expiration} (out-of-order or redelivered event)"
+                    )
+                    return {
+                        "success": True,
+                        "message": (
+                            f"Invoice skipped - period end {new_expiration} does "
+                            f"not advance stored expiration {current_expiration}"
+                        ),
+                        "webhook_processed": True,
+                        "skipped": True,
+                        "reason": "stale_period_end",
+                    }
 
             except HTTPException:
                 raise
@@ -1097,8 +1125,9 @@ class WebhookService:
             }
 
         except HTTPException:
+            # bare raise: the generic arm below would turn this into a 500
             db.rollback()
-            raise HTTPException(status_code=400, detail="Invalid webhook data")
+            raise
         except Exception as e:
             logger.error(
                 f"Webhook: Error processing subscription payment for invoice "
@@ -1384,7 +1413,49 @@ class WebhookService:
                         "payment_attempted": True,
                     }
 
+                except stripe.error.CardError as pay_error:
+                    # The customer's card was refused: their outcome to resolve,
+                    # not a fault in this integration.
+                    logger.warning(
+                        f"Webhook: Card declined paying invoice {invoice_id}: "
+                        f"{str(pay_error)}"
+                    )
+                    return {
+                        "success": False,
+                        "invoice_id": invoice_id,
+                        "status": invoice_status,
+                        "message": f"Payment failed: {str(pay_error)}",
+                        "webhook_processed": True,
+                        "payment_attempted": True,
+                        "payment_failed": True,
+                        "card_declined": True,
+                    }
+
                 except stripe.error.StripeError as pay_error:
+                    # Stripe's own auto-collection races this handler, so read
+                    # the invoice back before calling a refused pay a failure.
+                    settled = None
+                    try:
+                        settled = stripe.Invoice.retrieve(invoice_id).get("status")
+                    except stripe.error.StripeError:
+                        # A failed read-back must not escalate into a 500.
+                        pass
+
+                    if settled == InvoiceStatus.PAID:
+                        logger.debug(
+                            f"Webhook: Invoice {invoice_id} was already paid before "
+                            f"this attempt: {str(pay_error)}"
+                        )
+                        return {
+                            "success": True,
+                            "invoice_id": invoice_id,
+                            "previous_status": InvoiceStatus.OPEN,
+                            "new_status": InvoiceStatus.PAID,
+                            "message": "Invoice was already paid",
+                            "webhook_processed": True,
+                            "payment_attempted": True,
+                        }
+
                     logger.error(
                         f"Webhook: Failed to pay invoice {invoice_id}: {str(pay_error)}"
                     )
@@ -1428,6 +1499,7 @@ class WebhookService:
     def get_webhook_secret() -> str:
         webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
         if not webhook_secret:
+            logger.error("STRIPE_WEBHOOK_SECRET is not set")
             raise HTTPException(
                 status_code=500,
                 detail="STRIPE_WEBHOOK_SECRET environment variable is not set",
@@ -1806,8 +1878,14 @@ class WebhookService:
                         "message": f"Unhandled event type: {event_type}",
                     }
 
-        except HTTPException:
-            raise HTTPException(status_code=400, detail="Invalid webhook data")
+        except HTTPException as e:
+            # 4xx is our own validation refusing an event, so only 5xx should page
+            log = logger.warning if e.status_code < 500 else logger.error
+            log(f"Webhook {event_type} failed ({e.status_code}): {e.detail}")
+            # Status preserved for the caller to map; the route applies the one
+            # generic detail. Flattening here reported a handler's 500 as a 400,
+            # so our own failures were indistinguishable from a malformed event.
+            raise
         except Exception as e:
             logger.error(f"Error dispatching webhook event {event_type}: {str(e)}")
             raise HTTPException(

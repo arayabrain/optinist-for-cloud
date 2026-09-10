@@ -15,6 +15,8 @@ export const FONT_SIZE = {
 // Font weights
 export const FONT_WEIGHT = {
   REGULAR: 400,
+  MEDIUM: 500,
+  SEMIBOLD: 600,
   BOLD: 700,
   BLACK: 900,
 } as const
@@ -33,6 +35,7 @@ export const LETTER_SPACING = {
 
 // Text colors
 export const TEXT_COLOR = {
+  BLACK: "#000000",
   PRIMARY: "#111827",
   SECONDARY: "#6b7280",
   MUTED: "#4b5563",
@@ -61,12 +64,25 @@ export const BG_COLOR = {
   DARK: "#1f2937",
   BUTTON_PRIMARY: "#2563eb",
   BUTTON_PRIMARY_HOVER: "#1d4ed8",
+  BUTTON_DARK: "#000000c4",
+  BUTTON_DARK_HOVER: "#00000090",
   BENEFIT_ICON: "rgba(255, 255, 255, 0.15)",
 } as const
 
 // Borders
 export const BORDER_COLOR = {
   DEFAULT: "#e5e7eb",
+} as const
+
+// Shared header nav link style
+export const NAV_LINK = {
+  fontSize: FONT_SIZE.SMALL,
+  color: TEXT_COLOR.BLACK,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+  ":hover": {
+    textDecoration: "underline",
+  },
 } as const
 
 // Shared icon container style (48x48 rounded square)

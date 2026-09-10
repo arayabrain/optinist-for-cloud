@@ -9,7 +9,7 @@ import {
   BG_COLOR,
   BORDER_COLOR,
   ICON_BOX,
-} from "pages/LandingPage/constants"
+} from "const/Style"
 
 interface AudienceCard {
   icon: string

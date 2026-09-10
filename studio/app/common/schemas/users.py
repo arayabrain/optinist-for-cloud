@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Query
 from pydantic import BaseModel, EmailStr, Field
@@ -97,9 +97,9 @@ class UserUpdate(BaseModel):
 class SubscriptionAuditSnapshot(BaseModel):
     """Typed snapshot of subscription state for audit log old_value/new_value."""
 
-    plan_id: int
+    plan_id: Optional[int] = None
     expiration: Optional[str] = None
-    storage_quota_bytes: int
+    storage_quota_bytes: Optional[int] = None
 
 
 class UserSubscriptionUpdate(BaseModel):
@@ -135,3 +135,12 @@ class UserInfo(BaseModel):
 
 class UserCreateResponse(BaseModel):
     user: User
+
+
+class CloudDetailsResponse(BaseModel):
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    user_context: Optional[dict] = None
+    subscription_details: Optional[dict] = None
+    storage_usage: Optional[Any] = None
+    error: Optional[str] = None

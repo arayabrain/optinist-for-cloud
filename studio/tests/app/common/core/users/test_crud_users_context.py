@@ -1,22 +1,25 @@
 """
 Unit tests for crud_users.py - get_user_with_context() function
 
-NOTE: get_user_with_context() is a complex integration function that:
-1. Performs database queries with multiple joins
-2. Dynamically adds fields to user objects via transformer
-3. Uses Pydantic's from_orm() which validates against schema
+``get_user_with_context()`` issues one multi-join query and then derives every
+subscription and storage field from that single result row, via
+``_transform_user_row``. The derivation is pure given the row, so the whole
+tier ladder (Free / Premium / Limit Grace / Expired) and the storage-percent
+arithmetic are reachable by returning a row tuple from a mocked ``db.execute``.
 
-These tests are challenging as unit tests because:
-- The function adds subscription_status, storage_usage_bytes, etc. dynamically
-- These fields are NOT in the User Pydantic schema
-- Proper mocking would require mocking the entire SQLModel query chain
+These cases carried ``@pytest.mark.skip("Requires integration test with real
+DB")`` and so never ran, while the coverage map credited them with the
+grace-period boundary. The skip reason was wrong - nothing here needs a
+database - and the boundary cases below are new: unskipping alone left the
+Limit Grace edge unasserted, so moving the operator still passed.
 
-RECOMMENDATION: These should be integration tests with a real test database.
-For now, we test the basic error cases that don't depend on dynamic fields.
+The two boundary cases address the window by ``GRACE_PERIOD_DAYS``, so they pin
+which side of the comparison each edge falls on but not the window's length;
+``test_the_grace_window_is_thirty_days`` pins that separately.
 """
 
 from datetime import timedelta
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -101,10 +104,6 @@ def create_query_result(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Requires integration test with real DB - "
-    "dynamically added fields not in User schema"
-)
 async def test_get_user_with_context_free_user(mock_db, mock_user_model):
     """Test user context with no subscription (free user)"""
     query_result = create_query_result(
@@ -126,7 +125,6 @@ async def test_get_user_with_context_free_user(mock_db, mock_user_model):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_premium_active(mock_db, mock_user_model):
     """Test user context with active premium subscription (30 days remaining)"""
     future_date = get_current_datetime() + timedelta(days=30)
@@ -150,35 +148,14 @@ async def test_get_user_with_context_premium_active(mock_db, mock_user_model):
     assert result.subscription_days_remaining <= 30
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
-async def test_get_user_with_context_premium_expires_today(mock_db, mock_user_model):
-    """Test user context with subscription expiring today"""
-    today = get_current_datetime()
-
-    query_result = create_query_result(
-        mock_user_model,
-        subscription_plan_name=PlanName.PREMIUM.value,
-        subscription_expiration=today,
-        subscription_plan_id=SubscriptionPlanIds.PREMIUM,
-    )
-
-    mock_result = Mock()
-    mock_result.first.return_value = query_result
-    mock_db.execute.return_value = mock_result
-
-    result = await get_user_with_context(mock_db, 1)
-
-    # days_remaining = 0 means expiring today, status should still be PREMIUM
-    # or LIMIT_GRACE depending on how (today - now).days is calculated
-    assert result.subscription_status in [
-        SubscriptionStatus.PREMIUM.value,
-        SubscriptionStatus.LIMIT_GRACE.value,
-    ]
+def test_the_grace_window_is_thirty_days():
+    """The boundary cases below derive their dates from GRACE_PERIOD_DAYS, so a
+    change to the constant moves the test with the product. The billing grace
+    the product promises is a specific length, so pin it here."""
+    assert SubscriptionPeriods.GRACE_PERIOD_DAYS == 30
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_premium_in_grace_period(mock_db, mock_user_model):
     """Test user context with subscription in grace period (5 days past expiration)"""
     past_date = get_current_datetime() - timedelta(days=5)
@@ -196,7 +173,7 @@ async def test_get_user_with_context_premium_in_grace_period(mock_db, mock_user_
 
     result = await get_user_with_context(mock_db, 1)
 
-    # In grace period: -7 <= days_remaining <= -1
+    # In grace period: -GRACE_PERIOD_DAYS <= days_remaining <= -1
     assert result.subscription_status == SubscriptionStatus.LIMIT_GRACE.value
     # Days left in grace period = GRACE_PERIOD_DAYS - 5
     expected_grace_days = SubscriptionPeriods.GRACE_PERIOD_DAYS - 5
@@ -204,21 +181,23 @@ async def test_get_user_with_context_premium_in_grace_period(mock_db, mock_user_
     assert result.subscription_days_remaining <= expected_grace_days + 1
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
-async def test_get_user_with_context_premium_grace_period_last_day(
-    mock_db, mock_user_model
-):
-    """Test user context on last day of grace period"""
-    # Grace period is 7 days, so -7 days from expiration is last day
-    past_date = get_current_datetime() - timedelta(
-        days=SubscriptionPeriods.GRACE_PERIOD_DAYS
-    )
+async def _status_at_days_past_expiry(mock_db, user, days_past: int):
+    """Resolve the tier for a premium row that expired exactly ``days_past``
+    days ago.
 
+    ``_transform_user_row`` derives ``days_remaining`` as
+    ``(expiration - get_current_datetime()).days``, which truncates toward
+    negative infinity. Pinning ``now`` is what makes the boundary exact: with a
+    live clock the expiration is always a few microseconds staler than the
+    ``now`` the function reads, so ``-7 days`` truncates to ``-8`` and the
+    boundary cannot be addressed at all. That is why the two boundary rows here
+    previously had to hedge with ``in [LIMIT_GRACE, EXPIRED]``.
+    """
+    now = get_current_datetime()
     query_result = create_query_result(
-        mock_user_model,
+        user,
         subscription_plan_name=PlanName.PREMIUM.value,
-        subscription_expiration=past_date,
+        subscription_expiration=now - timedelta(days=days_past),
         subscription_plan_id=SubscriptionPlanIds.PREMIUM,
     )
 
@@ -226,20 +205,69 @@ async def test_get_user_with_context_premium_grace_period_last_day(
     mock_result.first.return_value = query_result
     mock_db.execute.return_value = mock_result
 
-    result = await get_user_with_context(mock_db, 1)
-
-    # Should be at boundary of grace period
-    assert result.subscription_status in [
-        SubscriptionStatus.LIMIT_GRACE.value,
-        SubscriptionStatus.EXPIRED.value,
-    ]
+    with patch(
+        "studio.app.common.core.users.crud_users.get_current_datetime",
+        return_value=now,
+    ):
+        result = await get_user_with_context(mock_db, 1)
+    return result
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
+async def test_get_user_with_context_premium_grace_period_last_day(
+    mock_db, mock_user_model
+):
+    """The final day of the grace window still grants Limit Grace access.
+
+    On this day the user still keeps the premium storage quota, so shrinking the
+    window silently drops a paying-but-lapsed user to 5GB and over quota.
+    """
+    result = await _status_at_days_past_expiry(
+        mock_db, mock_user_model, SubscriptionPeriods.GRACE_PERIOD_DAYS
+    )
+
+    assert result.subscription_status == SubscriptionStatus.LIMIT_GRACE.value
+    assert result.subscription_days_remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_get_user_with_context_premium_one_day_past_grace_is_expired(
+    mock_db, mock_user_model
+):
+    """One day beyond the window is Expired, not Limit Grace.
+
+    The companion half of the boundary: without this, widening
+    GRACE_PERIOD_DAYS passes every other case in this file.
+    """
+    result = await _status_at_days_past_expiry(
+        mock_db, mock_user_model, SubscriptionPeriods.GRACE_PERIOD_DAYS + 1
+    )
+
+    assert result.subscription_status == SubscriptionStatus.EXPIRED.value
+    assert result.subscription_days_remaining is None
+
+
+@pytest.mark.asyncio
+async def test_get_user_with_context_expiring_today_enters_grace(
+    mock_db, mock_user_model
+):
+    """The upper boundary: ``days_remaining == 0`` is the *first* grace day.
+
+    Premium requires ``days_remaining > 0``, so an expiration of exactly now
+    lands in Limit Grace with the full window still ahead. Pins which side of
+    the ``> 0`` / ``>= -GRACE`` split zero falls on, which the pre-existing
+    ``in [PREMIUM, LIMIT_GRACE]`` assertion could not.
+    """
+    result = await _status_at_days_past_expiry(mock_db, mock_user_model, 0)
+
+    assert result.subscription_status == SubscriptionStatus.LIMIT_GRACE.value
+    assert result.subscription_days_remaining == SubscriptionPeriods.GRACE_PERIOD_DAYS
+
+
+@pytest.mark.asyncio
 async def test_get_user_with_context_premium_expired(mock_db, mock_user_model):
     """Test user context with expired subscription (past grace period)"""
-    # More than 7 days past expiration
+    # Past the whole grace window
     past_date = get_current_datetime() - timedelta(
         days=SubscriptionPeriods.GRACE_PERIOD_DAYS + 5
     )
@@ -262,7 +290,6 @@ async def test_get_user_with_context_premium_expired(mock_db, mock_user_model):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_free_plan_id(mock_db, mock_user_model):
     """Test user with FREE plan_id (not premium)"""
     future_date = get_current_datetime() + timedelta(days=30)
@@ -290,7 +317,6 @@ async def test_get_user_with_context_free_plan_id(mock_db, mock_user_model):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_storage_usage_calculation(
     mock_db, mock_user_model
 ):
@@ -314,7 +340,6 @@ async def test_get_user_with_context_storage_usage_calculation(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_storage_zero_usage(mock_db, mock_user_model):
     """Test storage with zero usage"""
     query_result = create_query_result(
@@ -334,7 +359,6 @@ async def test_get_user_with_context_storage_zero_usage(mock_db, mock_user_model
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_storage_exceeded(mock_db, mock_user_model):
     """Test storage exceeding quota (115%)"""
     # 5.75 GB used of 5 GB quota = 115%
@@ -355,7 +379,6 @@ async def test_get_user_with_context_storage_exceeded(mock_db, mock_user_model):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_storage_null_values(mock_db, mock_user_model):
     """Test storage with null values in database"""
     query_result = create_query_result(
@@ -397,7 +420,6 @@ async def test_get_user_with_context_user_not_found(mock_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Requires integration test with real DB")
 async def test_get_user_with_context_timezone_naive_expiration(
     mock_db, mock_user_model
 ):

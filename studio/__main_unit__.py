@@ -121,22 +121,6 @@ async def lifespan(app: FastAPI):
     if _should_run_startup_sync(instance_mode, MODE.IS_STANDALONE):
         import asyncio
 
-        from studio.app.common.core.storage.startup_leader import (
-            startup_sync_leader_lock,
-        )
-
-        async def _startup_sync():
-            """One leader across the ASG performs sync; others stand down."""
-            try:
-                await asyncio.sleep(5)
-                with startup_sync_leader_lock() as acquired:
-                    if not acquired:
-                        logger.info("Startup sync deferred to leader task")
-                        return
-                    await PublishedExperimentSyncJob.run_startup_sync()
-            except Exception as e:
-                logger.error(f"Startup sync error: {e}", exc_info=True)
-
         # Store on app.state to prevent GC mid-execution
         app.state.startup_sync_task = asyncio.create_task(_startup_sync())
         logger.info("Startup sync task scheduled (runs in background)")
@@ -153,6 +137,13 @@ async def lifespan(app: FastAPI):
         )
 
         # Add cleanup job (every 60 minutes)
+        # NOTE: On free-tier instances, DataCleanupJob is run by a dedicated
+        # standalone process (studio/cleanup_worker.py) started from
+        # cloud-startup.sh.  This registration remains here for the
+        # background service, where _handle_orphaned_data() still runs
+        # to clean up DB records of terminated instances.
+        # Future: consider migrating all background jobs to standalone
+        # worker processes to fully decouple them from FastAPI lifespan.
         BackgroundScheduler.add_job(
             func=DataCleanupJob.run,
             interval_minutes=SyncStatusConstants.CLEANUP_INTERVAL_MINUTES,
@@ -216,6 +207,24 @@ async def health_check():
 
 
 add_pagination(app)
+
+
+async def _startup_sync():
+    """One leader across the ASG performs sync; others stand down."""
+    import asyncio
+
+    from studio.app.common.core.background.sync_job import PublishedExperimentSyncJob
+    from studio.app.common.core.storage.startup_leader import startup_sync_leader_lock
+
+    try:
+        await asyncio.sleep(5)
+        with startup_sync_leader_lock() as acquired:
+            if not acquired:
+                logger.info("Startup sync deferred to leader task")
+                return
+            await PublishedExperimentSyncJob.run_startup_sync()
+    except Exception as e:
+        logger.error(f"Startup sync error: {e}", exc_info=True)
 
 
 def _should_run_startup_sync(instance_mode: str, is_standalone: bool) -> bool:

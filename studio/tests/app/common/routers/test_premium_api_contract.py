@@ -28,7 +28,6 @@ from studio.app.common.core.subscription.constants import SubscriptionType
 
 # RoutingInfo interface
 ROUTING_INFO_REQUIRED_FIELDS = {
-    "user_id": str,
     "user_tier": str,
     "requires_premium_routing": bool,
     "routing_headers": dict,
@@ -61,7 +60,6 @@ PREMIUM_RELEASE_OPTIONAL_FIELDS = {
 
 # PremiumStatusResult interface
 PREMIUM_STATUS_REQUIRED_FIELDS = {
-    "user_id": (str, int),  # Backend returns string uid
     "subscription_type": str,
     "is_premium": bool,
 }
@@ -90,7 +88,6 @@ PREMIUM_ASSIGNMENT_NESTED_OPTIONAL_FIELDS = {
 PREMIUM_HEARTBEAT_REQUIRED_FIELDS = {
     "message": str,
     "updated": bool,
-    "user_id": (str, int),
     "user_tier": str,
     "assignment_active": bool,
 }
@@ -771,3 +768,126 @@ async def test_contract_beacon_release_missing_uid():
     )
 
     assert result["success"] is False
+
+
+# ============================================================================
+# Guard Tests: typed response models must not leak identifier fields
+# ============================================================================
+# These verify the response_model layer strips undeclared keys, so an internal
+# identifier (e.g. uid / user_id) cannot be re-exposed by adding it to a
+# response dict. Each sample is the minimal valid payload for that model, which
+# also confirms every required-field set constructs without error.
+
+from studio.app.common.schemas.premium import (  # noqa: E402
+    FreeLogoutResponse,
+    PremiumAssignResponse,
+    PremiumHeartbeatResponse,
+    PremiumReleaseResponse,
+    PremiumStatusResponse,
+    RoutingInfoResponse,
+)
+from studio.app.common.schemas.users import CloudDetailsResponse  # noqa: E402
+
+RESPONSE_MODEL_SAMPLES = [
+    (
+        RoutingInfoResponse,
+        {
+            "user_tier": "free",
+            "requires_premium_routing": False,
+            "routing_headers": {},
+        },
+    ),
+    (PremiumAssignResponse, {"message": "ok", "assigned": True}),
+    (PremiumReleaseResponse, {"message": "ok", "released": True}),
+    (
+        PremiumStatusResponse,
+        {"subscription_type": "premium", "is_premium": True},
+    ),
+    (
+        PremiumHeartbeatResponse,
+        {
+            "message": "ok",
+            "updated": True,
+            "user_tier": "premium",
+            "assignment_active": True,
+        },
+    ),
+    (FreeLogoutResponse, {"message": "ok", "logged_out": True}),
+    (CloudDetailsResponse, {"user_name": "n", "user_email": "e"}),
+]
+
+
+@pytest.mark.parametrize("model_cls,payload", RESPONSE_MODEL_SAMPLES)
+def test_response_model_drops_identifier_fields(model_cls, payload):
+    leaked = {**payload, "uid": "leak-uid", "user_id": "leak-id"}
+    serialized = model_cls(**leaked).dict()
+    assert "uid" not in serialized
+    assert "user_id" not in serialized
+
+
+def test_premium_status_nested_assignment_drops_identifier_fields():
+    """The nested `assignment` model must strip identifiers the passthrough
+    Lambda body might echo, while keeping the whitelisted fields."""
+    leaked_assignment = {
+        "instance_id": "i-123456",
+        "instance_id_hash": "hash-abc",
+        "assigned_at": "2024-01-15T10:30:00Z",
+        "status": "active",
+        "is_shared": False,
+        "assignment_source": "existing",
+        "uid": "leak-uid",
+        "user_id": "leak-id",
+    }
+    serialized = PremiumStatusResponse(
+        subscription_type="premium",
+        is_premium=True,
+        assignment=leaked_assignment,
+    ).dict()
+
+    assignment = serialized["assignment"]
+    assert "uid" not in assignment
+    assert "user_id" not in assignment
+    # Whitelisted fields survive.
+    assert assignment["instance_id"] == "i-123456"
+    assert assignment["assignment_source"] == "existing"
+
+
+# ============================================================================
+# Guard Test (end-to-end): real FastAPI serialization strips identifiers
+# ============================================================================
+# The parametrized guard above exercises the model layer directly
+# (Model(**...).dict()). This one drives the actual response_model
+# serialization via TestClient, so it also catches a future config change
+# (e.g. Config.extra = "allow") or a serialization-path regression.
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from studio.__main_unit__ import app  # noqa: E402
+from studio.app.common.core.auth.auth_dependencies import get_current_user  # noqa: E402
+
+
+def test_routing_info_response_omits_identifiers_end_to_end():
+    mock_user = Mock()
+    mock_user.id = 1
+    mock_user.subscription_type = SubscriptionType.FREE.value
+
+    # Save/restore rather than pop: conftest sets a session-scoped
+    # get_current_user override that later TestClient tests rely on.
+    previous_override = app.dependency_overrides.get(get_current_user)
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+    try:
+        response = TestClient(app).get("/users/me/routing-info")
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body.keys()) == {
+            "user_tier",
+            "requires_premium_routing",
+            "routing_headers",
+        }
+        assert "user_id" not in body
+        assert "uid" not in body
+    finally:
+        if previous_override is not None:
+            app.dependency_overrides[get_current_user] = previous_override
+        else:
+            app.dependency_overrides.pop(get_current_user, None)

@@ -3,6 +3,12 @@ import { StatusROI } from "components/Workspace/Visualize/Plot/ImagePlot"
 
 export const WORKSPACE_SLICE_NAME = "workspace"
 
+export const WORKSPACE_TABS = {
+  WORKFLOW: 0,
+  VISUALIZE: 1,
+  RECORD: 2,
+} as const
+
 export type ItemsWorkspace = {
   id: number
   display_number?: number

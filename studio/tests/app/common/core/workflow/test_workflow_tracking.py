@@ -7,6 +7,7 @@ Tests increment/decrement of active_workflow_count for free and premium tier use
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import mysql
 
 from studio.app.common.core.workflow.workflow_tracking import (
     TIER_FREE,
@@ -15,6 +16,7 @@ from studio.app.common.core.workflow.workflow_tracking import (
     get_active_workflow_count,
     increment_workflow_count,
 )
+from studio.app.common.models import FreeUserAssignment, PremiumUserAssignment
 
 
 @pytest.fixture
@@ -78,6 +80,22 @@ def mock_session_no_records():
                 yield session
 
 
+def _compiled(session):
+    """Return ``[(table_name, sql, params), ...]`` for every executed statement."""
+    out = []
+    for call in session.execute.call_args_list:
+        statement = call.args[0]
+        compiled = statement.compile(dialect=mysql.dialect())
+        out.append(
+            (
+                statement.table.name,
+                " ".join(str(compiled).split()),
+                compiled.params,
+            )
+        )
+    return out
+
+
 class TestIncrementWorkflowCount:
     """Test workflow count increment"""
 
@@ -90,9 +108,14 @@ class TestIncrementWorkflowCount:
 
         increment_workflow_count(user_id=123)
 
-        # Verify execute() was called (the actual SQL update)
-        assert mock_session.execute.called
         mock_session.commit.assert_called_once()
+        table, sql, params = _compiled(mock_session)[0]
+        assert table == FreeUserAssignment.__tablename__
+        assert "active_workflow_count=(free_user_assignments" in sql
+        assert ".active_workflow_count + " in sql
+        assert "last_workflow_start=now()" in sql
+        assert "WHERE free_user_assignments.user_id = " in sql
+        assert params["user_id_1"] == 123
 
     def test_increment_workflow_count_success_premium_tier(self, mock_session_premium):
         """Test successful increment of workflow count for premium tier user"""
@@ -102,8 +125,11 @@ class TestIncrementWorkflowCount:
 
         increment_workflow_count(user_id=123)
 
-        assert mock_session_premium.execute.called
         mock_session_premium.commit.assert_called_once()
+        table, sql, params = _compiled(mock_session_premium)[0]
+        assert table == PremiumUserAssignment.__tablename__
+        assert "last_workflow_start=now()" in sql
+        assert params["user_id_1"] == 123
 
     def test_increment_workflow_count_no_assignment(self, mock_session_no_records):
         """Test increment when user has no assignment records"""
@@ -119,10 +145,16 @@ class TestIncrementWorkflowCount:
         assert not mock_session_no_records.execute.called
 
     def test_increment_workflow_count_none_user_id(self, mock_session):
-        """Test increment with None user_id"""
+        """Test increment with None user_id.
+
+        The previous assertion was on ``session.exec``, which production never
+        calls, so the ``user_id is None`` guard could be deleted and this still
+        passed.
+        """
         increment_workflow_count(user_id=None)
 
-        mock_session.exec.assert_not_called()
+        mock_session.execute.assert_not_called()
+        mock_session.commit.assert_not_called()
 
     def test_increment_workflow_count_multiple_times(self, mock_session):
         """Test multiple increments"""
@@ -151,9 +183,12 @@ class TestDecrementWorkflowCount:
 
         decrement_workflow_count(user_id=123)
 
-        # Verify execute() was called (the actual SQL update)
-        assert mock_session.execute.called
         mock_session.commit.assert_called_once()
+        table, sql, params = _compiled(mock_session)[0]
+        assert table == FreeUserAssignment.__tablename__
+        assert "last_workflow_end=now()" in sql
+        assert "WHERE free_user_assignments.user_id = " in sql
+        assert params["user_id_1"] == 123
 
     def test_decrement_workflow_count_success_premium_tier(self, mock_session_premium):
         """Test successful decrement of workflow count for premium tier user"""
@@ -163,8 +198,11 @@ class TestDecrementWorkflowCount:
 
         decrement_workflow_count(user_id=123)
 
-        assert mock_session_premium.execute.called
         mock_session_premium.commit.assert_called_once()
+        table, sql, params = _compiled(mock_session_premium)[0]
+        assert table == PremiumUserAssignment.__tablename__
+        assert "last_workflow_end=now()" in sql
+        assert params["user_id_1"] == 123
 
     def test_decrement_workflow_count_never_negative(self, mock_session):
         """Test that count never goes below 0"""
@@ -175,10 +213,13 @@ class TestDecrementWorkflowCount:
 
         decrement_workflow_count(user_id=123)
 
-        # The SQL uses func.greatest(0, count - 1) to ensure count never goes negative
-        # We just verify execute was called
-        assert mock_session.execute.called
         mock_session.commit.assert_called_once()
+        _, sql, params = _compiled(mock_session)[0]
+        assert (
+            "active_workflow_count=greatest("
+            "%s, free_user_assignments.active_workflow_count - %s)"
+        ) in sql
+        assert params["greatest_1"] == 0
 
     def test_decrement_workflow_count_no_assignment(self, mock_session_no_records):
         """Test decrement when user has no assignment records"""
@@ -194,10 +235,15 @@ class TestDecrementWorkflowCount:
         assert not mock_session_no_records.execute.called
 
     def test_decrement_workflow_count_none_user_id(self, mock_session):
-        """Test decrement with None user_id"""
+        """Test decrement with None user_id.
+
+        As above: ``session.exec`` is an auto-created mock production never
+        touches, so it could not fail.
+        """
         decrement_workflow_count(user_id=None)
 
-        mock_session.exec.assert_not_called()
+        mock_session.execute.assert_not_called()
+        mock_session.commit.assert_not_called()
 
 
 class TestGetActiveWorkflowCount:
@@ -213,6 +259,37 @@ class TestGetActiveWorkflowCount:
         count = get_active_workflow_count(user_id=123)
 
         assert count == 3
+        sql = " ".join(
+            str(
+                mock_session.execute.call_args.args[0].compile(dialect=mysql.dialect())
+            ).split()
+        )
+        assert f"FROM {FreeUserAssignment.__tablename__}" in sql
+
+    def test_get_active_workflow_count_reads_the_premium_table_for_a_premium_user(
+        self, mock_session_premium
+    ):
+        """The premium baseline. Every other case in this class runs on the free
+        fixture, so the tier branch inside ``get_active_workflow_count`` was
+        unexercised and a premium user's count could have been read from
+        ``free_user_assignments`` (always 0) with the suite green."""
+        mock_assignment = MagicMock()
+        mock_assignment.active_workflow_count = 2
+        mock_session_premium.execute.return_value.first.return_value = (
+            mock_assignment,
+        )
+
+        count = get_active_workflow_count(user_id=123)
+
+        assert count == 2
+        sql = " ".join(
+            str(
+                mock_session_premium.execute.call_args.args[0].compile(
+                    dialect=mysql.dialect()
+                )
+            ).split()
+        )
+        assert f"FROM {PremiumUserAssignment.__tablename__}" in sql
 
     def test_get_active_workflow_count_no_assignment(self, mock_session):
         """Test retrieval when user has no assignment"""

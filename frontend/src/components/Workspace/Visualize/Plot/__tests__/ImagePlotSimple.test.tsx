@@ -486,8 +486,11 @@ describe("ImagePlotSimpleWithLoading Component", () => {
     return render(<Provider store={customStore || store}>{component}</Provider>)
   }
 
-  describe("Sync indicator", () => {
-    it("shows sync indicator when loading and not initialized", () => {
+  // The sync overlay is not covered here, or anywhere: it cannot render for
+  // these states, because its gate wants a pending fetch on data that is not
+  // initialized and the pending selector is false until it is.
+  describe("Wrapper states", () => {
+    it("renders the inner pending progressbar while a fetch is pending", () => {
       const initialState = {
         displayData: {
           image: {
@@ -512,11 +515,10 @@ describe("ImagePlotSimpleWithLoading Component", () => {
         />,
       )
 
-      // Should show sync indicator (CircularProgress)
-      expect(screen.getAllByRole("progressbar").length).toBeGreaterThan(0)
+      expect(screen.getByRole("progressbar")).toBeDefined()
     })
 
-    it("hides sync indicator when data is initialized", () => {
+    it("renders the chart once the data is initialized", () => {
       const initialState = {
         displayData: {
           image: {
@@ -546,7 +548,6 @@ describe("ImagePlotSimpleWithLoading Component", () => {
         />,
       )
 
-      // Should show the plotly chart, not sync indicator overlay
       expect(screen.getByTestId("plotly-chart")).toBeDefined()
     })
 

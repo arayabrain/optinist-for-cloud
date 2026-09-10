@@ -435,8 +435,11 @@ describe("RoiPlotSimpleWithLoading Component", () => {
     return render(<Provider store={customStore || store}>{component}</Provider>)
   }
 
-  describe("Sync indicator", () => {
-    it("shows sync indicator when loading and not initialized", () => {
+  // The sync overlay is not covered here, or anywhere: it cannot render for
+  // these states, because its gate wants a pending fetch with no roi data and
+  // the roi selector answers an empty array rather than nothing.
+  describe("Wrapper states", () => {
+    it("renders the inner pending progressbar while a fetch is pending", () => {
       const initialState = {
         displayData: {
           roi: {
@@ -459,11 +462,10 @@ describe("RoiPlotSimpleWithLoading Component", () => {
         <RoiPlotSimpleWithLoading filePath="/test/path" workspaceId={1} />,
       )
 
-      // Should show sync indicator (CircularProgress)
-      expect(screen.getAllByRole("progressbar").length).toBeGreaterThan(0)
+      expect(screen.getByRole("progressbar")).toBeDefined()
     })
 
-    it("hides sync indicator when data is loaded", () => {
+    it("renders the chart once the data is loaded", () => {
       const initialState = {
         displayData: {
           roi: {
@@ -491,7 +493,6 @@ describe("RoiPlotSimpleWithLoading Component", () => {
         <RoiPlotSimpleWithLoading filePath="/test/path" workspaceId={1} />,
       )
 
-      // Should show the plotly chart, not sync indicator overlay
       expect(screen.getByTestId("plotly-chart")).toBeDefined()
     })
 

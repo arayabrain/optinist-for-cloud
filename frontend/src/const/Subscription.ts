@@ -71,8 +71,10 @@ export enum LimitAlertType {
 export const PremiumTiming = {
   // Backend activity cache TTL (must match studio middleware _CACHE_TTL_SECONDS)
   ACTIVITY_CACHE_TTL_SECONDS: 60, // 1 minute
-  // Duration of inactivity warning countdown before instance is released
-  INACTIVITY_WARNING_DURATION_MINUTES: 60,
+  // Idle time before the inactivity warning snackbar appears
+  INACTIVITY_WARNING_MINUTES: 60,
+  // Idle time before the premium instance is auto-released
+  INACTIVITY_RELEASE_MINUTES: 120,
   // Buffer to account for cache staleness when calculating timeouts
   INACTIVITY_BUFFER_MINUTES: 2,
   // Interval for updating the countdown display (in milliseconds)

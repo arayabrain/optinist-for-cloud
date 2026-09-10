@@ -373,7 +373,7 @@ The authoritative reference. Branches are explicit; toast text matches the strin
 | Poll config | constants in `PremiumAssignmentContext.tsx`: `INITIAL_POLL_INTERVAL_MS=30000`, `MAX_POLL_INTERVAL_MS=60000`, `MAX_POLL_ATTEMPTS=40`, `BACKOFF_MULTIPLIER=1.5`, `ERROR_BACKOFF_MULTIPLIER=2` |
 | Polling gate | `shouldPoll()` in `PremiumAssignmentContext.tsx`: polls while premium+leader+assignment exists and the assignment is not dedicated-and-healthy. Re-enables polling while `instanceUnreachable` is true so a backend reassignment to shared or to a new instance is still caught |
 | Unreachable detection + probe config | `unreachableMachineReducer` and constants in `frontend/src/contexts/premium/unreachableConstants.ts`: `INITIAL_PROBE_DELAY_MS=30000`, `MAX_PROBE_DELAY_MS=300000`, `PROBE_BACKOFF_MULTIPLIER=2`, `MAX_FAILED_PROBES=5`, `DEDICATED_HANDOFF_GRACE_MS=15000` (single-shot suppression of the first 5xx after a shared → dedicated transition or dedicated reassignment, to avoid false-positive unreachable popups during ALB target-group warm-up) |
-| Inactivity thresholds | 1h/2h hardcoded in context; countdown length `INACTIVITY_WARNING_DURATION_MINUTES=60` and `WARNING_UPDATE_INTERVAL_MS=60000` from `frontend/src/const/Subscription.ts` |
+| Inactivity thresholds | `INACTIVITY_WARNING_MINUTES=60`, `INACTIVITY_RELEASE_MINUTES=120` and `WARNING_UPDATE_INTERVAL_MS=60000` from `frontend/src/const/Subscription.ts`; the snackbar countdown is their difference |
 | Heartbeat retry | `HEARTBEAT_MAX_RETRIES=3`, `HEARTBEAT_RETRY_DELAY_MS=1000`; delay between attempts is `DELAY * (attempt + 1)` |
 | 401 session-expired UI | `InactivityWarning.tsx` -- AxiosError + status 401 path, 2 s setTimeout then `performLogout()` |
 | beforeunload beacon | `PremiumAssignmentContext.tsx` beforeunload effect; endpoint `/users/me/premium/release-beacon` |
@@ -1241,7 +1241,7 @@ The browser-close path also calls `POST /users/me/premium/release-beacon` direct
 | `frontend/src/api/premium/PremiumAssignmentApi.ts` | API client functions (7 endpoints; `release-beacon` is called directly via `navigator.sendBeacon`) |
 | `frontend/src/contexts/__tests__/PremiumHeartbeatRetry.test.ts` | Tests for heartbeat retry logic |
 | `frontend/src/contexts/__tests__/PremiumPollingBackoff.test.ts` | Tests for polling backoff behavior |
-| `frontend/src/contexts/__tests__/PremiumSleepDetection.test.ts` | Tests for sleep/wake detection |
+| `frontend/src/hooks/__tests__/useSleepDetection.test.ts` | Tests for sleep/wake detection |
 | `frontend/src/contexts/__tests__/PremiumInstanceUnreachable.test.ts` | Unit tests for the unreachable reducer and helper guards (`shouldPoll`, `shouldHydrateFromSnapshot`, probe backoff) |
 | `frontend/src/contexts/__tests__/PremiumUnreachableIntegration.test.tsx` | Integration tests covering the full unreachable -> probe -> recovery lifecycle through the provider |
 

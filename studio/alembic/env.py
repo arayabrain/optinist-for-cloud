@@ -49,6 +49,10 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # compare_type catches column-type drift (e.g. DATETIME vs TIMESTAMP).
+        # compare_server_default left off: models use client-side `default=`,
+        # migrations use DDL `server_default=`, so it only reports false positives.
+        compare_type=True,
     )
 
     with context.begin_transaction():
@@ -73,7 +77,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            # compare_type catches column-type drift; compare_server_default
+            # left off (see run_migrations_offline).
+            compare_type=True,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

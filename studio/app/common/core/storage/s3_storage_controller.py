@@ -4,7 +4,7 @@ import re
 import time
 import uuid
 from subprocess import CalledProcessError
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import aioboto3
 import boto3
@@ -705,6 +705,34 @@ class S3StorageController(BaseRemoteStorageController):
             f"[{workspace_id}/{unique_id}]"
         )
         return True
+
+    async def experiment_prefix_exists(
+        self, workspace_id: str, unique_id: str
+    ) -> Tuple[Optional[bool], Optional[str]]:
+        """
+        Check whether any object exists under an experiment's S3 output prefix.
+
+        Returns a tri-state so callers can distinguish confirmed absence from
+        an unverifiable check:
+            - True: at least one object present (error is None)
+            - False: prefix confirmed empty
+            - None: could not check (transient/S3 error)
+        """
+        prefix = self.make_s3_output_prefix(workspace_id, unique_id)
+        try:
+            async with self.__get_s3_client() as client:
+                result = await client.list_objects_v2(
+                    Bucket=self.bucket_name, Prefix=prefix, MaxKeys=5
+                )
+                if result.get("KeyCount", 0) == 0:
+                    return False, f"No data found in S3 for {workspace_id}/{unique_id}"
+        except Exception as e:
+            logger.error(
+                f"S3 existence check error for {workspace_id}/{unique_id}: {e}"
+            )
+            return None, f"Could not verify S3 data: {str(e)}"
+
+        return True, None
 
     async def validate_experiment_in_s3(
         self, workspace_id: str, unique_id: str

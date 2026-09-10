@@ -3,15 +3,20 @@ set -e
 
 # Common Configuration
 REGION="ap-northeast-1"
+TERRAFORM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../terraform" && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # ===========================================
 # Parse arguments
 # ===========================================
-# Usage: ./ecr_build_push.sh [--tag <version-tag>] [--yes]
+# Usage: ./ecr_build_push.sh [--tag <version-tag>] [--yes] [--deploy]
 #   --tag <tag>  : Custom version tag (default: auto-generated YYYYMMDD-HHMMSS-<git-sha>)
 #   --yes        : Skip confirmation prompt
+#   --deploy     : After push, force-new-deployment on EVERY service in the
+#                  cluster so all tiers re-pull the just-pushed :latest
 CUSTOM_TAG=""
 SKIP_CONFIRM=false
+DEPLOY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -23,9 +28,13 @@ while [[ $# -gt 0 ]]; do
             SKIP_CONFIRM=true
             shift
             ;;
+        --deploy)
+            DEPLOY=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: ./ecr_build_push.sh [--tag <version-tag>] [--yes]"
+            echo "Usage: ./ecr_build_push.sh [--tag <version-tag>] [--yes] [--deploy]"
             exit 1
             ;;
     esac
@@ -49,8 +58,8 @@ fi
 # Detect environment and ECR target
 # ===========================================
 echo "Reading Terraform outputs..."
-ENVIRONMENT=$(terraform -chdir=../terraform output -raw environment 2>/dev/null || echo "")
-ECR_URI=$(terraform -chdir=../terraform output -raw ecr_repository_url 2>/dev/null || echo "")
+ENVIRONMENT=$(terraform -chdir="$TERRAFORM_DIR" output -raw environment 2>/dev/null || echo "")
+ECR_URI=$(terraform -chdir="$TERRAFORM_DIR" output -raw ecr_repository_url 2>/dev/null || echo "")
 
 if [ -z "$ENVIRONMENT" ]; then
     echo "ERROR: Could not read environment from Terraform output."
@@ -114,9 +123,9 @@ fi
 # ===========================================
 # Get configuration from Terraform outputs
 # ===========================================
-AUTOSCALING_HOST=$(terraform -chdir=../terraform output -raw domain_name)
-AUTOSCALING_PORT=$(terraform -chdir=../terraform output -raw domain_port)
-AUTOSCALING_PROTO=$(terraform -chdir=../terraform output -raw domain_protocol)
+AUTOSCALING_HOST=$(terraform -chdir="$TERRAFORM_DIR" output -raw domain_name)
+AUTOSCALING_PORT=$(terraform -chdir="$TERRAFORM_DIR" output -raw domain_port)
+AUTOSCALING_PROTO=$(terraform -chdir="$TERRAFORM_DIR" output -raw domain_protocol)
 
 echo "Autoscaling Host: $AUTOSCALING_HOST"
 echo "Autoscaling Protocol: $AUTOSCALING_PROTO"
@@ -140,19 +149,39 @@ if ! aws ecr describe-repositories --repository-names $REPO_NAME --region $REGIO
     exit 1
 fi
 
+# infrastructure/.env.deploy (gitignored) holds build-time values Terraform does
+# not own. Keyed per environment so a development build can never be published
+# with the production analytics container. Sourced in a subshell so a stray
+# assignment in that file cannot clobber the variables used below.
+GTM_ID_VAR="REACT_APP_GTM_ID_$(echo "$ENVIRONMENT" | tr '[:lower:]-' '[:upper:]_')"
+REACT_APP_GTM_ID=$(
+    set +e
+    if [ -f "$REPO_ROOT/infrastructure/.env.deploy" ]; then
+        . "$REPO_ROOT/infrastructure/.env.deploy"
+    fi
+    printf '%s' "${!GTM_ID_VAR:-}"
+)
+
+if [ -n "$REACT_APP_GTM_ID" ] && ! [[ "$REACT_APP_GTM_ID" =~ ^GTM-[A-Z0-9]+$ ]]; then
+    echo "ERROR: malformed $GTM_ID_VAR ('$REACT_APP_GTM_ID'). Expected GTM-XXXXXXX."
+    exit 1
+fi
+
 # Build frontend with custom domain for autoscaling
 echo "Building frontend for autoscaling with ${AUTOSCALING_PROTO}://${AUTOSCALING_HOST}:${AUTOSCALING_PORT}"
-cd ../../frontend
+echo "Analytics ($ENVIRONMENT): ${REACT_APP_GTM_ID:-<$GTM_ID_VAR unset, analytics disabled>}"
+cd "$REPO_ROOT/frontend"
 cat > .env.production << ENV_EOF
 REACT_APP_SERVER_HOST=${AUTOSCALING_HOST}
 REACT_APP_SERVER_PORT=${AUTOSCALING_PORT}
 REACT_APP_SERVER_PROTO=${AUTOSCALING_PROTO}
 REACT_APP_EXPDB_METADATA_EDITABLE=true
+REACT_APP_GTM_ID=${REACT_APP_GTM_ID:-}
 ENV_EOF
 
 yarn install
 yarn build
-cd ..
+cd "$REPO_ROOT"
 
 # Build the Docker image with embedded build metadata
 echo "Building autoscaling Docker image..."
@@ -176,3 +205,23 @@ echo "  Environment : ${ENVIRONMENT}"
 echo "  latest      : ${ECR_URI}:latest"
 echo "  Version     : ${ECR_URI}:${VERSION_TAG}"
 echo "============================================"
+
+# ===========================================
+# Optional: force every service to re-pull :latest
+# ===========================================
+# Runs AFTER the push, so the force always resolves the digest we just pushed.
+# Cycles all tiers (main/premium/public/background), not just the main service.
+if [ "$DEPLOY" = true ]; then
+    CLUSTER=$(terraform -chdir="$TERRAFORM_DIR" output -raw ecs_cluster_name)
+    echo ""
+    echo "Forcing new deployment on all services in ${CLUSTER}..."
+    SERVICES=$(aws ecs list-services --cluster "$CLUSTER" --region "$REGION" \
+        --query 'serviceArns[]' --output text)
+    for svc in $SERVICES; do
+        echo "  -> ${svc##*/}"
+        aws ecs update-service --cluster "$CLUSTER" --service "$svc" \
+            --force-new-deployment --region "$REGION" >/dev/null
+    done
+    echo "Force-new-deployment issued for all services (re-pulling ${ECR_URI}:latest)."
+    echo "Running services restart now; any service at desiredCount 0 re-pulls on next scale-up."
+fi

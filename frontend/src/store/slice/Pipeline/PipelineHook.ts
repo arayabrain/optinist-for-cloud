@@ -224,7 +224,12 @@ export function useRunPipeline() {
       if (status === RUN_STATUS.START_SUCCESS) {
         dispatch(getExperiments())
       } else if (status === RUN_STATUS.FINISHED) {
-        enqueueSnackbar("Workflow finished", { variant: "success" })
+        // Only a real in-session run transits START_SUCCESS -> FINISHED across
+        // renders; loading a finished workflow jumps straight to FINISHED, so
+        // this guard drops that phantom toast.
+        if (prevStatus === RUN_STATUS.START_SUCCESS) {
+          enqueueSnackbar("Workflow finished", { variant: "success" })
+        }
         isRunFinished = true
         dispatch(getExperiments())
       } else if (status === RUN_STATUS.ABORTED) {

@@ -1,6 +1,6 @@
 from glob import glob
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from studio.app.common.core.utils.filepath_creater import join_filepath
@@ -30,8 +30,10 @@ async def download_nwb_experiment(workspace_id: str, unique_id: str):
     )
     if len(nwb_path_list) > 0:
         return FileResponse(nwb_path_list[0])
-    else:
-        return False
+    # Returning False here serialised as a 200 with the body `false`, which the
+    # browser saved as a 5-byte .nwb; the caller only distinguishes success from
+    # failure by status.
+    raise HTTPException(status_code=404, detail="NWB file not found")
 
 
 @router.get(
@@ -49,5 +51,4 @@ async def download_nwb_experiment_with_function_id(
     )
     if len(nwb_path_list) > 0:
         return FileResponse(nwb_path_list[0])
-    else:
-        return False
+    raise HTTPException(status_code=404, detail="NWB file not found")

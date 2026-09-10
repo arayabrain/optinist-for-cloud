@@ -38,6 +38,16 @@ This document covers **application code deployment, release procedures, and Git 
 brew install terraform
 ```
 
+### Optional Build Configuration
+
+`infrastructure/.env.deploy` (gitignored) supplies build-time frontend values that Terraform does not own. Currently only the analytics container ID, keyed per environment. Without it the frontend is built with analytics disabled, which the build log states explicitly. See [ANALYTICS_ARCHITECTURE.md](ANALYTICS_ARCHITECTURE.md).
+
+```bash
+# infrastructure/.env.deploy
+REACT_APP_GTM_ID_SUBSCR=GTM-XXXXXXX       # production
+REACT_APP_GTM_ID_DEVELOPMENT=GTM-YYYYYYY  # development
+```
+
 ### Required AWS Permissions
 
 The deploying user needs the following AWS permissions:
@@ -102,10 +112,16 @@ OptiNiSt uses **AWS Secrets Manager** for credential storage. This enables team 
 
 2. **Ongoing deployments (no Terraform needed):**
    - Build and push Docker images using `ecr_build_push.sh`
-   - The `app_setup.sh` script inside the container automatically:
+
+3. **Host provisioning (`app_setup.sh`, runs on a 30-minute schedule):**
+   - Runs independently of image deploys. `aws_ssm_association "app_setup"` (`deployment.tf`, `schedule_expression = "rate(30 minutes)"`) downloads the script from S3 and executes it on each EC2 host via SSM — **not inside the container, and not one-shot**. It re-runs every 30 minutes for the life of the instance. On each cycle it:
      - Reads secrets from AWS Secrets Manager
      - Discovers infrastructure (RDS endpoint, S3 buckets) via AWS CLI
      - Configures the application with correct settings
+     - Applies the DB bootstrap SQL (idempotent — guarded so re-runs allocate
+       no new rows)
+
+   > **Design note / future consideration:** this script mixes two concerns on one 30-minute loop — periodic desired-state (env/config files, secret refresh, which *should* re-run) and one-shot bootstrap (package installs, DB seeding, Firebase admin verification, which need only run once). The seed migration now owns the DB reference rows, so the DB block could be removed from here entirely. A cleaner design would split bootstrap (launch-time / one-shot) from periodic config enforcement. Not required for correctness — the bootstrap steps are idempotent — but it would stop re-running one-shot work every 30 minutes for the life of each instance.
 
 ---
 
@@ -150,11 +166,16 @@ terraform apply -var-file=environments/<ENV>.tfvars
 - Lambda function code and layers
 - Copies `infrastructure/aws_constants.py` to all Lambda packages via provisioners
 
+> **Traceability:** Each apply stamps the applied `infrastructure/` git revision onto the
+> ECS cluster as tags (`TfGitCommit` / `TfGitBranch`), so you can later confirm which
+> infrastructure version is running. See [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md) →
+> "Check Which Git Revision Was Applied".
+
 > **Note:** The commands above are a quick reference for production deployment. For the authoritative guide — including environment switching, development setup, destroying environments, and Terraform troubleshooting — see [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md).
 
 ### Step 2: Build and Push Docker Image (if application code changed)
 
-Skip this step if only Lambda or infrastructure code changed.
+Skip this step if only Lambda or infrastructure code changed — see [Determine What Needs to Be Deployed](#determine-what-needs-to-be-deployed) for the exact paths each category maps to.
 
 #### 2a. Initialize Terraform for the target environment
 
@@ -192,7 +213,7 @@ The script automatically:
 
 ### Step 3: Force ECS Redeployment (after Docker image push)
 
-Skip this step if only Lambda or infrastructure code changed.
+Skip this step if only Lambda or infrastructure code changed — see [Determine What Needs to Be Deployed](#determine-what-needs-to-be-deployed) for the exact paths each category maps to.
 
 **Option A: AWS Console**
 
