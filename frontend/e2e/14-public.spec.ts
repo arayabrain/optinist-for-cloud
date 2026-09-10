@@ -9,9 +9,10 @@ import {
   ensurePublishableAccount,
   ensurePublishedRecord,
   findDataviewRecord,
-  dataviewUid,
-  filterPublicByUid,
+  dataviewRecord,
+  filterPublicToRecord,
   publicRow,
+  PublicRecordRef,
   freeStorageState,
   gotoDashboard,
   setPublished,
@@ -187,9 +188,9 @@ async function anonymousPage(browser: Browser): Promise<Page> {
 }
 
 // Open the record's Workflow Inputs dialog from the public listing and
-// return the dialog locator. Takes the uid rather than the name: the listing
+// return the dialog locator. Takes the record rather than the name: the listing
 // spans every account, and a name match with .first() picks silently
-async function openPublicInputs(page: Page, uid: string) {
+async function openPublicInputs(page: Page, record: PublicRecordRef) {
   await page.goto("/public")
   // Really anonymous: rows 815-818 are about a visitor with no session
   expect(
@@ -197,8 +198,8 @@ async function openPublicInputs(page: Page, uid: string) {
   ).toBeNull()
   // Server-side filter first: the grid is virtualized, so an unfiltered
   // listing can hold the target row outside the DOM
-  expect(await filterPublicByUid(page, uid)).toHaveLength(1)
-  const row = publicRow(page, uid)
+  expect(await filterPublicToRecord(page, record)).toHaveLength(1)
+  const row = publicRow(page, record)
   await expect(row).toBeVisible({ timeout: 30_000 })
   await row
     .locator(
@@ -248,7 +249,7 @@ test.describe("Public input data loads @slow", () => {
       await ensurePublishedRecord(page, "Tutorial4")
       const dialog = await openPublicInputs(
         viewer,
-        await dataviewUid(page, "Tutorial4"),
+        await dataviewRecord(page, "Tutorial4"),
       )
       for (const dataType of ["hdf5", "matlab"]) {
         await expect(
@@ -279,7 +280,7 @@ test.describe("Public input data loads @slow", () => {
       await ensurePublishedRecord(page, "Tutorial1")
       const dialog = await openPublicInputs(
         viewer,
-        await dataviewUid(page, "Tutorial1"),
+        await dataviewRecord(page, "Tutorial1"),
       )
       // The CSV panel renders a data table, the TIFF one a plotly image
       await expect(

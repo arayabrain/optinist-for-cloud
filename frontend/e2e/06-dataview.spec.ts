@@ -13,11 +13,11 @@ import {
   ensurePublishableAccount,
   ensurePublishedRecord,
   findDataviewRecord,
-  dataviewUid,
+  dataviewRecord,
   setPublished,
   filterColumn,
   filterWorkspace,
-  filterPublicByUid,
+  filterPublicToRecord,
   publicRow,
   openWorkspace,
   apiUrl,
@@ -401,13 +401,13 @@ test.describe("Private Dataview @slow", () => {
   }) => {
     await ensurePublish(page, "Tutorial1", false)
     await setPublish(page, "Tutorial1", true)
-    const uid = await dataviewUid(page, "Tutorial1")
+    const record = await dataviewRecord(page, "Tutorial1")
 
     // Listed on the public dataview (S3 sync stays manual — the listing
     // gates on publish_status only)
     await page.goto("/public")
-    expect(await filterPublicByUid(page, uid)).toHaveLength(1)
-    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
+    expect(await filterPublicToRecord(page, record)).toHaveLength(1)
+    await expect(publicRow(page, record)).toBeVisible({ timeout: 15_000 })
 
     // Unpublish removes it from the public page
     await page.goto(`/dataview/${dataviewId}`)
@@ -418,21 +418,21 @@ test.describe("Private Dataview @slow", () => {
     await expect(
       page.locator('.MuiDataGrid-columnHeader[data-field="name"]'),
     ).toBeVisible({ timeout: 15_000 })
-    expect(await filterPublicByUid(page, uid)).toHaveLength(0)
-    await expect(publicRow(page, uid)).toHaveCount(0)
+    expect(await filterPublicToRecord(page, record)).toHaveLength(0)
+    await expect(publicRow(page, record)).toHaveCount(0)
   })
 
   test("DV-17 - Public dataview filters by workspace", async ({ page }) => {
     await ensurePublish(page, "Tutorial1", true)
-    const uid = await dataviewUid(page, "Tutorial1")
+    const record = await dataviewRecord(page, "Tutorial1")
     await page.goto("/public")
-    expect(await filterPublicByUid(page, uid)).toHaveLength(1)
-    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
+    expect(await filterPublicToRecord(page, record)).toHaveLength(1)
+    await expect(publicRow(page, record)).toBeVisible({ timeout: 15_000 })
 
     // The workspace filter replaces the uid one - the grid holds a single
     // filter item
     await filterWorkspace(page, DATA_WS)
-    await expect(publicRow(page, uid)).toBeVisible({ timeout: 15_000 })
+    await expect(publicRow(page, record)).toBeVisible({ timeout: 15_000 })
     // Re-read until the grid has re-fetched: the filter is applied
     // asynchronously, so a single read can still sample the pre-filter rows.
     // Iterating an empty list asserts nothing, so the rows are counted first

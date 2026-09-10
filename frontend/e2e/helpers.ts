@@ -1647,11 +1647,19 @@ export async function findDataviewRecord(
   return (items as DataviewItem[]).find((record) => record.name === name)
 }
 
-// The private listing is where a record's uid is readable; publicRow needs it
-export async function dataviewUid(page: Page, name: string): Promise<string> {
+// What identifies a public row. The uid alone does not: it is only indexed and
+// records are keyed (workspace_id, uid), so the imported tutorial1 carries the
+// same uid in every account that imports it. `id` is the record's primary key
+export type PublicRecordRef = { id: number; uid: string }
+
+// The private listing is where both halves are readable
+export async function dataviewRecord(
+  page: Page,
+  name: string,
+): Promise<PublicRecordRef> {
   const record = await findDataviewRecord(page, name)
   if (!record?.uid) throw new Error(`no dataview record named ${name}`)
-  return record.uid
+  return { id: record.id, uid: record.uid }
 }
 
 export async function setPublished(page: Page, name: string, on: boolean) {
@@ -1796,38 +1804,37 @@ export async function filterWorkspace(page: Page, value: string) {
   await page.keyboard.press("Escape")
 }
 
-// Never identify a row on /public by name: the listing spans every account,
-// and a record named Tutorial1 already sits there under another owner. The uid
-// is the identity the grid offers. getByText, not :text-is - the uid sits in a
-// span inside the cell, and the :text family only matches the smallest element
-export const publicRow = (page: Page, uid: string) =>
-  page.locator(".MuiDataGrid-row").filter({
-    has: page.locator('[data-field="uid"]').getByText(uid, { exact: true }),
-  })
+// Never identify a row on /public by name, and never by uid alone: the listing
+// spans every account. MUI puts the row id on data-id, and with no custom
+// getRowId that is the record's primary key, so this is exact
+export const publicRow = (page: Page, record: PublicRecordRef) =>
+  page.locator(`.MuiDataGrid-row[data-id="${record.id}"]`)
 
 // Filtered rather than scanned: the row is otherwise only on whichever page of
 // the listing happens to be open. The fill is debounced and the row assertions
 // settle on their first poll, so wait for the fetch, not the keystroke, and
-// hand back what it answered - the rendered count alone rides on task ordering
-export async function filterPublicByUid(page: Page, uid: string) {
+// hand back what it answered - the rendered count alone rides on task ordering.
+// uid is the only filterable key and the server matches it with `contains` over
+// every account, so the answer is narrowed to the record itself
+export async function filterPublicToRecord(
+  page: Page,
+  record: PublicRecordRef,
+) {
   const applied = page.waitForResponse(
     (r) =>
       r.url().includes("/api/public/dataview") &&
-      new URL(r.url()).searchParams.get("uid") === uid,
+      new URL(r.url()).searchParams.get("uid") === record.uid,
     { timeout: 30_000 },
   )
-  await filterColumn(page, "uid", uid)
+  await filterColumn(page, "uid", record.uid)
   const listed = (await (await applied).json()) as {
-    items?: { uid?: string }[]
+    items?: { id?: number }[]
   }
   await page.keyboard.press("Escape")
   if (!listed.items) {
-    throw new Error(`no items in the public listing for uid=${uid}`)
+    throw new Error(`no items in the public listing for uid=${record.uid}`)
   }
-  // The server filter is a substring match over every account's records, so
-  // narrow to the record itself: a count over what it returns would assert a
-  // global uniqueness the caller neither owns nor controls
-  return listed.items.filter((record) => record.uid === uid)
+  return listed.items.filter((item) => item.id === record.id)
 }
 
 export async function createWorkspace(page: Page, name: string) {

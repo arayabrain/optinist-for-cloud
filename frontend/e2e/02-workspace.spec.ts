@@ -143,6 +143,7 @@ test.describe("Workspace", () => {
     })
 
     const routes = ["/dashboard", "/workspaces", "/account"]
+    let afterFirstRoute = 0
     for (const route of routes) {
       // Each load decides whether to refresh only after its own /users/me
       // resolves; navigating away before that cancels the decision, and the
@@ -177,8 +178,13 @@ test.describe("Workspace", () => {
       // A gate that stopped holding refreshes a tick after /users/me, so give
       // the route time to issue that POST for the count to see
       await page.waitForTimeout(2_000)
+      if (route === routes[0]) afterFirstRoute = refreshes.length
     }
-    expect(refreshes).toHaveLength(1)
+    // Route 1 may legitimately POST twice - refreshStorageWithTimeout retries
+    // an attempt that failed without aborting. What the gate promises is that
+    // the later routes add nothing, not a request total
+    expect(afterFirstRoute).toBeGreaterThan(0)
+    expect(refreshes).toHaveLength(afterFirstRoute)
   })
 
   test("WS-05 - Dataview button navigates to dataview page", async ({
