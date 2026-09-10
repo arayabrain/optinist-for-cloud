@@ -58,7 +58,13 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
     <>
       {isRemoteSynced ? (
         <>
-          <IconButton onClick={onClick} color="primary" disabled={!hasNWB}>
+          <IconButton
+            onClick={onClick}
+            color="primary"
+            disabled={!hasNWB}
+            aria-label="Download NWB file"
+            data-testid="nwb-download-link"
+          >
             <SimCardDownloadOutlinedIcon />
           </IconButton>
           <a
@@ -66,7 +72,7 @@ export const NWBDownloadButton = memo(function NWBDownloadButton({
             download={`nwb_${name}.nwb`}
             className="hidden"
             ref={ref}
-            data-testid="nwb-download-link"
+            data-testid="nwb-download-anchor"
           >
             {/* 警告が出るので空文字を入れておく */}{" "}
           </a>
@@ -103,7 +109,11 @@ export const SnakemakeDownloadButton = memo(function SnakemakeDownloadButton() {
 
   return (
     <>
-      <IconButton onClick={onClick}>
+      <IconButton
+        onClick={onClick}
+        aria-label="Download Snakemake config"
+        data-testid="snakemake-download-link"
+      >
         <SimCardDownloadOutlinedIcon color="primary" />
       </IconButton>
       <a
@@ -111,7 +121,7 @@ export const SnakemakeDownloadButton = memo(function SnakemakeDownloadButton() {
         download={`snakemake_${uid}.yaml`}
         className="hidden"
         ref={ref}
-        data-testid="snakemake-download-link"
+        data-testid="snakemake-download-anchor"
       >
         {/* 警告が出るので空文字を入れておく */}{" "}
       </a>
@@ -142,7 +152,11 @@ export const WorkflowDownloadButton = memo(function WorkflowDownloadButton() {
 
   return (
     <>
-      <IconButton onClick={onClick} data-testid="workflow-download-button">
+      <IconButton
+        onClick={onClick}
+        aria-label="Download workflow config"
+        data-testid="workflow-download-button"
+      >
         <SimCardDownloadOutlinedIcon color="primary" />
       </IconButton>
       <a

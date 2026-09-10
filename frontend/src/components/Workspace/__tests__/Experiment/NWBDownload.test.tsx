@@ -45,7 +45,9 @@ describe("NWBDownloadButton", () => {
     )
 
     // Find the NWB download button
-    const downloadButton = screen.getByRole("button")
+    const downloadButton = screen.getByRole("button", {
+      name: "Download NWB file",
+    })
 
     // Check if the button is enabled (i.e., clickable)
     expect(downloadButton).toBeEnabled()
@@ -58,7 +60,7 @@ describe("NWBDownloadButton", () => {
       expect(downloadExperimentNwbApi).toHaveBeenCalledWith(1, "exp1", "node1")
     })
 
-    const link = await waitFor(() => screen.getByTestId("nwb-download-link"))
+    const link = await waitFor(() => screen.getByTestId("nwb-download-anchor"))
 
     // Check that the download attribute is set correctly
     expect(link).toHaveAttribute("download", "nwb_testName.nwb")
