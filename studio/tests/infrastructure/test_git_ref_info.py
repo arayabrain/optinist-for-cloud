@@ -131,6 +131,51 @@ class TestResolution:
         _git(repo, "checkout", "-q", "v1.0.10")
         assert resolve(repo)["tag"] == "v1.0.10"
 
+    def test_a_release_beats_its_own_prereleases(self, repo):
+        # Promoting a release candidate without new commits leaves the release
+        # and its prereleases on one commit. `--sort=-v:refname` on its own
+        # ranks v1.0.10-rc1 *above* v1.0.10, so the release build would have
+        # recorded the candidate.
+        _git(repo, "checkout", "-q", "v1.0.10")
+        for name in ("v1.0.10-rc1", "v1.0.10-beta", "v1.0.10-alpha2"):
+            _git(repo, "tag", name)
+        assert resolve(repo)["tag"] == "v1.0.10"
+
+    @pytest.mark.parametrize(
+        "suffixes",
+        [(), ("-rc",), ("-rc", "-beta"), ("-beta",), ("-alpha", "-rc")],
+        ids=["unset", "rc", "rc+beta", "beta", "alpha+rc"],
+    )
+    def test_the_answer_does_not_depend_on_versionsort_config(self, repo, suffixes):
+        # `versionsort.suffix` is normally set globally, per operator, so
+        # deferring to it would make the recorded tag depend on whose machine
+        # ran the build. Measured before the fix, this one commit produced
+        # v1.0.10-rc1, v1.0.10-beta or v1.0.10 across these five settings.
+        _git(repo, "checkout", "-q", "v1.0.10")
+        for name in ("v1.0.10-rc1", "v1.0.10-beta"):
+            _git(repo, "tag", name)
+        for suffix in suffixes:
+            _git(repo, "config", "--add", "versionsort.suffix", suffix)
+        assert resolve(repo)["tag"] == "v1.0.10"
+
+    def test_a_commit_with_only_prereleases_still_records_one(self, repo):
+        # No release tag to prefer, so the fallback runs. It must still be
+        # deterministic, and it must not report nothing.
+        _git(repo, "checkout", "-q", "v1.0.10")
+        for name in ("v2.0.0-rc1", "v2.0.0-rc2"):
+            _git(repo, "tag", name)
+        _git(repo, "tag", "-d", "v1.0.9")
+        _git(repo, "tag", "-d", "v1.0.10")
+        _git(repo, "tag", "-d", "ann-tag")
+        assert resolve(repo)["tag"] == "v2.0.0-rc2"
+
+    def test_a_non_version_tag_never_outranks_a_release(self, repo):
+        # 'zzz-nightly' sorts above 'v1.0.10' in any refname ordering, so the
+        # release preference has to be a filter, not a tie-break.
+        _git(repo, "checkout", "-q", "v1.0.10")
+        _git(repo, "tag", "zzz-nightly")
+        assert resolve(repo)["tag"] == "v1.0.10"
+
     def test_detached_at_an_untagged_commit(self, repo):
         sha = _git(repo, "rev-parse", "HEAD")
         _git(repo, "checkout", "-q", sha)

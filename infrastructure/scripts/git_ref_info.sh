@@ -36,11 +36,25 @@ resolve_git_ref_info() {
     # Empty (not "HEAD") when detached, e.g. when a tag was checked out.
     GIT_INFO_BRANCH=$(git -C "$repo_dir" symbolic-ref --short -q HEAD 2>/dev/null || echo "")
 
-    # Tags whose target is HEAD itself. `--sort=-v:refname` makes the choice
-    # deterministic when several tags share a commit, preferring the highest
-    # version (v1.1.10 over v1.1.9).
+    # Tags whose target is HEAD itself, highest release version first.
+    #
+    # `--sort=-v:refname` alone is not enough, for two reasons measured on a
+    # commit carrying v1.1.10, v1.1.10-rc1 and v1.1.10-beta:
+    #
+    #   - With no configuration it ranks v1.1.10-rc1 *above* v1.1.10, so the
+    #     release build would have recorded the release candidate.
+    #   - Its ordering of suffixed tags follows the operator's
+    #     `versionsort.suffix` setting, which is normally global and personal.
+    #     The same commit produced v1.1.10-rc1, v1.1.10-beta or v1.1.10
+    #     depending on whose machine ran the build.
+    #
+    # So the policy is stated here rather than delegated to git config: a
+    # release tag (v1.2.3 or 1.2.3, no suffix) always wins, and among those the
+    # ordering is pure numeric comparison, which no setting affects.
+    #
     # `|| true` keeps the pipeline non-fatal for callers running under
-    # `set -e -o pipefail` (head closing the pipe early is not an error here).
+    # `set -e -o pipefail` (head closing the pipe early, or grep matching
+    # nothing, is not an error here).
     #
     # No `git describe --tags --exact-match` fallback: it reads the same
     # refs/tags/* this does, so it cannot succeed where this returns nothing —
@@ -48,5 +62,13 @@ resolve_git_ref_info() {
     # for the requested tag even under `--no-tags`. It would also answer
     # *differently* on a commit carrying several tags, preferring the annotated
     # one over the highest version and breaking the ordering above.
-    GIT_INFO_TAG=$(git -C "$repo_dir" tag --points-at HEAD --sort=-v:refname 2>/dev/null | head -n1 || true)
+    GIT_INFO_TAG=$(git -C "$repo_dir" tag --points-at HEAD --sort=-v:refname 2>/dev/null \
+        | grep -E '^v?[0-9]+(\.[0-9]+)*$' | head -n1 || true)
+
+    # No release tag on this commit: a prerelease, or a name like `nightly`, is
+    # still worth recording. `-refname` is a plain reverse-lexical sort, which
+    # `versionsort.suffix` does not touch, so this stays deterministic too.
+    if [ -z "$GIT_INFO_TAG" ]; then
+        GIT_INFO_TAG=$(git -C "$repo_dir" tag --points-at HEAD --sort=-refname 2>/dev/null | head -n1 || true)
+    fi
 }
