@@ -45,11 +45,9 @@ test.describe("Login", () => {
     await page.goto("/login")
     await page.locator('[data-testid="button-submit"]').click()
 
-    await expect(
-      page
-        .locator('[data-testid="error-email"], [data-testid="error-password"]')
-        .first(),
-    ).toBeVisible()
+    // A comma-selector .first() passes while the other half has regressed
+    await expect(page.locator('[data-testid="error-email"]')).toBeVisible()
+    await expect(page.locator('[data-testid="error-password"]')).toBeVisible()
     await expect(page).toHaveURL(/\/login/)
   })
 

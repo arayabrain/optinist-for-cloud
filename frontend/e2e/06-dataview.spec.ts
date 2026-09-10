@@ -284,18 +284,22 @@ test.describe("Private Dataview @slow", () => {
   })
 
   test("DV-05 - Change page size", async ({ page }) => {
-    // Custom pagination: a native <select name="limit"> (10/50/100)
+    // Custom pagination: a native <select name="limit"> (10/50/100, default 50)
     const limitSelect = page.locator('select[name="limit"]')
-    const refetch = page.waitForResponse(
-      (r) => r.url().includes("/api/dataview") && r.url().includes("limit=10"),
-    )
-    await limitSelect.selectOption("10")
-    const { items } = (await (await refetch).json()) as { items: unknown[] }
-    await expect(limitSelect).toHaveValue("10")
-    // The selector reading 10 only proves the control moved, so the page size
-    // is asserted on the response: the DataGrid virtualizes, and a grid holding
-    // 50 records can render fewer than 10 row elements.
-    expect(items.length).toBeLessThanOrEqual(10)
+    // The DataGrid virtualizes, so rendered rows cannot be counted and the page
+    // size is asserted on the request instead. Every option is exercised because
+    // items.length <= limit is vacuous on a dataset smaller than any limit.
+    for (const limit of ["10", "50", "100"]) {
+      const refetch = page.waitForResponse(
+        (r) =>
+          r.url().includes("/api/dataview") &&
+          r.url().includes(`limit=${limit}`),
+      )
+      await limitSelect.selectOption(limit)
+      const { items } = (await (await refetch).json()) as { items: unknown[] }
+      await expect(limitSelect).toHaveValue(limit)
+      expect(items.length).toBeLessThanOrEqual(Number(limit))
+    }
     await expect(page.locator('[role="grid"] [role="row"]').nth(1)).toBeVisible(
       { timeout: 15_000 },
     )
@@ -337,9 +341,11 @@ test.describe("Private Dataview @slow", () => {
       .first()
     await expect(celloutput).toBeVisible({ timeout: 30_000 })
     await celloutput.click()
-    await expect(page.locator('[role="dialog"]')).toBeVisible({
-      timeout: 10_000,
-    })
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+    // Any dialog on the page satisfies [role=dialog]; the title is what makes
+    // this the outputs dialog rather than a confirm or an attribute popup
+    await expect(dialog.getByText("Workflow Outputs")).toBeVisible()
   })
 
   test("DV-08 - Details dialog opens and closes", async ({ page }) => {
@@ -351,8 +357,10 @@ test.describe("Private Dataview @slow", () => {
       .click()
     const dialog = page.locator('[role="dialog"]')
     await expect(dialog).toBeVisible({ timeout: 10_000 })
+    await expect(dialog.getByText("Workflow Details")).toBeVisible()
 
-    await page.keyboard.press("Escape")
+    // The row's second half closes it by its own button, not by Escape
+    await dialog.getByRole("button", { name: "Close" }).click()
     await expect(dialog).toBeHidden({ timeout: 5_000 })
     await expect(page.locator('[role="grid"]')).toBeVisible()
   })
