@@ -60,6 +60,19 @@ if (fs.existsSync(envFile)) {
   }
 }
 
+// Every flag here opts a lane into real spending or real infrastructure change,
+// so a retry re-does the mutation instead of re-observing it. RUN_SLOW and
+// RUN_CLEANUP are absent deliberately: CI sets both on every run and relies on
+// the retries that absorb CRA hydration no-ops.
+const MUTATING_FLAGS = [
+  "RUN_PREMIUM_AWS",
+  "RUN_S3_AWS",
+  "RUN_DISRUPTIVE",
+  "RUN_CHECKOUT_PROBE",
+  "RUN_STRIPE_WRITE",
+  "RUN_RESTART",
+]
+
 // One regex from the tags that are switched off, or undefined when none are:
 // grepInvert matches every test when handed an empty pattern.
 function excluded(tags: [string, boolean][]): RegExp | undefined {
@@ -80,9 +93,11 @@ export default defineConfig({
   workers: 1,
   // CRA dev-server hydration makes early clicks occasionally no-op; one
   // retry absorbs it without hiding persistent failures
-  // A @disruptive test mutates the environment, so a retry would take the
-  // tier down a second time rather than re-observe it.
-  retries: process.env.RUN_DISRUPTIVE ? 0 : process.env.CI ? 2 : 1,
+  retries: MUTATING_FLAGS.some((flag) => process.env[flag])
+    ? 0
+    : process.env.CI
+      ? 2
+      : 1,
   reporter: [
     ["html", { open: "never" }],
     ["list"],
