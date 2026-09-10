@@ -47,26 +47,46 @@ def _load_build_info() -> dict:
         return {}
 
 
+# Placeholder strings a field is known to have carried in some already-built
+# image, listed per field rather than globally. `unknown` and `HEAD` are both
+# creatable ref names (`git tag unknown`, `git tag HEAD`), so collapsing them
+# everywhere would discard a real value:
+#
+#   git_commit      "unknown" was the Docker ARG default, and a commit hash can
+#                   never be that string, so there is no real value to lose.
+#   git_branch      "unknown" was the ARG default; "HEAD" is what
+#                   `git rev-parse --abbrev-ref` recorded for every tag
+#                   checkout before this change. A branch genuinely named
+#                   `unknown` or `HEAD` is collapsed too — accepted, because
+#                   images carrying the old sentinels exist and such branches
+#                   do not.
+#   git_tag         introduced by this change and never shipped with a
+#                   placeholder, so every non-empty value is a real tag.
+#   build_timestamp "unknown" is still the ARG default today.
+_PLACEHOLDERS = {
+    "git_commit": ("unknown",),
+    "git_branch": ("unknown", "HEAD"),
+    "git_tag": (),
+    "build_timestamp": ("unknown",),
+}
+
+
 def _field(data: dict, key: str) -> str:
     """Read a BUILD_INFO field, normalising 'not recorded' to an empty string.
 
     A field can be missing (BUILD_INFO from an older image), empty (the build
-    genuinely had no branch or no tag) or the literal "unknown" (the Docker ARG
-    default, i.e. the build never passed the value in). All of these mean the
-    same thing to a reader, so they collapse to "".
-
-    "HEAD" collapses too: images built before the branch was resolved with
-    `git symbolic-ref` recorded that string for every tag checkout, and it
-    names no ref at all.
+    genuinely had no branch or no tag) or hold one of the placeholders listed
+    in `_PLACEHOLDERS` for that field. All of these mean the same thing to a
+    reader, so they collapse to "".
 
     Anything that is not a string collapses as well, so a hand-edited or
     truncated BUILD_INFO cannot put a non-string onto a class attribute the
     rest of the code treats as one.
     """
     value = data.get(key, "")
-    if not isinstance(value, str) or value in ("", "unknown", "HEAD"):
+    if not isinstance(value, str) or value == "":
         return ""
-    return value
+    return "" if value in _PLACEHOLDERS.get(key, ()) else value
 
 
 def _derive_git_ref(commit: str, branch: str, tag: str) -> str:
@@ -104,9 +124,13 @@ class Version:
 
 
 class BuildInfo:
+    # Every field goes through _field, so a damaged BUILD_INFO cannot put a
+    # non-string onto an attribute the startup log formats as one, and so the
+    # commit cannot read "unknown" on one log line while the ref derived from
+    # that same commit reads "N/A" on the next.
     _data = _load_build_info()
-    GIT_COMMIT = _data.get("git_commit", "N/A")
+    GIT_COMMIT = _field(_data, "git_commit") or "N/A"
     GIT_BRANCH = _field(_data, "git_branch")
     GIT_TAG = _field(_data, "git_tag")
     GIT_REF = _derive_git_ref(_field(_data, "git_commit"), GIT_BRANCH, GIT_TAG)
-    BUILD_TIMESTAMP = _data.get("build_timestamp", "N/A")
+    BUILD_TIMESTAMP = _field(_data, "build_timestamp") or "N/A"

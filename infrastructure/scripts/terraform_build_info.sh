@@ -32,5 +32,9 @@ else
 fi
 
 # Encode as JSON via python3 (available in the toolchain; avoids a jq dependency).
-python3 -c "import json,sys; json.dump(dict(zip(('git_commit','git_branch','git_tag','git_dirty'), sys.argv[1:])), sys.stdout)" \
+# Indexed explicitly rather than zipped: a missing argument then raises
+# IndexError here, instead of silently emitting a JSON object without the
+# field, which terraform would only report much later as "object does not have
+# an attribute named git_tag" at plan time.
+python3 -c "import json,sys; json.dump({'git_commit':sys.argv[1],'git_branch':sys.argv[2],'git_tag':sys.argv[3],'git_dirty':sys.argv[4]}, sys.stdout)" \
   "$GIT_INFO_COMMIT" "$GIT_INFO_BRANCH" "$GIT_INFO_TAG" "$git_dirty"

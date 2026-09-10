@@ -89,6 +89,17 @@ ARG GIT_BRANCH=
 ARG GIT_TAG=
 ARG BUILD_TIMESTAMP=unknown
 
+# image.version carries the git tag, not Version.APP_VERSION from
+# pyproject.toml. The OCI spec allows either ("the version MAY match a label or
+# tag in the source code repository"), but APP_VERSION is bumped once at
+# release time and then stays put for every commit until the next bump — when
+# this was written, develop-main read 1.1.10 sixteen commits past the v1.1.10
+# tag. Labelling those builds 1.1.10 would assert they are the release when
+# they are not, which is the class of false provenance this whole change
+# removes. An empty tag on a branch build is the honest answer to "was this
+# built from a tagged release?", the question this label is read to answer.
+# APP_VERSION stays available from pyproject.toml inside the image and on the
+# startup log line.
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.version="${GIT_TAG}" \
       org.opencontainers.image.created="${BUILD_TIMESTAMP}" \

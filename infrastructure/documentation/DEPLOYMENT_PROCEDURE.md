@@ -169,8 +169,10 @@ terraform apply -var-file=environments/<ENV>.tfvars
 > **Traceability:** Each apply stamps the applied `infrastructure/` git revision onto the
 > ECS cluster as tags (`TfGitCommit` / `TfGitBranch` / `TfGitTag`), so you can later confirm
 > which infrastructure version is running. Applying from a tag records `TfGitTag` and leaves
-> `TfGitBranch` as `-` (a tag checkout has no branch); applying from a branch does the
-> reverse. See [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md) →
+> `TfGitBranch` as `-` (a tag checkout has no branch); applying from a branch records
+> `TfGitBranch`, plus `TfGitTag` as well if that branch's HEAD carries a tag. So `TfGitBranch`
+> is what identifies a tag checkout, not a populated `TfGitTag`.
+> See [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md) →
 > "Check Which Git Revision Was Applied".
 
 > **Note:** The commands above are a quick reference for production deployment. For the authoritative guide — including environment switching, development setup, destroying environments, and Terraform troubleshooting — see [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md).

@@ -308,7 +308,9 @@ For production, an additional **WARNING** banner is shown.
 The commit, branch, tag and build time shown here are baked into the image as
 `/app/BUILD_INFO` and echoed at container startup, so a running container can be traced
 back to its source. Building from a tag leaves HEAD detached, so `Git branch` reads `-`
-and `Git tag` carries the identity (and vice versa when building from a branch).
+and `Git tag` carries the identity. Building from a branch records the branch, and *also*
+records the tag when that branch's HEAD happens to carry one — so a non-empty `Git tag` is
+not by itself proof of a tag checkout. `Git branch` is what tells the two apart.
 
 There are three ways to read it back, depending on what you have access to:
 
@@ -328,9 +330,11 @@ docker buildx imagetools inspect \
 docker exec <CONTAINER> cat /app/BUILD_INFO
 
 # 3. From the application log — one line, written at every startup
-#    "Git Ref" is a summary: the tag if there is one, else the branch, else
-#    detached@<short sha>. A build from a branch whose HEAD also carries a tag
-#    reads "develop-main (v1.1.10)".
+#    "Git Ref" is a summary of the two recorded fields:
+#      branch + tag -> "develop-main (v1.1.10)"   built from the branch, at that version
+#      tag only     -> "v1.1.10"                  built from the tag
+#      branch only  -> "develop-main"
+#      neither      -> "detached@<short sha>", or "N/A" if no commit was recorded
 ```
 
 ```
@@ -513,10 +517,13 @@ cat .terraform/terraform.tfstate | python3 -c "import sys,json; print(json.load(
 Every `terraform apply` stamps the applied `infrastructure/` git revision onto the ECS
 cluster as tags (`TfGitCommit` / `TfGitBranch` / `TfGitTag`), so you can confirm which
 infrastructure version is actually running and detect deploy mistakes. The tags only change
-when the git commit changes, so no-op applies produce no diff.
+when the values they record change, so re-applying from the same checkout produces no diff.
+The commit is not the only such value: applying the same commit first from a branch and then
+from a tag flips `TfGitBranch` and `TfGitTag` while `TfGitCommit` stays put.
 
-Branch and tag are recorded separately because checking out a tag leaves HEAD detached, so
-only one of the two is ever set; the other reads `-`:
+Branch and tag are recorded separately because checking out a tag leaves HEAD detached, so a
+tag checkout has no branch to record and the field reads `-`. A branch checkout whose HEAD
+also carries a tag sets both:
 
 | Applied from | `TfGitBranch` | `TfGitTag` | `TfGitCommit` |
 | --- | --- | --- | --- |

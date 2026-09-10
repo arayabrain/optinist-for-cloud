@@ -141,9 +141,11 @@ Design notes:
 - No timestamp is stored in the tag — "when was the last change-bearing apply" is already
   answered by the state file's `LastModified` in the S3 backend bucket.
 - Branch and tag are recorded as **separate** tags because a tag checkout leaves HEAD
-  detached: applying from `v1.1.10` records `TfGitTag = v1.1.10` and `TfGitBranch = -`,
-  while applying from a branch records the opposite. Whichever one is not `-` identifies
-  the ref that was applied. (Resolving the branch with `git rev-parse --abbrev-ref HEAD`
+  detached: applying from `v1.1.10` records `TfGitTag = v1.1.10` and `TfGitBranch = -`.
+  Applying from a branch records `TfGitBranch`, and records `TfGitTag` as well when that
+  branch's HEAD carries a tag — the two are independent facts, not alternatives.
+  `TfGitBranch = -` is therefore what identifies a tag checkout; a populated `TfGitTag`
+  on its own is not. (Resolving the branch with `git rev-parse --abbrev-ref HEAD`
   would report the literal string `HEAD` for a tag checkout and lose the tag entirely,
   which is why `git_ref_info.sh` uses `git symbolic-ref` instead.)
 - No combined "ref" tag is stored. It would be derivable from the other three, and a tag

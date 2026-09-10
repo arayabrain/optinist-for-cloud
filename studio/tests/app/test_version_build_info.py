@@ -9,8 +9,11 @@ The end-to-end path that produces those fields is covered separately by
 studio/tests/infrastructure/test_git_ref_info.py.
 """
 
+import importlib
+
 import pytest
 
+import studio.app.version as version_module
 from studio.app.dir_path import DIRPATH
 from studio.app.version import BuildInfo, _derive_git_ref, _field, _load_build_info
 
@@ -32,6 +35,8 @@ class TestField:
     def test_unknown_is_absent(self):
         # The ARG default: the value was never passed into the build.
         assert _field({"git_branch": "unknown"}, "git_branch") == ""
+        assert _field({"git_commit": "unknown"}, "git_commit") == ""
+        assert _field({"build_timestamp": "unknown"}, "build_timestamp") == ""
 
     def test_literal_head_is_absent(self):
         # The defect this whole change exists to fix. `git rev-parse
@@ -39,6 +44,15 @@ class TestField:
         # built before the fix carry it. It names no ref, and reporting a
         # branch called HEAD is worse than reporting nothing.
         assert _field({"git_branch": "HEAD"}, "git_branch") == ""
+
+    @pytest.mark.parametrize("name", ["unknown", "HEAD"])
+    def test_a_tag_that_looks_like_a_placeholder_survives(self, name):
+        # `git tag unknown` and `git tag HEAD` both succeed, so these are real
+        # tag names. git_tag is introduced by this change and never shipped
+        # with a placeholder, so nothing about it is a sentinel and collapsing
+        # these would silently discard the value the field exists to carry.
+        assert _field({"git_tag": name}, "git_tag") == name
+        assert _derive_git_ref("0cf95d0d", "", name) == name
 
     def test_non_string_is_absent(self):
         # A truncated or hand-edited BUILD_INFO must not put a non-string onto
@@ -123,7 +137,13 @@ class TestBuildInfo:
     """The class attributes the startup log reads."""
 
     def test_every_attribute_is_a_string(self):
-        for name in ("GIT_COMMIT", "GIT_BRANCH", "GIT_TAG", "GIT_REF"):
+        for name in (
+            "GIT_COMMIT",
+            "GIT_BRANCH",
+            "GIT_TAG",
+            "GIT_REF",
+            "BUILD_TIMESTAMP",
+        ):
             assert isinstance(getattr(BuildInfo, name), str), name
 
     def test_git_ref_is_derived_from_the_other_fields(self):
@@ -134,3 +154,79 @@ class TestBuildInfo:
             BuildInfo.GIT_BRANCH,
             BuildInfo.GIT_TAG,
         )
+
+
+class TestBuildInfoAgainstARealRecord:
+    """The class body, evaluated against BUILD_INFO files rather than {}.
+
+    Everything above tests the helpers. These pin what the startup log actually
+    prints, which is the class body reading a real file — the one step where a
+    field can bypass the rules by being read with a raw `.get()`.
+    """
+
+    @pytest.fixture
+    def build_info(self, tmp_path, monkeypatch):
+        """Write a BUILD_INFO, re-evaluate the class body, hand back BuildInfo."""
+        monkeypatch.setattr(DIRPATH, "ROOT_DIR", str(tmp_path))
+        # Reloading re-evaluates Version.APP_VERSION too, which reads
+        # pyproject.toml from the same ROOT_DIR.
+        (tmp_path / "pyproject.toml").write_text('version = "9.9.9"\n')
+
+        def load(content: str):
+            (tmp_path / "BUILD_INFO").write_text(content)
+            return importlib.reload(version_module).BuildInfo
+
+        yield load
+        # Restore the module for anything importing it after this test.
+        monkeypatch.undo()
+        importlib.reload(version_module)
+
+    def test_a_tag_build_reports_the_tag(self, build_info):
+        info = build_info(
+            '{"git_commit": "0cf95d0dd37e4b9b", "git_branch": "", '
+            '"git_tag": "v1.1.10", "build_timestamp": "2026-09-07T02:23:37Z"}'
+        )
+        assert info.GIT_REF == "v1.1.10"
+        assert info.GIT_COMMIT == "0cf95d0dd37e4b9b"
+        assert info.BUILD_TIMESTAMP == "2026-09-07T02:23:37Z"
+
+    def test_a_legacy_image_degrades_instead_of_naming_a_ref(self, build_info):
+        # An image built before this change: the branch reads "HEAD" and there
+        # is no git_tag key at all.
+        info = build_info(
+            '{"git_commit": "0cf95d0dd37e4b9bda51601bbb12adf4d21173a4", '
+            '"git_branch": "HEAD", "build_timestamp": "2026-09-07T02:23:37Z"}'
+        )
+        assert info.GIT_BRANCH == ""
+        assert info.GIT_REF == "detached@0cf95d0d"
+
+    def test_the_commit_and_the_ref_agree_when_nothing_was_recorded(self, build_info):
+        # A plain `docker build` with no --build-arg. These are adjacent lines
+        # of one log message, so "unknown" on one and "N/A" on the next gave
+        # two names to a single state.
+        info = build_info(
+            '{"git_commit": "unknown", "git_branch": "", "git_tag": "", '
+            '"build_timestamp": "unknown"}'
+        )
+        assert info.GIT_COMMIT == "N/A"
+        assert info.GIT_REF == "N/A"
+        assert info.BUILD_TIMESTAMP == "N/A"
+
+    def test_no_field_reaches_an_attribute_as_a_non_string(self, build_info):
+        # `.get(key, "N/A")` does not fire its default when the key exists
+        # holding null, so a raw read put None and [] onto these two.
+        info = build_info(
+            '{"git_commit": null, "build_timestamp": [], '
+            '"git_branch": 17, "git_tag": {}}'
+        )
+        for name in (
+            "GIT_COMMIT",
+            "GIT_BRANCH",
+            "GIT_TAG",
+            "GIT_REF",
+            "BUILD_TIMESTAMP",
+        ):
+            value = getattr(info, name)
+            assert isinstance(value, str), f"{name} = {value!r}"
+        assert info.GIT_COMMIT == "N/A"
+        assert info.BUILD_TIMESTAMP == "N/A"

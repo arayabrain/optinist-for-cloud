@@ -28,6 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 SCRIPTS_DIR = PROJECT_ROOT / "infrastructure" / "scripts"
 GIT_REF_INFO = SCRIPTS_DIR / "git_ref_info.sh"
 TF_BUILD_INFO = SCRIPTS_DIR / "terraform_build_info.sh"
+ECR_BUILD_PUSH = SCRIPTS_DIR / "ecr_build_push.sh"
 DOCKERFILE = PROJECT_ROOT / "studio" / "config" / "docker" / "Dockerfile"
 COMPUTE_TF = PROJECT_ROOT / "infrastructure" / "terraform" / "compute.tf"
 
@@ -228,3 +229,43 @@ class TestFieldNamesAgree:
         assert "data.external.tf_build_info.result.git_tag" in tf
         # Empty values become "-" rather than an empty ECS tag.
         assert 'coalesce(data.external.tf_build_info.result.git_tag, "-")' in tf
+
+
+class TestImagePathIsWired:
+    """The build side of the fix, which no behavioural test can reach.
+
+    Everything above runs the terraform path end to end, but the reported
+    defect was on the image path: /app/BUILD_INFO recording git_branch "HEAD".
+    That path only executes inside `docker build`, so reverting
+    ecr_build_push.sh to `git rev-parse --abbrev-ref HEAD` and deleting the
+    --build-arg left the whole suite green. These read the script instead.
+    """
+
+    def test_the_branch_comes_from_the_shared_resolver(self):
+        script = ECR_BUILD_PUSH.read_text()
+        assert 'git_ref_info.sh"' in script, "no longer sources the shared script"
+        assert 'GIT_BRANCH="$GIT_INFO_BRANCH"' in script
+        assert 'GIT_TAG="$GIT_INFO_TAG"' in script
+
+    def test_no_script_resolves_a_branch_with_abbrev_ref(self):
+        # The defect itself: --abbrev-ref reports the literal string "HEAD" for
+        # the detached HEAD a tag checkout produces. Comments are stripped
+        # first — all three scripts name the old command in prose, explaining
+        # why it is not used.
+        for script in (ECR_BUILD_PUSH, GIT_REF_INFO, TF_BUILD_INFO):
+            code = "\n".join(
+                line
+                for line in script.read_text().splitlines()
+                if not line.lstrip().startswith("#")
+            )
+            assert "--abbrev-ref" not in code, script.name
+
+    def test_every_build_info_field_is_passed_into_the_build(self):
+        # The ARG names are the BUILD_INFO keys upper-cased, which is what ties
+        # the shell, the Dockerfile and version.py to one set of strings.
+        script = ECR_BUILD_PUSH.read_text()
+        dockerfile = DOCKERFILE.read_text()
+        for key in BUILD_INFO_KEYS:
+            arg = key.upper()
+            assert f"--build-arg {arg}=" in script, f"{arg} not passed by the script"
+            assert f"ARG {arg}" in dockerfile, f"{arg} not declared by the Dockerfile"
