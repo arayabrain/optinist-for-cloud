@@ -78,11 +78,31 @@ RUN chmod +x cloud-startup.sh
 # Build metadata — placed last so the changing ARG values only
 # invalidate this layer, not the COPY layers above.
 ARG GIT_COMMIT=unknown
-ARG GIT_BRANCH=unknown
+# GIT_BRANCH is empty when the build ran from a detached HEAD (a tag checkout);
+# GIT_TAG is empty when HEAD carries no tag. Exactly one of the two identifies
+# the build in the usual case — see infrastructure/scripts/git_ref_info.sh.
+# They default to empty rather than "unknown" because absence is a real state
+# for both, and because org.opencontainers.image.version below must not assert
+# a version of "unknown". A build that skipped ecr_build_push.sh is already
+# recognisable from GIT_COMMIT.
+ARG GIT_BRANCH=
+ARG GIT_TAG=
 ARG BUILD_TIMESTAMP=unknown
 
+# image.version carries the git tag, not Version.APP_VERSION from
+# pyproject.toml. The OCI spec allows either ("the version MAY match a label or
+# tag in the source code repository"), but APP_VERSION is bumped once at
+# release time and then stays put for every commit until the next bump — when
+# this was written, develop-main read 1.1.10 sixteen commits past the v1.1.10
+# tag. Labelling those builds 1.1.10 would assert they are the release when
+# they are not, which is the class of false provenance this whole change
+# removes. An empty tag on a branch build is the honest answer to "was this
+# built from a tagged release?", the question this label is read to answer.
+# APP_VERSION stays available from pyproject.toml inside the image and on the
+# startup log line.
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.version="${GIT_TAG}" \
       org.opencontainers.image.created="${BUILD_TIMESTAMP}" \
       org.opencontainers.image.source="https://github.com/arayabrain/araya-optinist"
 
-RUN python3 -c "import json,os,sys; json.dump({'git_commit':os.environ.get('GIT_COMMIT','unknown'),'git_branch':os.environ.get('GIT_BRANCH','unknown'),'build_timestamp':os.environ.get('BUILD_TIMESTAMP','unknown')}, sys.stdout)" > /app/BUILD_INFO
+RUN python3 -c "import json,os,sys; json.dump({'git_commit':os.environ.get('GIT_COMMIT','unknown'),'git_branch':os.environ.get('GIT_BRANCH',''),'git_tag':os.environ.get('GIT_TAG',''),'build_timestamp':os.environ.get('BUILD_TIMESTAMP','unknown')}, sys.stdout)" > /app/BUILD_INFO

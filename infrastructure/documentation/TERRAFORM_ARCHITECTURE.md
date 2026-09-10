@@ -126,9 +126,10 @@ infrastructure layer.
 
 | File | Role |
 | --- | --- |
-| `scripts/terraform_build_info.sh` | Emits the apply-time git commit/branch/dirty as JSON (no `jq` dependency) |
+| `scripts/git_ref_info.sh` | Shared git-ref resolution, sourced by both this script and `ecr_build_push.sh` |
+| `scripts/terraform_build_info.sh` | Emits the apply-time git commit/branch/tag/dirty as JSON (no `jq` dependency) |
 | `deploy_info.tf` | `data.external.tf_build_info` runs the script at apply time |
-| `compute.tf` (`aws_ecs_cluster.main`) | Stamps `TfGitCommit` / `TfGitBranch` tags from that data |
+| `compute.tf` (`aws_ecs_cluster.main`) | Stamps `TfGitCommit` / `TfGitBranch` / `TfGitTag` tags from that data |
 
 Design notes:
 
@@ -139,6 +140,17 @@ Design notes:
   diff.
 - No timestamp is stored in the tag — "when was the last change-bearing apply" is already
   answered by the state file's `LastModified` in the S3 backend bucket.
+- Branch and tag are recorded as **separate** tags because a tag checkout leaves HEAD
+  detached: applying from `v1.1.10` records `TfGitTag = v1.1.10` and `TfGitBranch = -`.
+  Applying from a branch records `TfGitBranch`, and records `TfGitTag` as well when that
+  branch's HEAD carries a tag — the two are independent facts, not alternatives.
+  `TfGitBranch = -` is therefore what identifies a tag checkout; a populated `TfGitTag`
+  on its own is not. (Resolving the branch with `git rev-parse --abbrev-ref HEAD`
+  would report the literal string `HEAD` for a tag checkout and lose the tag entirely,
+  which is why `git_ref_info.sh` uses `git symbolic-ref` instead.)
+- No combined "ref" tag is stored. It would be derivable from the other three, and a tag
+  value written onto a cluster cannot be corrected afterwards if the derivation rule
+  changes; the equivalent summary is derived on read instead (`BuildInfo.GIT_REF`).
 
 See [INFRA_DEPLOYMENT_PROCEDURE.md](INFRA_DEPLOYMENT_PROCEDURE.md) → "Check Which Git
 Revision Was Applied" for how to read it back.

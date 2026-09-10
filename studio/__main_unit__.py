@@ -105,6 +105,7 @@ async def lifespan(app: FastAPI):
         f"    # Python Version: {sys_version}\n"
         f"    # App Version: {Version.APP_VERSION}\n"
         f"    # Git Commit: {BuildInfo.GIT_COMMIT}\n"
+        f"    # Git Ref: {BuildInfo.GIT_REF}\n"
         f"    # Build Time: {BuildInfo.BUILD_TIMESTAMP}\n"
         f"    # Env:DATA_DIR: {DIRPATH.DATA_DIR}\n"
         f"    # Mode: {mode}\n"
