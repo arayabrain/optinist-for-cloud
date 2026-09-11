@@ -473,6 +473,28 @@ except auth.UserNotFoundError:
   )
 }
 
+const SWEEP_SCRIPT = ".github/scripts/sweep_e2e_firebase_users.py"
+
+// A run that dies before its afterAll orphans the Firebase user even though the
+// DB row is gone, which puts it beyond the reach of any DB-driven cleanup.
+// Returns how many accounts the sweep removed.
+// The script is kept out of the shipped image, so a deployed run sends its
+// source instead of invoking a path that is not there.
+export function sweepE2eFirebaseUsers(): number {
+  const out = isLocalBaseUrl()
+    ? runInBackend(`poetry run python ${SWEEP_SCRIPT}`)
+    : runInDeployedBackend(
+        fs.readFileSync(path.join(REPO_ROOT, SWEEP_SCRIPT), "utf-8"),
+      )
+  // poetry and firebase_admin can print their own lines before the count, and
+  // an empty output parses as 0 rather than as the failure it is
+  const last = out.split("\n").pop() ?? ""
+  if (!/^\d+$/.test(last)) {
+    throw new Error(`sweep printed ${JSON.stringify(out)} instead of a count`)
+  }
+  return Number(last)
+}
+
 export function activeUserRows(email: string): number {
   return Number(
     runSql(

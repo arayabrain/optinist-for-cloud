@@ -134,7 +134,7 @@ build_frontend:
 	docker compose -f docker-compose.build.yml run studio-build-fe
 
 ROOT_PY := *.py
-FORMAT_TARGETS := $(ROOT_PY) studio infrastructure
+FORMAT_TARGETS := $(ROOT_PY) studio infrastructure .github/scripts
 EXCLUDE_DIRS := infrastructure/terraform/.build
 
 .PHONY: format
