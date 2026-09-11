@@ -153,9 +153,7 @@ describe("FilePathSelect", () => {
     expect(combobox).toHaveAttribute("title", `mean (${ETA_B})`)
   })
 
-  // #488 is about re-running the same algorithm node; input node ids
-  // (`input_<nanoid>`) carry no information, so those items keep the file name
-  it("keeps the file name as the label for input nodes", () => {
+  it("heads an input node with its id and keeps the file name on the item", () => {
     const state = buildState({
       flowNodes: [
         {
@@ -181,6 +179,7 @@ describe("FilePathSelect", () => {
     )
 
     openMenu()
+    expect(screen.getByText("input_kt62vwavq2")).toBeInTheDocument()
     fireEvent.click(
       screen.getByRole("option", { name: "sample_mouse2p_image.tiff" }),
     )
@@ -208,9 +207,13 @@ describe("FilePathSelect", () => {
     const consoleError = jest
       .spyOn(console, "error")
       .mockImplementation(() => undefined)
-    renderSelect(state)
+    const { view } = renderSelect(state)
     openMenu()
 
+    expect(
+      view.baseElement.querySelectorAll(".MuiListSubheader-root"),
+    ).toHaveLength(1)
+    expect(screen.getByText("input_zz1")).toBeInTheDocument()
     expect(
       screen.getByRole("option", { name: "image1.tiff" }),
     ).toBeInTheDocument()

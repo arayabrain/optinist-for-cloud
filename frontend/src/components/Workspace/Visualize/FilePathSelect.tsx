@@ -144,6 +144,14 @@ export const FilePathSelect: FC<{
   }
   inputNodeFilePathInfoList.forEach((pathInfo) => {
     const filePath = pathInfo.filePath
+    if (Array.isArray(filePath) && filePath.length === 0) {
+      return
+    }
+    menuItemList.push(
+      <ListSubheader key={`header/${pathInfo.nodeId}`}>
+        <Divider textAlign="center">{pathInfo.nodeId}</Divider>
+      </ListSubheader>,
+    )
     if (Array.isArray(filePath)) {
       filePath.forEach((pathElm, index) => {
         const value = toDisplayDataValue(pathInfo.nodeId, pathElm)
