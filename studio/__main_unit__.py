@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi_pagination import add_pagination
@@ -53,6 +54,7 @@ if not MODE.IS_STANDALONE:
     )
     from studio.app.common.core.background.sync_job import PublishedExperimentSyncJob
 
+from studio.app.common.core.utils.filepath_creater import InvalidPathError
 from studio.app.common.core.workspace.workspace_dependencies import (
     is_workspace_available,
     is_workspace_owner,
@@ -192,6 +194,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(docs_url="/docs", openapi_url="/openapi", lifespan=lifespan)
+
+
+@app.exception_handler(InvalidPathError)
+async def invalid_path_handler(request: Request, exc: InvalidPathError):
+    """Turn a rejected path into a 400 rather than a 500.
+
+    join_filepath() raises this whenever a request value would leave the
+    directory it belongs to. Handling it here means the routers do not each
+    have to validate their own path parameters, and nothing new can slip
+    through by forgetting to.
+    """
+    logger.warning(f"Rejected path parameter: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": "Invalid path parameter"},
+    )
 
 
 @app.get("/health")

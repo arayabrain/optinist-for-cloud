@@ -17,7 +17,16 @@ Pipfile.lock
 .pytest_cache
 .claude
 
-studio/test_data/output
+# studio/test_data holds fixtures, but the suites also write generated trees
+# into it -- OUTPUT_DIR, and whatever an absolute path in a stored config
+# resolves to. Allow-list the fixtures so a new generated directory is ignored
+# by default rather than committed by a stray `git add`.
+studio/test_data/*
+!studio/test_data/conda_envs/
+!studio/test_data/input/
+!studio/test_data/logs/
+!studio/test_data/output_test/
+!studio/test_data/test_workflow/
 docs/_build
 
 studio/notebooks
