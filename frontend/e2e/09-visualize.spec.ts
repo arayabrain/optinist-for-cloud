@@ -385,6 +385,21 @@ test.describe("Visualize", () => {
       "the deleted ROI is now a non-cell ROI",
     ).toContain(roi)
 
+    // Cancel has to discard a staged promotion the same way it discards a
+    // staged cell-ROI edit. The cancel_edit POST is what carries this row:
+    // onCancel's guard read cell_roi only, so on a non-cell projection it
+    // returned early and never dispatched, leaving the promotion pending.
+    // The id poll below is a sanity check, not the assertion - a pending
+    // promotion does not leave non_cell_roi until it is committed.
+    await runRoiAction(page, "Set as Cell ROI", /promote_roi/, [roi])
+    const cancelled = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /cancel_edit/.test(r.url()),
+      { timeout: 60_000 },
+    )
+    await page.getByText("Cancel", { exact: true }).first().click()
+    expect((await cancelled).status(), "cancel_edit").toBe(200)
+    await expect.poll(() => roiIds(page), { timeout: 60_000 }).toContain(roi)
+
     await editRoiAndCommit(page, "Set as Cell ROI", /promote_roi/, [roi])
     await expect
       .poll(() => roiIds(page), { timeout: 60_000 })
