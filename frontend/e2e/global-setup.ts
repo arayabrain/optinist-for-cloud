@@ -17,16 +17,10 @@ import {
 // 3. Logs in once via the UI and saves storage state for the authed specs,
 //    keeping Firebase logins per run to a handful (rate limits).
 // 4. Deletes the Firebase accounts AUTH-04 leaves behind, if admin creds exist.
-// Steps 2 and 4 run only against a local or development BASE_URL.
+// The sweep and steps 2 and 4 run only against a disposable BASE_URL.
 // The Firebase sweep runs first because AUTH-02/03/04 need no credentials: a
 // run that returns below still registers the throwaways the sweep clears.
 export default async function globalSetup() {
-  sweepStaleFirebaseUsers()
-
-  const email = process.env.TEST_USER_EMAIL
-  const password = process.env.TEST_USER_PASSWORD
-  if (!email || !password) return
-
   const baseURL = process.env.BASE_URL || "http://localhost:3000"
 
   // The read-only AWS lanes document pointing BASE_URL at production, and
@@ -34,6 +28,12 @@ export default async function globalSetup() {
   // confined to the environments whose data is disposable.
   const disposable =
     isLocalBaseUrl() || baseURL.includes("development-optinist")
+
+  sweepStaleFirebaseUsers(disposable)
+
+  const email = process.env.TEST_USER_EMAIL
+  const password = process.env.TEST_USER_PASSWORD
+  if (!email || !password) return
 
   // Before the browser login: bad credentials there are three silent 60s
   // waits for /dashboard, which reads as a hang rather than an auth error
@@ -88,8 +88,8 @@ async function saveLoginState(
 
 // Firebase-side truth: catches the throwaways whose DB row is already gone, so
 // an aborted run's accounts do not pile up in the console forever
-function sweepStaleFirebaseUsers() {
-  if (!isLocalBaseUrl()) return
+function sweepStaleFirebaseUsers(disposable: boolean) {
+  if (!disposable) return
   try {
     console.log(`Swept ${sweepE2eFirebaseUsers()} stale Firebase test users`)
   } catch (e) {
