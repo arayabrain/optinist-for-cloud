@@ -112,7 +112,7 @@ const PROMOTE_ROI_FILES = [
   "/all_roi.json",
 ]
 
-const isEditableRoiPath = (path?: string | null) =>
+const isEditableRoiPath = (path?: string | null): path is string =>
   [CELL_ROI, ...PROMOTE_ROI_FILES].some((file) => path?.includes(file))
 const WIDTH_CHARTJS = 321
 const INIT_WIDTH_ROI = 30
@@ -558,8 +558,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
   const onCancel = async () => {
     setAction("")
     if (
-      !refRoiFilePath.current ||
-      !refRoiFilePath.current.includes(CELL_ROI) ||
+      !isEditableRoiPath(refRoiFilePath.current) ||
       workspaceId === undefined
     ) {
       return
