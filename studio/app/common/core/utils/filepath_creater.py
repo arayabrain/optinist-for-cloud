@@ -4,12 +4,44 @@ import shutil
 from studio.app.dir_path import DIRPATH
 
 
+class InvalidPathError(ValueError):
+    """A path built from request data would leave the directory it belongs to.
+
+    A ValueError subclass so the snakemake rule processes, which import this
+    module in conda environments without FastAPI, see an ordinary exception.
+    __main_unit__ maps it to a 400 for requests.
+    """
+
+
 def join_filepath(path_list):
     if isinstance(path_list, str):
-        return path_list
+        joined = path_list
+        base = path_list
     elif isinstance(path_list, list):
-        return "/".join(path_list)
-    assert False, "Path is not list"
+        assert path_list, "Path is empty"
+        joined = "/".join(path_list)
+        # A leading empty element comes from splitting an absolute path
+        # ("/a/b".split("/") -> ["", "a", "b"]); its base is the root.
+        base = path_list[0] or os.sep
+    else:
+        assert False, "Path is not list"
+
+    # Reject ".." outright rather than merely containing it. A segment that
+    # normalises back inside the base can still cross into another workspace:
+    # [OUTPUT_DIR, "1", "../other/expt"] stays under OUTPUT_DIR but leaves
+    # workspace 1.
+    if ".." in joined.split("/"):
+        raise InvalidPathError(f"path contains '..': {joined!r}")
+
+    # "/".join, not os.path.join, so an absolute component never resets the
+    # base; with ".." gone the result cannot escape. The normpath + startswith
+    # pair is also the shape CodeQL's py/path-injection query recognises as a
+    # sanitizer, which is what clears the alerts at every call site at once.
+    normalized = os.path.normpath(joined)
+    if not normalized.startswith(os.path.normpath(base)):
+        raise InvalidPathError(f"path escapes its base directory: {joined!r}")
+
+    return normalized
 
 
 def create_filepath(dirname, filename):
