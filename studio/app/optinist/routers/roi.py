@@ -12,6 +12,7 @@ from studio.app.common.core.storage.remote_storage_controller import (
     RemoteSyncStatusFileUtil,
 )
 from studio.app.common.core.utils.filepath_creater import resolve_absolute_output_path
+from studio.app.common.core.utils.path_guard import secure_output_relpath
 from studio.app.common.core.workspace.workspace_dependencies import is_workspace_owner
 from studio.app.optinist.core.edit_ROI import EditROI, EditRoiUtils
 from studio.app.optinist.schemas.roi import RoiList, RoiPos, RoiStatus
@@ -109,6 +110,17 @@ async def merge_roi(filepath: str, roi_list: RoiList):
 async def delete_roi(filepath: str, roi_list: RoiList):
     filepath = resolve_absolute_output_path(filepath)
     EditROI(file_path=filepath).delete(roi_list.ids)
+    return True
+
+
+@router.post(
+    "/image/{filepath:path}/promote_roi",
+    response_model=bool,
+    dependencies=[Depends(is_workspace_owner)],
+)
+async def promote_roi(filepath: str, roi_list: RoiList):
+    filepath = resolve_absolute_output_path(secure_output_relpath(filepath))
+    EditROI(file_path=filepath).promote(roi_list.ids)
     return True
 
 

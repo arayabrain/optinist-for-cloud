@@ -411,6 +411,23 @@ const TimeSeriesPlotImple = memo(function TimeSeriesPlotImple() {
     return false
   }
 
+  // The output holds records, but none for the ROIs the linked image plot is
+  // showing - an empty chart reads as a broken plot rather than as "this
+  // analysis never covered these ROIs" (issue #472).
+  if (
+    !dialogFilterNodeId &&
+    dataKeys.length === 0 &&
+    Object.keys(timeSeriesData).length > 0
+  ) {
+    return (
+      <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+        No time series in this output for the selected ROIs. Analyses that run
+        on cell ROIs only (ETA, PCA, correlation, ...) hold no non-cell traces;
+        link this box to the ROI node&apos;s fluorescence to see them.
+      </Typography>
+    )
+  }
+
   return (
     <PlotlyChart
       data={Object.values(data)}
