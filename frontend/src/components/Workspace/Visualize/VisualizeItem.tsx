@@ -192,7 +192,7 @@ const ItemHeader = memo(function ItemHeader({
   }
 
   return (
-    <Box display="flex" justifyContent="flex-end">
+    <Box display="flex" justifyContent="flex-end" flexWrap="wrap">
       <Box flexGrow={1} display="flex">
         <Chip
           icon={<Numbers />}

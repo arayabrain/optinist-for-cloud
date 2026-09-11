@@ -2,8 +2,8 @@ import { Provider } from "react-redux"
 
 import configureStore from "redux-mock-store"
 
-import { describe, it, expect, jest } from "@jest/globals"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { afterEach, describe, it, expect, jest } from "@jest/globals"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 
 import { FilePathSelect } from "components/Workspace/Visualize/FilePathSelect"
 import {
@@ -91,6 +91,10 @@ const renderSelect = (
 const openMenu = () => fireEvent.mouseDown(screen.getByRole("combobox"))
 
 describe("FilePathSelect", () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
   it("distinguishes two nodes sharing a label by their unique node id", () => {
     renderSelect(twoEtaNodesState)
     openMenu()
@@ -102,11 +106,13 @@ describe("FilePathSelect", () => {
   })
 
   it("omits the synthetic post_process result, which has no outputs", () => {
-    renderSelect(twoEtaNodesState)
+    const { view } = renderSelect(twoEtaNodesState)
     openMenu()
 
     expect(screen.queryByText("post_process_0")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("option")).toHaveLength(6) // 2 headers + 4 outputs
+    expect(
+      view.baseElement.querySelectorAll(".MuiListSubheader-root"),
+    ).toHaveLength(2)
   })
 
   it("labels the select for assistive technology", () => {
@@ -142,15 +148,13 @@ describe("FilePathSelect", () => {
       </Provider>,
     )
 
-    expect(screen.getByRole("combobox")).toHaveTextContent(`mean (${ETA_B})`)
-    expect(screen.getByRole("combobox")).toHaveAttribute(
-      "title",
-      `mean (${ETA_B})`,
-    )
+    const combobox = screen.getByRole("combobox")
+    expect(combobox).toHaveTextContent(`mean (${ETA_B})`)
+    expect(combobox).toHaveAttribute("title", `mean (${ETA_B})`)
   })
 
-  // input node ids (`input_<nanoid>`) carry no information, so input items keep
-  // the bare file name that `09-visualize.spec.ts` selects them by
+  // #488 is about re-running the same algorithm node; input node ids
+  // (`input_<nanoid>`) carry no information, so those items keep the file name
   it("keeps the file name as the label for input nodes", () => {
     const state = buildState({
       flowNodes: [
@@ -201,6 +205,9 @@ describe("FilePathSelect", () => {
         },
       },
     })
+    const consoleError = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined)
     renderSelect(state)
     openMenu()
 
@@ -210,6 +217,11 @@ describe("FilePathSelect", () => {
     expect(
       screen.getByRole("option", { name: "image2.tiff" }),
     ).toBeInTheDocument()
+    expect(
+      consoleError.mock.calls.some((args) =>
+        String(args[0]).includes("same key"),
+      ),
+    ).toBe(false)
   })
 
   it("omits nodes whose outputs are all filtered out by dataType", () => {
@@ -233,13 +245,56 @@ describe("FilePathSelect", () => {
   })
 
   it("renders an empty value when the selection is no longer in the store", () => {
+    // MUI warns about the out-of-range value, which is the point of the test
+    jest.spyOn(console, "warn").mockImplementation(() => undefined)
     renderSelect(twoEtaNodesState, {
       selectedNodeId: "eta_fromanotherworkflow",
       selectedFilePath: "/output/stale/mean.json",
     })
 
-    expect(screen.getByRole("combobox")).toHaveAttribute("title", "")
+    expect(screen.getByRole("combobox")).not.toHaveAttribute("title")
     expect(screen.getByRole("combobox")).not.toHaveTextContent("mean")
+  })
+
+  it("follows the node id when another input node takes over the same file", () => {
+    const stateFor = (nodeId: string) =>
+      buildState({
+        flowNodes: [{ id: nodeId, data: { label: "data.csv", type: "input" } }],
+        inputNode: {
+          [nodeId]: {
+            fileType: "csv",
+            selectedFilePath: "/input/data.csv",
+            param: {},
+          },
+        },
+      })
+    let state = stateFor("input_deleted")
+    const store = mockStore(() => state)
+    const onSelect = jest.fn()
+    render(
+      <Provider store={store}>
+        <FilePathSelect
+          selectedNodeId={null}
+          selectedFilePath={null}
+          onSelect={onSelect}
+        />
+      </Provider>,
+    )
+
+    state = stateFor("input_recreated")
+    act(() => {
+      store.dispatch({ type: "test/refresh" })
+    })
+
+    openMenu()
+    fireEvent.click(screen.getByRole("option", { name: "data.csv" }))
+
+    expect(onSelect).toHaveBeenCalledWith(
+      "input_recreated",
+      "/input/data.csv",
+      DATA_TYPE_SET.CSV,
+      undefined,
+    )
   })
 
   it("keeps the node name visible when the id has no name prefix", () => {

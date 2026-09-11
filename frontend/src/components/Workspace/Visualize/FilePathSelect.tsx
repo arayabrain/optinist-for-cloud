@@ -180,16 +180,15 @@ export const FilePathSelect: FC<{
   algorithmNodeOutputPathInfoList
     .filter((pathInfo) => pathInfo.paths.length > 0)
     .forEach((pathInfo) => {
+      const nodeLabel = toNodeHeaderLabel(pathInfo.nodeId, pathInfo.nodeName)
       menuItemList.push(
         <ListSubheader key={`header/${pathInfo.nodeId}`}>
-          <Divider textAlign="center">
-            {toNodeHeaderLabel(pathInfo.nodeId, pathInfo.nodeName)}
-          </Divider>
+          <Divider textAlign="center">{nodeLabel}</Divider>
         </ListSubheader>,
       )
       pathInfo.paths.forEach((outputPath) => {
         const value = toDisplayDataValue(pathInfo.nodeId, outputPath.filePath)
-        setSelectedLabel(value, `${outputPath.outputKey} (${pathInfo.nodeId})`)
+        setSelectedLabel(value, `${outputPath.outputKey} (${nodeLabel})`)
         menuItemList.push(
           <MenuItem
             value={value}
@@ -201,7 +200,7 @@ export const FilePathSelect: FC<{
                 outputPath.outputKey,
               )
             }
-            key={value}
+            key={`${pathInfo.nodeId}/${outputPath.outputKey}`}
           >
             {outputPath.outputKey}
           </MenuItem>,
@@ -219,7 +218,7 @@ export const FilePathSelect: FC<{
         labelId={labelId}
         value={selectedValue}
         renderValue={() => selectedLabel}
-        SelectDisplayProps={{ title: selectedLabel }}
+        SelectDisplayProps={{ title: selectedLabel || undefined }}
         open={open}
         onClose={handleClose}
         onOpen={handleOpen}
