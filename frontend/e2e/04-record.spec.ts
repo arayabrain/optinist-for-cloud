@@ -3,6 +3,8 @@ import { readFile } from "fs/promises"
 import { test, expect, Page } from "@playwright/test"
 
 import {
+  apiHeaders,
+  apiUrl,
   skipWithoutCreds,
   freeStorageState,
   gotoDashboard,
@@ -47,6 +49,36 @@ test.describe("Record Management", () => {
     ).toBeVisible()
   })
 
+  // Row 507: the other side of REC-01. A table that failed to render its rows
+  // looks exactly like an empty workspace, so the empty case needs its own
+  // fixture rather than being inferred from a passing REC-01.
+  test("REC-10 - A workspace with no runs shows the record table with no rows", async ({
+    page,
+  }) => {
+    // Not "e2e-empty-*": WF-07 owns a workspace called exactly "e2e-empty" and
+    // two names that differ only by a suffix are a trap for the next person
+    const empty = `e2e-norecords-${Date.now()}`
+    const id = await openWorkspace(page, empty)
+    try {
+      await page.locator('button[role="tab"]:has-text("Record")').click()
+      // The table itself renders - this is an empty list, not a missing page
+      await expect(page.locator("text=Timestamp").first()).toBeVisible({
+        timeout: 15_000,
+      })
+      // Counted with the grid's own row class rather than the reproduce-button
+      // locator: renaming that testid would otherwise leave this green while
+      // hiding a grid that renders rows but drops the action.
+      await expect(page.locator(".MuiDataGrid-row")).toHaveCount(0)
+      await expect(
+        page.locator('tr:has([data-testid="reproduce-button"])'),
+      ).toHaveCount(0)
+    } finally {
+      await page.request.delete(`${apiUrl()}/workspace/${id}`, {
+        headers: await apiHeaders(page),
+      })
+    }
+  })
+
   test("REC-02 - Expand record shows workflow parameters", async ({ page }) => {
     const row = await firstRecordRow(page)
 
@@ -79,7 +111,21 @@ test.describe("Record Management", () => {
 
     await row.locator('input[type="checkbox"]').check()
     await page.locator('button:has-text("COPY")').click()
+    // Assert the copy itself, not only its effect on the grid: without this a
+    // refused copy reads as a row count that never moves, and the failure says
+    // "expected 5, received 4" with no hint of why.
+    const copied = page.waitForResponse(
+      (r) => /\/experiments\/copy\//.test(r.url()),
+      { timeout: 60_000 },
+    )
     await page.locator('[role="dialog"] button:has-text("copy")').click()
+    const response = await copied
+    expect(
+      response.ok(),
+      `POST experiments/copy returned ${response.status()}: ${await response
+        .text()
+        .catch(() => "<no body>")}`,
+    ).toBeTruthy()
 
     await expect(
       page.locator('tr:has([data-testid="reproduce-button"])'),
@@ -119,7 +165,27 @@ test.describe("Record Management", () => {
     const downloadPromise = page.waitForEvent("download", { timeout: 30_000 })
     await row.locator('[data-testid="workflow-download-button"]').click()
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.yaml$/)
+    expect(download.suggestedFilename()).toMatch(/^workflow_.*\.yaml$/)
+
+    // A download event fires for a zero-byte or error-page body just as
+    // happily, so the row is really about what came down the wire.
+    const body = await readFile((await download.path())!, "utf-8")
+    expect(body, "the workflow file is empty").not.toHaveLength(0)
+    expect(body, "no nodeDict in the workflow file").toContain("nodeDict:")
+    // AlgorithmNode specifically: the alternation passed on an export that
+    // carried its inputs and dropped every algorithm node.
+    expect(body, "no AlgorithmNode in the workflow file").toContain(
+      "type: AlgorithmNode",
+    )
+    // There is no literal "InputNode" type; input nodes serialize as one of
+    // the NodeType file-node families (workflow.py).
+    expect(body, "no input file node in the workflow file").toMatch(
+      /type: (Image|Csv|Fluo|Behavior|HDF5|Matlab|Microscope)FileNode/,
+    )
+    // Every node keys itself by "<label>_<suffix>" under nodeDict, and each one
+    // carries the algorithm path it will run.
+    expect(body).toMatch(/^ {2}\w+_\w+:$/m)
+    expect(body, "no algorithm path recorded").toMatch(/\n\s+path: \S+/)
   })
 
   test("REC-06 - Download Snakemake file", async ({ page }) => {
@@ -133,6 +199,17 @@ test.describe("Record Management", () => {
       .click()
     const download = await downloadPromise
     expect(download.suggestedFilename()).toMatch(/^snakemake_.*\.yaml$/)
+
+    // This is a Snakemake *config*, so the payload is a `rules:` mapping - not
+    // a Snakefile with `rule` statements. Each entry has to name what it reads,
+    // what it writes and which algorithm runs, or the file cannot drive a run.
+    const body = await readFile((await download.path())!, "utf-8")
+    expect(body, "the Snakemake file is empty").not.toHaveLength(0)
+    expect(body, "no rules block in the Snakemake file").toContain("rules:")
+    expect(body).toMatch(/^ {2}\w+_\w+:$/m)
+    for (const key of ["input:", "output:", "type:"]) {
+      expect(body, `no ${key} in any rule`).toContain(key)
+    }
   })
 
   test("REC-07 - Download NWB file @slow", async ({ page }) => {

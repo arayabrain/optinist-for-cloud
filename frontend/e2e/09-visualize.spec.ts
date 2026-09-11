@@ -1,20 +1,23 @@
 import { test, expect, Page } from "@playwright/test"
 
 import {
+  apiHeaders,
+  apiUrl,
   skipWithoutCreds,
   freeStorageState,
   gotoDashboard,
   openWorkspace,
   ensureTutorialRecords,
   reproduceTutorial,
+  runTutorial,
   DATA_WS,
 } from "./helpers"
 
 // Visualize tab. VIS-01 asserts the sidebar info; VIS-02..05 drive the plot
 // editor against Tutorial1's node outputs. `sample_data/tutorial/output` ships
 // workflow YAML only, so those outputs come from a run earlier in the session,
-// not from the import. Left manual: Edit ROI commit (OK mutates the ROI data and
-// kicks a processing run).
+// not from the import. VIS-06 commits an ROI edit for real, so it mints its
+// own run first.
 
 // MUI standard Select: the label's FormControl wraps the select div. The
 // sidebar stacks one control group per plot box, so pick the box's group.
@@ -65,12 +68,35 @@ test.describe("Visualize", () => {
       page.locator('button[role="tab"]:has-text("Visualize")'),
     ).toHaveAttribute("aria-selected", "true", { timeout: 10_000 })
 
-    // CurrentPipelineInfo sidebar: workspace NAME and workflow NAME rows
+    // CurrentPipelineInfo sidebar, exactly (rows BT-402 / 512): the loose
+    // substring this used to match would also pass on a stale select option
+    // elsewhere on the page. The workflow ID must be the reproduced record's
+    // own uid, read from the API rather than trusted from the sidebar.
     await expect(page.locator("text=NAME").first()).toBeVisible({
       timeout: 15_000,
     })
-    await expect(page.locator(`text=${DATA_WS}`).first()).toBeVisible()
-    await expect(page.locator("text=Tutorial1").first()).toBeVisible()
+    await expect(page.getByText(DATA_WS, { exact: true }).first()).toBeVisible()
+    await expect(
+      page.getByText("Tutorial1", { exact: true }).first(),
+    ).toBeVisible()
+
+    const wsId = page.url().match(/workspaces\/(\d+)/)?.[1] ?? ""
+    expect(wsId, "the workspace id is in the URL").not.toBe("")
+    await expect(page.getByText(wsId, { exact: true }).first()).toBeVisible()
+
+    const res = await page.request.get(`${apiUrl()}/experiments/${wsId}`, {
+      headers: await apiHeaders(page),
+    })
+    expect(res.ok(), await res.text()).toBe(true)
+    const experiments = (await res.json()) as Record<string, { name: string }>
+    const uid = Object.keys(experiments).find(
+      (key) => experiments[key].name === "Tutorial1",
+    )
+    expect(
+      uid,
+      "no Tutorial1 record to compare the sidebar against",
+    ).toBeTruthy()
+    await expect(page.getByText(uid!, { exact: true }).first()).toBeVisible()
   })
 
   test("VIS-02 - Add Cell ROI plot renders image with ROI overlay @slow", async ({
@@ -174,8 +200,53 @@ test.describe("Visualize", () => {
       })
     }
     // Committing (OK) mutates the ROI data and starts a processing run —
-    // that half stays manual; Cancel must leave the editor cleanly
+    // that half is VIS-06; Cancel must leave the editor cleanly
     await page.getByText("Cancel", { exact: true }).first().click()
     await expect(page.getByText("Add ROI", { exact: true })).toBeHidden()
+  })
+
+  // Row BT-407's commit half: Add ROI, OK, then Commit Edit really re-runs
+  // the ROI processing server-side and reports success. Mints its own run:
+  // the commit recomputes off a real suite2p output, and the workspace is
+  // wiped at every suite start.
+  test("VIS-06 - Edit ROI commit really recomputes and succeeds @slow", async ({
+    page,
+  }) => {
+    test.setTimeout(30 * 60_000)
+    await runTutorial(page, "Tutorial1", "RUN ALL")
+    await addImagePlot(page)
+    await selectFromMui(page, "Select Roi", "cell_roi")
+    await page.getByText("Edit ROI", { exact: true }).click()
+    await page.getByText("Add ROI", { exact: true }).click()
+    // The pending-ROI overlay is what registers the rectangle OK will post;
+    // clicking OK before it mounts posts nothing (observed failure mode).
+    await expect(page.getByTestId("roi-add-overlay")).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // OK posts the pending ROI (a default rectangle when nothing is dragged)
+    const added = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /add_roi/.test(r.url()),
+      { timeout: 60_000 },
+    )
+    await page.getByText("OK", { exact: true }).click()
+    expect((await added).status(), "add_roi").toBe(200)
+
+    // Commit Edit renders only once statusRoi has entries after the
+    // getStatus round-trip, which can outlast the default action timeout.
+    const commitEdit = page.getByTestId("roi-commit-edit")
+    await expect(commitEdit).toBeVisible({ timeout: 60_000 })
+
+    // Commit Edit runs the EDIT_ROI recompute in-request; the snackbar is
+    // the row's own "Success Edit ROI"
+    const committed = page.waitForResponse(
+      (r) => r.request().method() === "POST" && /commit_edit/.test(r.url()),
+      { timeout: 600_000 },
+    )
+    await commitEdit.click()
+    expect((await committed).status(), "commit_edit").toBe(200)
+    await expect(
+      page.getByText("Successfully committed to Edit ROI."),
+    ).toBeVisible({ timeout: 120_000 })
   })
 })

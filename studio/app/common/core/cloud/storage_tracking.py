@@ -6,6 +6,7 @@ Extracted from cloud_utils.py for module cohesion.
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from fastapi import HTTPException
 from sqlalchemy import update
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlmodel import select
@@ -27,6 +28,18 @@ from studio.app.common.models import User as UserModel
 from studio.app.common.models import UserStorageUsage, UserSubscription
 
 logger = AppLogger.get_logger()
+
+
+class StorageOwnerInactive(Exception):
+    """No active user owns the storage row being reconciled.
+
+    Raised rather than returned as 0 so a deleted account's row is left alone
+    instead of being reconciled to "0 bytes", which reads as a real measurement.
+    """
+
+    def __init__(self, user_id: int):
+        super().__init__(f"no active user row for user {user_id}")
+        self.user_id = user_id
 
 
 def _get_fallback_storage_quota(user_id: int) -> Dict[str, Any]:
@@ -445,6 +458,11 @@ async def get_current_user_storage_usage(user_id: int, force_live: bool = False)
 
         return live_usage
 
+    except StorageOwnerInactive:
+        # The storage row outlives the account, so this is not a failed read
+        logger.info(f"Skipped live storage usage for inactive user {user_id}")
+        storage_info = get_user_storage_usage(user_id)
+        return storage_info.get("storage_usage_bytes", 0) if storage_info else 0
     except Exception as e:
         logger.error(f"Failed to get current storage usage for " f"user {user_id}: {e}")
         storage_info = get_user_storage_usage(user_id)
@@ -509,7 +527,14 @@ async def _calculate_live_storage_usage(
             from studio.app.common.core.users.crud_users import get_user_with_context
 
             with session_scope() as db:
-                user = await get_user_with_context(db, user_id)
+                try:
+                    user = await get_user_with_context(db, user_id)
+                except HTTPException as lookup_error:
+                    if lookup_error.status_code != 404:
+                        raise
+                    # Deleting an account leaves its storage row behind, so the
+                    # reconciliation job still selects it. Routine, not a fault.
+                    raise StorageOwnerInactive(user_id) from None
                 if (
                     user
                     and user.attributes
@@ -531,6 +556,8 @@ async def _calculate_live_storage_usage(
         else:
             return await _calculate_local_user_storage(user_id)
 
+    except StorageOwnerInactive:
+        raise
     except Exception as e:
         # Use repr(e) so the exception type is visible even when str(e) is empty.
         logger.error(
@@ -745,6 +772,8 @@ async def _perform_full_scan_and_reset_delta(
                     {"lock_name": lock_name},
                 )
 
+    except StorageOwnerInactive:
+        raise
     except Exception as e:
         logger.error(f"Failed to perform full scan for " f"user {user_id}: {e}")
 

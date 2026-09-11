@@ -141,6 +141,7 @@ dependencies:
 - Note:
   - Currently, Optinist packages supports NumPy versions below 2. Please ensure that your Conda environment is configured with an appropriate version of NumPy.
   - If you plan to use NumPy 2.x or higher, ensure all other packages in your environment are compatible with it.
+  - These envs are solved fresh at run time rather than baked into the image, so your node can get a different package set than the one you developed against, including transitive packages the yaml never lists. Pin your direct dependencies as tightly as the function allows.
 
 ### Check your custom node inputs and outputs
 

@@ -425,8 +425,10 @@ class TestUserListColumns:
         response = client.get("/admin/users?limit=50&offset=0")
 
         row = next(item for item in response.json()["items"] if item["id"] == user_id)
-        # 12 days out, so 11 whole days remain
-        assert row["subscription_days_remaining"] == 11
+        # Days remaining rounds up, so an expiration 12 days out reads as 12.
+        # It used to truncate to 11, which also made "expires later today" read
+        # as 0 and tipped a paying user into the grace branch.
+        assert row["subscription_days_remaining"] == 12
 
     @pytest.mark.parametrize(
         "usage,quota,expected_percent",

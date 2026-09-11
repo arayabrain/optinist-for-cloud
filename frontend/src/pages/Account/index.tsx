@@ -408,7 +408,7 @@ const Account = () => {
             alignItems: "flex-start",
           }}
         >
-          <BoxData>
+          <BoxData data-testid="account-plan-name">
             {userSubscription?.plan_name && !userSubscription.is_expired
               ? userSubscription.plan_name
               : PlanName.FREE}

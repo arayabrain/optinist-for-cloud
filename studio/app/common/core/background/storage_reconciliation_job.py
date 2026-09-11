@@ -13,6 +13,7 @@ import asyncio
 from sqlalchemy import func, or_
 from sqlmodel import select
 
+from studio.app.common.core.cloud.storage_tracking import StorageOwnerInactive
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.mode import MODE
 from studio.app.common.core.subscription.constants import StorageReconciliation
@@ -58,7 +59,27 @@ class StorageReconciliationJob:
         try:
             # Get all users with storage records in batches
             from studio.app.common.db.database import session_scope
+            from studio.app.common.models import User as UserModel
             from studio.app.common.models import UserStorageUsage
+
+            # Deleting an account, or registering one that is never verified,
+            # leaves a storage row behind whose owner no longer satisfies
+            # "active". Those rows can never be scanned - the S3 lookup needs the
+            # user's bucket name - and because nothing stamps last_full_scan on
+            # them they would stay in the candidate set and be retried every
+            # hour, for good. Exclude them here and count them instead.
+            needs_scan = or_(
+                UserStorageUsage.delta_since_last_scan > 0,
+                UserStorageUsage.last_full_scan.is_(None),
+            )
+            has_active_owner = (
+                select(UserModel.id)
+                .where(
+                    UserModel.id == UserStorageUsage.user_id,
+                    UserModel.active.is_(True),
+                )
+                .exists()
+            )
 
             reconciled_count = 0
             drift_detected_count = 0
@@ -71,19 +92,27 @@ class StorageReconciliationJob:
                 count_result = db.execute(
                     select(func.count())
                     .select_from(UserStorageUsage)
-                    .where(
-                        or_(
-                            UserStorageUsage.delta_since_last_scan > 0,
-                            UserStorageUsage.last_full_scan.is_(None),
-                        )
-                    )
+                    .where(needs_scan, has_active_owner)
                 )
-                total_users = count_result.scalar() or 0
+                scannable_users = count_result.scalar() or 0
+                orphan_result = db.execute(
+                    select(func.count())
+                    .select_from(UserStorageUsage)
+                    .where(needs_scan, ~has_active_owner)
+                )
+                skipped_count = orphan_result.scalar() or 0
+                total_users = scannable_users + skipped_count
 
             logger.info(
-                f"Starting reconciliation for {total_users} users with activity "
-                f"since last scan (processing in batches "
-                f"of {StorageReconciliation.BATCH_SIZE})"
+                f"Starting reconciliation for {scannable_users} users with "
+                f"activity since last scan (processing in batches of "
+                f"{StorageReconciliation.BATCH_SIZE})"
+                + (
+                    f"; skipping {skipped_count} row(s) whose owner is no longer "
+                    f"active"
+                    if skipped_count
+                    else ""
+                )
             )
 
             # Process users in batches to prevent OOM
@@ -97,12 +126,7 @@ class StorageReconciliationJob:
                             UserStorageUsage.delta_since_last_scan,
                             UserStorageUsage.last_full_scan,
                         )
-                        .where(
-                            or_(
-                                UserStorageUsage.delta_since_last_scan > 0,
-                                UserStorageUsage.last_full_scan.is_(None),
-                            )
-                        )
+                        .where(needs_scan, has_active_owner)
                         .order_by(UserStorageUsage.user_id)
                         .limit(StorageReconciliation.BATCH_SIZE)
                         .offset(offset)
@@ -182,6 +206,17 @@ class StorageReconciliationJob:
                             StorageReconciliation.RATE_LIMIT_DELAY_SECONDS
                         )
 
+                    except StorageOwnerInactive:
+                        # Deleting an account leaves its storage row behind. That
+                        # is bookkeeping to clean up, not a failure to report,
+                        # and the row must keep its last real value rather than
+                        # being written down to zero.
+                        logger.info(
+                            f"Skipped user {user_id}: no active user owns this "
+                            f"storage row"
+                        )
+                        skipped_count += 1
+                        continue
                     except Exception as user_error:
                         logger.error(
                             f"Failed to reconcile storage for user {user_id}: "
@@ -194,7 +229,8 @@ class StorageReconciliationJob:
                 offset += StorageReconciliation.BATCH_SIZE
 
                 logger.info(
-                    f"Batch completed. Progress: {reconciled_count + error_count}/"
+                    f"Batch completed. Progress: "
+                    f"{reconciled_count + error_count + skipped_count}/"
                     f"{total_users} users processed"
                 )
 
@@ -202,7 +238,8 @@ class StorageReconciliationJob:
                 f"Storage reconciliation completed: "
                 f"{reconciled_count}/{total_users} users reconciled, "
                 f"{drift_detected_count} drifts corrected, "
-                f"{error_count} errors"
+                f"{error_count} errors, "
+                f"{skipped_count} skipped (no active user)"
             )
 
         except Exception as e:

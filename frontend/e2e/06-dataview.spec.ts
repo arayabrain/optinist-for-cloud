@@ -1,9 +1,9 @@
-import { test, expect, Page } from "@playwright/test"
+import { test, expect, Page, Response } from "@playwright/test"
 
 import {
   apiHeaders,
   login,
-  localStackSkipReason,
+  sqlSkipReason,
   runSql,
   skipWithoutCreds,
   freeStorageState,
@@ -11,6 +11,9 @@ import {
   ensureWorkspaceId,
   ensureCompletedTutorialRun,
   ensurePublishableAccount,
+  ensurePublishedRecord,
+  findDataviewRecord,
+  setPublished,
   filterWorkspace,
   openWorkspace,
   apiUrl,
@@ -101,7 +104,7 @@ async function ensureDataviewRows(page: Page): Promise<number> {
 // the dataview (the listing filters on ExperimentRecord.success), the sample
 // data ships metadata YAML only, and global setup wipes the e2e-* workspaces
 // each run - so the first test here always pays for a real snakemake run. The
-// public group below needs no records and stays in the default lane.
+// public group below publishes one of them, so it is @slow for the same reason.
 test.describe("Private Dataview @slow", () => {
   test.use({ storageState: freeStorageState() })
 
@@ -233,11 +236,18 @@ test.describe("Private Dataview @slow", () => {
         timeout: 15_000,
       },
     )
-    // Every surviving row belongs to the workspace that was filtered for
-    const cells = page.locator('.MuiDataGrid-cell[data-field="workspace_name"]')
-    for (const text of await cells.allTextContents()) {
-      expect(text).toContain(DATA_WS)
-    }
+    // Every surviving row belongs to the workspace that was filtered for.
+    // Re-read until the grid has re-fetched: a single read can still sample
+    // the pre-filter rows.
+    await expect(async () => {
+      const texts = await page
+        .locator('.MuiDataGrid-cell[data-field="workspace_name"]')
+        .allTextContents()
+      expect(texts.length).toBeGreaterThan(0)
+      for (const text of texts) {
+        expect(text).toContain(DATA_WS)
+      }
+    }).toPass({ timeout: 15_000 })
 
     // A workspace that cannot match empties the table, which is what makes the
     // pass above a narrowing rather than a no-op
@@ -280,14 +290,20 @@ test.describe("Private Dataview @slow", () => {
       (r) => r.url().includes("/api/dataview") && r.url().includes("limit=10"),
     )
     await limitSelect.selectOption("10")
-    await refetch
+    const { items } = (await (await refetch).json()) as { items: unknown[] }
     await expect(limitSelect).toHaveValue("10")
+    // The selector reading 10 only proves the control moved, so the page size
+    // is asserted on the response: the DataGrid virtualizes, and a grid holding
+    // 50 records can render fewer than 10 row elements.
+    expect(items.length).toBeLessThanOrEqual(10)
     await expect(page.locator('[role="grid"] [role="row"]').nth(1)).toBeVisible(
       { timeout: 15_000 },
     )
   })
 
-  test("DV-06 - Inputs dialog opens", async ({ page }) => {
+  test("DV-06 - Inputs dialog opens with the visualization grid, and closes", async ({
+    page,
+  }) => {
     // The cell's click target is the thumbnail (a spinner while loading)
     // or the fallback icon when no thumbnail exists
     const cellinput = page
@@ -297,9 +313,18 @@ test.describe("Private Dataview @slow", () => {
       .first()
     await expect(cellinput).toBeVisible({ timeout: 30_000 })
     await cellinput.click()
-    await expect(page.locator('[role="dialog"]')).toBeVisible({
-      timeout: 10_000,
+    // Row 707: THE inputs dialog with its content, not just any dialog - the
+    // InputsView title and a really-rendered plot inside it
+    const dialog = page.locator('[role="dialog"]')
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+    await expect(dialog.getByText("Workflow Inputs")).toBeVisible()
+    await expect(dialog.locator(".js-plotly-plot").first()).toBeVisible({
+      timeout: 60_000,
     })
+
+    // And the row's second half: it closes
+    await page.keyboard.press("Escape")
+    await expect(dialog).toBeHidden({ timeout: 10_000 })
   })
 
   test("DV-07 - Outputs dialog opens", async ({ page }) => {
@@ -418,14 +443,18 @@ test.describe("Private Dataview @slow", () => {
     await expect(publicNameCell(page, "Tutorial1")).toBeVisible({
       timeout: 15_000,
     })
+    // Re-read until the grid has re-fetched: the filter is applied
+    // asynchronously, so a single read can still sample the pre-filter rows.
     // Iterating an empty list asserts nothing, so the rows are counted first
-    const cells = await page
-      .locator('.MuiDataGrid-cell[data-field="workspace_name"]')
-      .allTextContents()
-    expect(cells.length).toBeGreaterThan(0)
-    for (const text of cells) {
-      expect(text).toContain(DATA_WS)
-    }
+    await expect(async () => {
+      const cells = await page
+        .locator('.MuiDataGrid-cell[data-field="workspace_name"]')
+        .allTextContents()
+      expect(cells.length).toBeGreaterThan(0)
+      for (const text of cells) {
+        expect(text).toContain(DATA_WS)
+      }
+    }).toPass({ timeout: 15_000 })
 
     // A workspace that cannot match empties the table, which is what makes the
     // pass above a narrowing rather than a no-op
@@ -544,10 +573,12 @@ test.describe("Private Dataview @slow", () => {
   test("DV-20 - Concurrent publishes move the version exactly once", async ({
     page,
   }) => {
-    // The version column is the optimistic lock the row is about, and only
-    // the docker DB exposes it
-    const local = localStackSkipReason()
-    test.skip(!!local, `row 719 reads experiment_records.version: ${local}`)
+    // The version column is the optimistic lock the row is about; reachable on
+    // the docker DB and on the deployed RDS over SSM. Each SSM SQL round trip
+    // costs tens of seconds, so the 60s default test budget cannot hold.
+    test.setTimeout(10 * 60_000)
+    const noSql = sqlSkipReason()
+    test.skip(!!noSql, `row 719 reads experiment_records.version: ${noSql}`)
 
     await ensurePublish(page, "Tutorial1", false)
     const headers = await apiHeaders(page)
@@ -574,12 +605,16 @@ test.describe("Private Dataview @slow", () => {
     // request must land in "already published, no change" rather than write
     // again. The read-overlap retry ladder itself stays with
     // test_dataview_publish.py::test_publish_concurrent_modification_retry.
+    // Publish syncs and validates against S3 in-request on a deployed env,
+    // so the config's 15s actionTimeout would abort it mid-flight
     const [first, second] = await Promise.all([
       page.request.post(`${apiUrl()}/api/dataview/publish/${record!.id}/on`, {
         headers,
+        timeout: 120_000,
       }),
       page.request.post(`${apiUrl()}/api/dataview/publish/${record!.id}/on`, {
         headers,
+        timeout: 120_000,
       }),
     ])
     expect(first.status()).toBe(200)
@@ -597,7 +632,7 @@ test.describe("Private Dataview @slow", () => {
     // helper would no-op; unpublish through the same endpoint instead
     const unpublished = await page.request.post(
       `${apiUrl()}/api/dataview/publish/${record!.id}/off`,
-      { headers },
+      { headers, timeout: 120_000 },
     )
     expect(unpublished.ok()).toBe(true)
   })
@@ -626,15 +661,126 @@ test.describe("Public Dataview", () => {
     await expect(headers.filter({ hasText: "Publish" })).toHaveCount(0)
   })
 
-  test("DV-10 - Public dataview loads without authentication", async ({
+  test("DV-10 - Public dataview loads without authentication @slow", async ({
     page,
+    browser,
   }) => {
-    const response = await page.goto("/public")
-    expect(response?.status()).toBe(200)
-    await expect(
-      page.locator("text=OptiNiSt Public Repository").first(),
-    ).toBeVisible({ timeout: 15_000 })
-    await expect(page).not.toHaveURL(/\/login/)
+    skipWithoutCreds()
+    // The publish, the reload ladder and the unpublish in finally each carry
+    // their own multi-minute timeout; the budget has to clear their sum, or a
+    // slow publish times the test out and takes the cleanup with it
+    test.setTimeout(15 * 60_000)
+    // Row 813: the grid's thumbnails are served by /api/visualizations/*, which
+    // only reaches the public tier through an ALB rule keyed on the
+    // DATAVIEW_PUBLIC_REQUEST header the app sends. A broken rule leaves the
+    // page loading fine with every image missing, so the statuses are the row.
+    // Every publishing test here reverts its own state, so the row that the
+    // thumbnails come from has to be this test's own. A new context inherits
+    // neither the baseURL nor the session.
+    const publisher = await browser.newContext({
+      baseURL: process.env.BASE_URL || "http://localhost:3000",
+      storageState: freeStorageState(),
+    })
+    const publisherPage = await publisher.newPage()
+
+    let unpublishAfter = false
+    // Inside the try: a publish whose response is lost still committed, so
+    // setup has to reach the cleanup too
+    try {
+      ensurePublishableAccount()
+      await gotoDashboard(publisherPage)
+      // Read the prior state before mutating it - a publish that throws
+      // half-way still committed, and the cleanup must leave a pre-existing
+      // public record public
+      const before = await findDataviewRecord(publisherPage, BASE_RECORD)
+      unpublishAfter = before?.publish_status !== 1
+      await ensurePublishedRecord(publisherPage, BASE_RECORD)
+
+      // A record whose PNG generation failed falls back to its source TIFF,
+      // which the grid renders through ImagePlotSimpleWithLoading and never
+      // requests a thumbnail for. Without this the ladder below blames the ALB
+      // rule for a bad fixture.
+      const published = await findDataviewRecord(publisherPage, BASE_RECORD)
+      expect(
+        published?.thumbnails?.image_url ?? "",
+        `${BASE_RECORD} has no _thumb.png thumbnail - its PNG generation ` +
+          "failed at mint time, so the grid requests no thumbnails for it",
+      ).toContain("_thumb.png")
+
+      // One anonymous load of the public grid, resolving to every thumbnail
+      // status it requested. Buffer and listener are per attempt, so a
+      // response landing between two attempts is dropped rather than counted
+      // against the next one.
+      const loadPublicGrid = async () => {
+        const thumbnails: number[] = []
+        const collect = (r: Response) => {
+          if (r.url().includes("/api/visualizations/thumbnail/")) {
+            thumbnails.push(r.status())
+          }
+        }
+        page.on("response", collect)
+        try {
+          const response = await page.goto("/public")
+          expect(response?.status()).toBe(200)
+          await expect(
+            page.locator("text=OptiNiSt Public Repository").first(),
+          ).toBeVisible({ timeout: 15_000 })
+          await expect(page).not.toHaveURL(/\/login/)
+
+          await expect
+            .poll(() => thumbnails.length, {
+              timeout: 30_000,
+              message:
+                `the public grid requested no thumbnails - ${BASE_RECORD} ` +
+                "was published above, so an empty grid is the public " +
+                "listing failing, not a missing fixture",
+            })
+            .toBeGreaterThan(0)
+          // The poll returns on the FIRST response, so filtering here judged
+          // one or two thumbnails and let a partial regression through. Wait
+          // for the grid to stop requesting before reading the whole set.
+          let settled = 0
+          await expect
+            .poll(
+              () => {
+                const stable = thumbnails.length === settled
+                settled = thumbnails.length
+                return stable
+              },
+              { timeout: 30_000, intervals: [2_000] },
+            )
+            .toBe(true)
+          return thumbnails
+        } finally {
+          page.off("response", collect)
+        }
+      }
+
+      // The record published above syncs from S3 on its first anonymous read
+      // and its thumbnail 423s while that lock is held, which is what the
+      // grid's own "Retry download" is for. A broken ALB rule never turns
+      // into a 200, so reloading forgives the transient without the row.
+      // toPass, not poll: poll calls its function outside its own try, so a
+      // listing lag that throws inside loadPublicGrid would end the ladder on
+      // the first attempt with a message blaming the public listing for a
+      // condition it was given 30s of the ladder's 150s to settle.
+      await expect(async () => {
+        const seen = await loadPublicGrid()
+        expect(
+          seen.filter((status) => status !== 200),
+          `thumbnail responses that were not 200 (of ${seen.length}) - a ` +
+            "status that never clears means the ALB rule keyed on " +
+            "DATAVIEW_PUBLIC_REQUEST is not routing them to the public tier",
+        ).toEqual([])
+      }).toPass({ timeout: 150_000, intervals: [5_000] })
+    } finally {
+      // A failed assertion must not leave the record published, and a record
+      // that was already public before the row must stay that way
+      if (unpublishAfter) {
+        await setPublished(publisherPage, BASE_RECORD, false).catch(() => {})
+      }
+      await publisher.close()
+    }
   })
 
   test("DV-11 - Public API is open, private API rejects a bad token", async ({

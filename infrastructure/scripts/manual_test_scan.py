@@ -33,6 +33,7 @@ catalog and fails on any drift.
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -43,12 +44,20 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 REGION = "ap-northeast-1"
+# The 5-minute sync job publishes these on every run, so their absence is a
+# real fault.
 EXPECTED_METRICS = [
     "ExperimentsSynced",
     "SyncErrors",
     "SyncErrorRate",
+]
+# The cleanup job returns early when no user is eligible, without publishing, so
+# on a quiet environment these fall outside list-metrics' lookback and their
+# absence means nothing. Reported, never failed on.
+OPTIONAL_METRICS = [
     "DataCleanupCount",
     "CleanupErrors",
+    "CleanupKept",
 ]
 CURRENCY = {1: "usd", 2: "jpy"}
 
@@ -141,18 +150,31 @@ def find_ssm_instance(env):
     return online[0]
 
 
-def audit_queries(user_id):
-    uid = (
-        str(user_id)
-        if user_id
-        else (
+def audit_queries(user_id, user_email=None):
+    if user_id:
+        uid = str(user_id)
+    elif user_email:
+        if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", user_email):
+            raise SystemExit(f"--user-email is not a plain address: {user_email}")
+        # Pinned regardless of plan or status: an audit that retargets when the
+        # named account's subscription breaks reports on a different account
+        # instead of the failure.
+        uid = (
+            "(SELECT su.user_id FROM subscription_users su"
+            " JOIN users u ON u.id=su.user_id"
+            f" WHERE u.active=1 AND u.email='{user_email}'"
+            " ORDER BY su.updated_at DESC LIMIT 1)"
+        )
+    else:
+        uid = (
             "(SELECT su.user_id FROM subscription_users su"
             " JOIN users u ON u.id=su.user_id"
             " JOIN subscription_user_accounts sua ON sua.user_id=su.user_id"
-            " WHERE su.plan_id=2 AND u.active=1"
+            # An e2e checkout probe leaves the freshest subscription of all, so
+            # without this the audit retargets onto a throwaway account.
+            " WHERE su.plan_id=2 AND u.active=1 AND u.email NOT LIKE 'e2e%'"
             " ORDER BY su.updated_at DESC LIMIT 1)"
         )
-    )
     return [
         (
             "plans",
@@ -346,6 +368,12 @@ def main():
         " with a Stripe account)",
     )
     ap.add_argument(
+        "--user-email",
+        help="target user by address, so the audit stays on one account"
+        " instead of following whichever subscription was updated last"
+        " (--user-id wins)",
+    )
+    ap.add_argument(
         "--base-url",
         help="deployed app base URL for the 2028 probe (default: from --check)",
     )
@@ -372,11 +400,31 @@ def main():
     ap.add_argument(
         "-o", "--out", default="manual_test_scan_report.md", help="report path"
     )
+    ap.add_argument(
+        "--json",
+        metavar="PATH",
+        help="also write {row: {status, evidence}} as JSON, for a caller that"
+        " asserts per row instead of reading the report",
+    )
     args = ap.parse_args()
     prod = args.check == "production"
     env = args.env or ("subscr-optinist" if prod else "development-optinist")
     allow_test_interval = args.allow_test_interval or not prod
     allow_live = args.allow_live or prod
+    # Production's newest premium account is a paying customer, and auditing one
+    # reports their billing history as release results. Keyed on the environment
+    # actually read rather than on --check, since --env alone can point every
+    # query at production. `is None` because --user-id 0 is falsy and would
+    # otherwise fall through to the unpinned query.
+    if (
+        (prod or env.startswith("subscr"))
+        and args.user_id is None
+        and not args.user_email
+    ):
+        raise SystemExit(
+            f"auditing {env} needs --user-email or --user-id: name the release"
+            " test account rather than auditing a real customer"
+        )
 
     results = []
 
@@ -392,7 +440,7 @@ def main():
 
     print("running SQL audits over SSM ...")
     instance = find_ssm_instance(env)
-    queries = audit_queries(args.user_id)
+    queries = audit_queries(args.user_id, args.user_email)
     qtext = dict(queries)
     db = parse_sections(ssm_sql(env, instance, db_host, build_sql(queries)))
 
@@ -862,6 +910,28 @@ def main():
                 cus_lines,
             )
 
+            # Rows 914 / 919: the billing address Stripe collected on the
+            # session (billing_address_collection=required, row 910) has to end
+            # up on the customer, or the tax it charged rests on nothing.
+            addr = cus.get("address") or {}
+            addr_fields = [f for f in ("country", "postal_code") if addr.get(f)]
+            add(
+                "09",
+                "914",
+                "PASS" if addr.get("country") else "FAIL",
+                f"customer address: {addr_fields or 'absent'}"
+                + (f", country={addr.get('country')}" if addr.get("country") else ""),
+                cus_lines + [f"  address={ {k: v for k, v in addr.items() if v} }"],
+            )
+            add(
+                "09",
+                "919",
+                "PASS" if addr.get("country") else "FAIL",
+                f"address readable via the API: {bool(addr.get('country'))}"
+                " (its rendering in the dashboard stays manual)",
+                cus_lines,
+            )
+
             subs = stripe_get(
                 key, "/v1/subscriptions", customer=cus_id, status="all", limit=10
             ).get("data", [])
@@ -920,7 +990,12 @@ def main():
                     + [f"  {sub['id']} period/trial end = {cpe_dt:%Y-%m-%d %H:%M:%S}Z"],
                 )
                 drift = abs((cpe_dt - parse_dt(user["expiration"])).total_seconds())
-                ok_drift = drift <= 90
+                if drift <= 90:
+                    drift_status = "PASS"
+                elif not prod and drift <= 3 * 86400 + 90:
+                    drift_status = "INFO"
+                else:
+                    drift_status = "FAIL"
                 drift_lines = (
                     [
                         f"Stripe {sub['id']} period/trial end ="
@@ -930,17 +1005,23 @@ def main():
                     + sqld("user")
                     + [f"-> drift {drift:.0f}s"]
                 )
+                if drift_status == "INFO":
+                    drift_lines.append(
+                        "-> INFO: the nightly stop loses webhook deliveries and"
+                        " Stripe redelivers within 72h, so development lags"
+                        " Stripe by up to 3 days between deliveries"
+                    )
                 add(
                     "09",
                     "932",
-                    "PASS" if ok_drift else "FAIL",
+                    drift_status,
                     f"Stripe period/trial end vs DB expiration drift: {drift:.0f}s",
                     drift_lines,
                 )
                 add(
                     "20",
                     "2017",
-                    "PASS" if ok_drift else "FAIL",
+                    drift_status,
                     f"expiration={user['expiration']}Z vs current_period_end="
                     f"{cpe_dt:%Y-%m-%d %H:%M:%S}Z (drift {drift:.0f}s)",
                     drift_lines,
@@ -1155,6 +1236,7 @@ def main():
     )
     names = {m["MetricName"] for m in metrics}
     missing = [m for m in EXPECTED_METRICS if m not in names]
+    absent_optional = [m for m in OPTIONAL_METRICS if m not in names]
     sync_dims = {
         d["Name"]
         for m in metrics
@@ -1295,8 +1377,9 @@ def main():
         "2027",
         "PASS" if not missing else "FAIL",
         f"namespace {namespace}:"
-        f" present={sorted(names & set(EXPECTED_METRICS))},"
+        f" present={sorted(names & set(EXPECTED_METRICS + OPTIONAL_METRICS))},"
         f" missing={missing or 'none'},"
+        f" idle-cleanup-absent={absent_optional or 'none'},"
         f" ExperimentsSynced dims={sorted(sync_dims) or 'none'};"
         f" {'; '.join(dp) or 'no datapoints today'}",
         cw_detail,
@@ -1480,6 +1563,16 @@ def main():
 
     with open(args.out, "w") as f:
         f.write("\n".join(lines))
+    if args.json:
+        with open(args.json, "w") as f:
+            # Keyed by row, but a row emitted twice in one pass would silently
+            # drop the first verdict, and the caller asserts per row.
+            out = {}
+            for sheet, row, status, evidence, _ in results:
+                if row in out:
+                    raise SystemExit(f"row {row} reported twice; JSON would drop one")
+                out[row] = {"sheet": sheet, "status": status, "evidence": evidence}
+            json.dump(out, f, indent=2)
     fails = sum(1 for r in results if r[2] == "FAIL")
     print(f"\nreport written to {args.out}: {len(results)} rows, {fails} FAIL")
     return 1 if fails else 0

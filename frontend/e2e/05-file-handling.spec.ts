@@ -47,12 +47,17 @@ test.describe("File Select Dialog", () => {
     await expect(
       dialog.locator('[placeholder="Filter... (* as wildcard)"]'),
     ).toBeVisible()
-    // Tree should list at least one file entry (sample data is imported).
     // treeitem only — an "or li" fallback matches the Selected Files panel,
     // which renders even when the tree is empty
-    await expect(dialog.locator('[role="treeitem"]').first()).toBeVisible({
-      timeout: 15_000,
-    })
+    const rows = dialog.locator('[role="treeitem"]')
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+    // The file the sample import actually placed, with the shape the tree reads
+    // off it: "some row rendered" would also pass against a stale or empty tree
+    // .last() is the leaf: an expanded parent directory also carries the text,
+    // and two matches would fail strict mode rather than the assertion.
+    await expect(
+      rows.filter({ hasText: "sample_mouse2p_image.tiff" }).last(),
+    ).toContainText("(2000, 128, 128)")
   })
 
   test("FILE-02 - Wildcard filter narrows file list", async ({ page }) => {

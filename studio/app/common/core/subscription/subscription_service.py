@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta, timezone
 from typing import List, NamedTuple, Optional, Tuple
 
@@ -10,10 +11,12 @@ from studio.app.common import models as common_model
 from studio.app.common.core.logger import AppLogger
 from studio.app.common.core.subscription.constants import (
     DeletionPriority,
+    PlanName,
     SubscriptionLifecycleStatus,
     SubscriptionPeriods,
     SubscriptionPlanIds,
     SubscriptionPlanType,
+    SubscriptionStatus,
     SubscriptionStatusType,
     SubscriptionUserStatus,
     SyncStatus,
@@ -41,6 +44,54 @@ class SubscriptionLifecycle(NamedTuple):
     subscription_end: Optional[datetime]
     grace_end: Optional[datetime]
     deletion_date: Optional[datetime]
+
+
+def derive_subscription_status(
+    expiration: Optional[datetime],
+    plan_id: Optional[int],
+    plan_name: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> Tuple[str, Optional[int]]:
+    """Return the (status label, days remaining) a user's subscription is in.
+
+    Compares the expiration instant, not a truncated day count: a premium
+    subscription is active until the moment it expires. `timedelta.days`
+    truncates toward zero, so anything under 24 hours away reported 0, failed a
+    `> 0` test and dropped a paying user into the grace branch - which on a
+    daily billing cycle is most of the time, and on a monthly one is the last
+    day of every period.
+
+    Days remaining is a display value and rounds up, so "expires later today"
+    reads as 1 day rather than 0.
+    """
+    if not expiration or not plan_id:
+        return SubscriptionStatus.FREE.value, None
+
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    # Taken from the caller so the moment being compared against is the
+    # caller's, which is also what its tests already pin.
+    now = now or get_current_datetime()
+
+    def days_until(moment: datetime) -> int:
+        return math.ceil((moment - now).total_seconds() / 86400)
+
+    if plan_id == SubscriptionPlanIds.FREE:
+        return SubscriptionStatus.FREE.value, None
+
+    if plan_id == SubscriptionPlanIds.PREMIUM:
+        if expiration > now:
+            return SubscriptionStatus.PREMIUM.value, days_until(expiration)
+        grace_end = expiration + timedelta(days=SubscriptionPeriods.GRACE_PERIOD_DAYS)
+        if now <= grace_end:
+            return SubscriptionStatus.LIMIT_GRACE.value, days_until(grace_end)
+        return SubscriptionStatus.EXPIRED.value, None
+
+    remaining = days_until(expiration)
+    return (
+        plan_name or PlanName.UNKNOWN.value,
+        remaining if remaining > 0 else None,
+    )
 
 
 class SubscriptionService:

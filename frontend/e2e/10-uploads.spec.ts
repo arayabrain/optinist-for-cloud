@@ -1,7 +1,7 @@
 import * as fs from "fs"
 import * as path from "path"
 
-import { test, expect, Page } from "@playwright/test"
+import { test, expect, Locator, Page } from "@playwright/test"
 
 import {
   skipWithoutCreds,
@@ -58,6 +58,60 @@ async function uploadAndVerify(
   })
 }
 
+// Both sample_hdf5.h5 and sample_matlab.mat carry the same two datasets under
+// a "data" group, so one table describes either file's tree. Asserting the
+// shapes and sizes is what separates "the tree rendered" from "the tree
+// rendered this file".
+const SAMPLE_DATASETS = [
+  ["behavior", "(500, 8)", "32.0 KB"],
+  ["image", "(500, 128, 128)", "16.4 MB"],
+] as const
+
+async function expectSampleStructureTree(dialog: Locator) {
+  await expect(dialog.locator('[role="treeitem"]')).toHaveCount(
+    SAMPLE_DATASETS.length + 1,
+  )
+  await expect(dialog.locator('[role="treeitem"][id$="-data"]')).toBeVisible()
+  for (const [name, shape, nbytes] of SAMPLE_DATASETS) {
+    const row = dialog.locator(`[role="treeitem"][id$="-data/${name}"]`)
+    await expect(row, `the ${name} dataset row`).toContainText(name)
+    await expect(row).toContainText("array")
+    await expect(row).toContainText(shape)
+    await expect(row).toContainText(nbytes)
+  }
+}
+
+// Move the selection to a dataset that is not the one the tutorial arrived
+// with, and require the change to reach the node. Both file types drive the
+// same dialog, so the round-trip is written once.
+async function selectAnotherStructurePath(
+  dialog: Locator,
+  node: Locator,
+): Promise<string> {
+  await expect(dialog.getByText("Selected Path")).toBeVisible()
+  const selectedPath = dialog.locator("h6").first()
+  const before = await selectedPath.textContent()
+  // "---" is the placeholder, and it is truthy; without this the test would
+  // silently weaken to "the placeholder was replaced"
+  expect(before?.trim(), "no selected-path text to compare").toBeTruthy()
+  expect(before?.trim()).not.toBe("---")
+
+  await dialog.locator('input[type="checkbox"]:not(:checked)').first().check()
+  await expect(selectedPath).not.toHaveText(before ?? "")
+  const chosen = (await selectedPath.textContent())?.trim() ?? ""
+  expect(chosen).toBeTruthy()
+
+  // OK writes the choice back onto the node
+  await dialog.getByRole("button", { name: "OK" }).click()
+  await expect(dialog).toBeHidden({ timeout: 15_000 })
+  // The node renders two .selectFilePath captions - the file path and the
+  // structure path; the arrow prefix is the structure one
+  await expect(
+    node.locator(".selectFilePath").filter({ hasText: "↳" }),
+  ).toHaveText(`↳ ${chosen}`, { timeout: 15_000 })
+  return chosen
+}
+
 async function openStructureDialog(page: Page, nodeClass: string) {
   const node = page.locator(nodeClass)
   await expect(node).toBeVisible({ timeout: 15_000 })
@@ -110,10 +164,10 @@ test.describe("Input node dialogs and uploads", () => {
     await hdf5Node.locator('[data-testid="AccountTreeIcon"]').click()
     const dialog = page.locator('[role="dialog"]:has-text("Select Structure")')
     await expect(dialog).toBeVisible({ timeout: 30_000 })
-    // Tree loads from the file; at least one entry appears
     await expect(dialog.locator('[role="treeitem"]').first()).toBeVisible({
       timeout: 30_000,
     })
+    await expectSampleStructureTree(dialog)
   })
 
   test("UPL-03 - Upload an image file appears in inputs", async ({ page }) => {
@@ -184,7 +238,11 @@ test.describe("Input node dialogs and uploads", () => {
     page,
   }) => {
     await reproduceTutorial(page, "Tutorial4")
-    await openStructureDialog(page, ".react-flow__node-MatlabFileNode")
+    const { dialog } = await openStructureDialog(
+      page,
+      ".react-flow__node-MatlabFileNode",
+    )
+    await expectSampleStructureTree(dialog)
   })
 
   test("UPL-07 - A data path inside the MAT file can be selected", async ({
@@ -200,25 +258,22 @@ test.describe("Input node dialogs and uploads", () => {
     // that same leaf would assert nothing. Tick a different one and require the
     // selection to move: sample_matlab.mat carries both data/behavior and
     // data/image.
-    await expect(dialog.getByText("Selected Path")).toBeVisible()
-    const selectedPath = dialog.locator("h6").first()
-    const before = await selectedPath.textContent()
-    // "---" is the placeholder, and it is truthy; without this the test would
-    // silently weaken to "the placeholder was replaced"
-    expect(before?.trim()).not.toBe("---")
+    await selectAnotherStructurePath(dialog, matNode)
+  })
 
-    await dialog.locator('input[type="checkbox"]:not(:checked)').first().check()
-    await expect(selectedPath).not.toHaveText(before ?? "")
-    const chosen = (await selectedPath.textContent())?.trim() ?? ""
-    expect(chosen).toBeTruthy()
-
-    // OK writes the choice back onto the node
-    await dialog.getByRole("button", { name: "OK" }).click()
-    await expect(dialog).toBeHidden({ timeout: 15_000 })
-    // The node renders two .selectFilePath captions - the file path and the
-    // structure path; the arrow prefix is the structure one
-    await expect(
-      matNode.locator(".selectFilePath").filter({ hasText: "↳" }),
-    ).toHaveText(`↳ ${chosen}`, { timeout: 15_000 })
+  test("UPL-08 - A data path inside the HDF5 file can be selected", async ({
+    page,
+  }) => {
+    await reproduceTutorial(page, "Tutorial4")
+    const { node: hdf5Node, dialog } = await openStructureDialog(
+      page,
+      ".react-flow__node-HDF5FileNode",
+    )
+    // Same round-trip on the file the HDF5 node reads: the tutorial arrives
+    // with data/image ticked, so the selection has to move to data/behavior and
+    // reach the node for this to mean anything.
+    expect(await selectAnotherStructurePath(dialog, hdf5Node)).toBe(
+      "data/behavior",
+    )
   })
 })

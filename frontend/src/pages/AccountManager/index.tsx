@@ -920,10 +920,13 @@ const AccountManager = () => {
 
         let statusText = status
         if (daysRemaining !== null && daysRemaining !== undefined) {
+          // The backend rounds days remaining up, so the final day of every
+          // subscription reads 1 rather than 0
+          const left = `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`
           if (status === SubscriptionStatus.PREMIUM) {
-            statusText = `${SubscriptionStatus.PREMIUM} (${daysRemaining} days left)`
+            statusText = `${SubscriptionStatus.PREMIUM} (${left})`
           } else if (status === SubscriptionStatus.LIMIT_GRACE) {
-            statusText = `${SubscriptionStatus.LIMIT_GRACE} (${daysRemaining} days left)`
+            statusText = `${SubscriptionStatus.LIMIT_GRACE} (${left})`
           }
         }
 

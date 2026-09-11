@@ -18,4 +18,5 @@ export const BASE_URL =
 export const API_TIMEOUT = {
   DEFAULT: 600000, // Default timeout for backend API
   UPLOAD_DOWNLOAD: 0, // Upload/Download API timeout (No timeout(0), consider large file transfers)
+  LOGOUT: 3000, // Long enough for the instance release to land, short enough that a hung backend cannot strand the session
 } as const

@@ -382,6 +382,7 @@ const SubscriptionPlans = () => {
             return (
               <PlanCard
                 key={plan.id}
+                data-testid={`plan-card-${plan.name}`}
                 isHighlighted={plan.name === PlanName.PREMIUM}
               >
                 <PlanHeader>

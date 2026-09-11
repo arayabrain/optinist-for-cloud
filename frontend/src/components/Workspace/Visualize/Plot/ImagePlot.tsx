@@ -835,6 +835,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
                   (key) => statusRoi[key as keyof StatusROI].length > 0,
                 ) ? (
                   <LinkDiv
+                    data-testid="roi-commit-edit"
                     sx={{
                       color: "#32A919",
                     }}
@@ -867,7 +868,7 @@ const ImagePlotChart = memo(function ImagePlotChart({
           onSelecting={onSelecting}
         />
         {action === ADD_ROI ? (
-          <DivAddRoi>
+          <DivAddRoi data-testid="roi-add-overlay">
             <DivSvg
               onMouseLeave={onMouseUpDragAddRoi}
               onMouseMove={onMouseMoveAddRoi}

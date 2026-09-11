@@ -17,6 +17,7 @@ import {
 // 3. Logs in once via the UI and saves storage state for the authed specs,
 //    keeping Firebase logins per run to a handful (rate limits).
 // 4. Deletes the Firebase accounts AUTH-04 leaves behind, if admin creds exist.
+// Steps 2 and 4 run only against a local or development BASE_URL.
 // The Firebase sweep runs first because AUTH-02/03/04 need no credentials: a
 // run that returns below still registers the throwaways the sweep clears.
 export default async function globalSetup() {
@@ -28,13 +29,25 @@ export default async function globalSetup() {
 
   const baseURL = process.env.BASE_URL || "http://localhost:3000"
 
+  // The read-only AWS lanes document pointing BASE_URL at production, and
+  // globalSetup runs whatever the file filter is, so the deletions below are
+  // confined to the environments whose data is disposable.
+  const disposable =
+    isLocalBaseUrl() || baseURL.includes("development-optinist")
+
   // Before the browser login: bad credentials there are three silent 60s
   // waits for /dashboard, which reads as a hang rather than an auth error
   const { api, headers } = await apiLogin(email, password)
   try {
     await saveLoginState(baseURL, email, password)
-    await deleteE2eWorkspaces(api, headers)
-    await deleteStaleUnverifiedUsers(api)
+    if (disposable) {
+      await deleteE2eWorkspaces(api, headers)
+      await deleteStaleUnverifiedUsers(api)
+    } else {
+      console.warn(
+        `globalSetup: ${baseURL} is not a disposable environment; skipping cleanup`,
+      )
+    }
   } finally {
     await api.dispose()
   }
@@ -98,8 +111,12 @@ async function deleteStaleUnverifiedUsers(
   const { access_token, ex_token } = await loginRes.json()
   const auth = authHeaders(access_token, ex_token)
 
+  // AUTH-04's unverified registrations. The delete is a soft delete (it clears
+  // `active`), so the accounts stop being usable but their storage rows survive
+  // - which is why the reconciliation job has to tolerate a row whose owner is
+  // no longer active.
   const listRes = await api.get(
-    "/admin/users?email=e2e_unverified&offset=0&limit=100",
+    `/admin/users?email=e2e_unverified&offset=0&limit=100`,
     { headers: auth },
   )
   if (!listRes.ok()) {

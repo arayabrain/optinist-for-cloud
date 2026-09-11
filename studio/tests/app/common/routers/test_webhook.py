@@ -77,7 +77,14 @@ class TestInvoicePaymentSucceeded:
 
     @pytest.fixture
     def invoice_data_subscription_cycle(self):
-        """Create mock invoice data for subscription renewal"""
+        """Create mock invoice data for subscription renewal.
+
+        The period end sits beyond the fixture subscription's seeded
+        expiration (now + 5 days): a renewal extends, and the handler
+        refuses a period end that does not advance the stored value.
+        """
+        period_start = int((get_current_datetime() + timedelta(days=29)).timestamp())
+        period_end = int((get_current_datetime() + timedelta(days=30)).timestamp())
         return {
             "id": "in_test123",
             "customer": "cus_test123",
@@ -86,14 +93,14 @@ class TestInvoicePaymentSucceeded:
             "status": "paid",
             "amount_paid": 2999,  # $29.99 in cents
             "billing_reason": "subscription_cycle",
-            "period_start": 1699999999,
-            "period_end": 1702678399,
+            "period_start": period_start,
+            "period_end": period_end,
             "lines": {
                 "object": "list",
                 "data": [
                     {
                         "id": "il_test123",
-                        "period": {"end": 1702678399, "start": 1699999999},
+                        "period": {"end": period_end, "start": period_start},
                     }
                 ],
             },
@@ -175,10 +182,10 @@ class TestInvoicePaymentSucceeded:
             assert mock_subscription.expiration is not None
             assert mock_subscription.updated_at is not None
 
-    @pytest.mark.parametrize("period_end", [1702678399, 1735300799])
+    @pytest.mark.parametrize("period_end_days_out", [30, 60])
     def test_renewal_writes_the_invoice_period_end_and_leaves_the_plan_alone(
         self,
-        period_end,
+        period_end_days_out,
         mock_db,
         mock_user_account,
         mock_subscription,
@@ -193,6 +200,9 @@ class TestInvoicePaymentSucceeded:
         ``expiration is not None`` holds even if the write is deleted. Two
         distinct period ends make the seeded value unable to satisfy either run.
         """
+        period_end = int(
+            (get_current_datetime() + timedelta(days=period_end_days_out)).timestamp()
+        )
         invoice_data_subscription_cycle["lines"]["data"][0]["period"][
             "end"
         ] = period_end
@@ -236,6 +246,72 @@ class TestInvoicePaymentSucceeded:
         assert result["new_expiration"] == expected.isoformat()
         assert result["old_expiration"] == seeded_expiration.isoformat()
         assert mock_subscription.plan_id == "plan_123"
+
+    @pytest.mark.parametrize("stored_is_naive", [False, True])
+    def test_a_stale_invoice_event_never_rewinds_the_expiration(
+        self,
+        stored_is_naive,
+        mock_db,
+        mock_user_account,
+        mock_subscription,
+        mock_plan,
+        mock_user,
+        invoice_data_subscription_cycle,
+    ):
+        """Stripe delivers invoice events out of period order (retries, late
+        settlements): on 2026-08-24 a redelivered three-day-old invoice event
+        arrived 33s after the fresh renewal and rewound the stored expiration
+        behind ``now``, turning the account expired. An older period end must
+        be skipped - expiration untouched and no duplicate purchase row.
+
+        Parametrized over the stored value's awareness: MySQL hands back a
+        naive datetime while the invoice's period end is UTC-aware, and
+        comparing the two without normalising raises.
+        """
+        if stored_is_naive:
+            mock_subscription.expiration = mock_subscription.expiration.replace(
+                tzinfo=None
+            )
+        stale_end = int((get_current_datetime() - timedelta(days=3)).timestamp())
+        invoice_data_subscription_cycle["lines"]["data"][0]["period"]["end"] = stale_end
+        invoice_data_subscription_cycle["period_end"] = stale_end
+        seeded_expiration = mock_subscription.expiration
+
+        mock_db.query.side_effect = [
+            Mock(
+                filter=Mock(
+                    return_value=Mock(first=Mock(return_value=mock_user_account))
+                )
+            ),
+            Mock(
+                filter=Mock(
+                    return_value=Mock(
+                        order_by=Mock(
+                            return_value=Mock(
+                                first=Mock(return_value=mock_subscription)
+                            )
+                        )
+                    )
+                )
+            ),
+        ]
+
+        with patch.object(
+            CheckoutService, "get_subscription_plan", return_value=mock_plan
+        ), patch.object(
+            SubscriptionService,
+            "get_current_datetime",
+            return_value=get_current_datetime(),
+        ):
+            result = WebhookService.handle_subscription_payment_succeeded(
+                mock_db, invoice_data_subscription_cycle
+            )
+
+        assert result["skipped"] is True
+        assert result["reason"] == "stale_period_end"
+        assert mock_subscription.expiration == seeded_expiration
+        mock_db.add.assert_not_called()
+        mock_db.commit.assert_not_called()
 
     def test_skip_initial_payment(self, mock_db, invoice_data_initial_payment):
         """Test that initial subscription payments are skipped"""
@@ -609,6 +685,9 @@ class TestWebhookCacheInvalidation:
         mock_plan = Mock()
         mock_plan.id = 1
 
+        # Beyond the fixture's seeded expiration, or the stale-period guard
+        # skips the renewal before the cache is ever touched
+        future_end = int((get_current_datetime() + timedelta(days=30)).timestamp())
         invoice_data = {
             "id": "in_test123",
             "customer": "cus_test123",
@@ -616,7 +695,7 @@ class TestWebhookCacheInvalidation:
             "status": "paid",
             "amount_paid": 2999,
             "billing_reason": "subscription_cycle",
-            "lines": {"data": [{"period": {"end": 1702678399}}]},
+            "lines": {"data": [{"period": {"end": future_end}}]},
         }
 
         # Setup query chain
@@ -1585,3 +1664,83 @@ class TestWebhookRouteErrorStatusPassthrough:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestInvoiceFinalizedPaymentOutcomes:
+    """invoice.finalized separates outcomes that are not our failure.
+
+    One `except stripe.error.StripeError` used to log all three at ERROR, which
+    made an already-settled invoice and a customer's declined card look like a
+    broken integration and left ERROR-based alerting unusable.
+    """
+
+    INVOICE = {
+        "id": "in_test_finalized",
+        "status": "open",
+        "default_payment_method": "pm_card_visa",
+        "amount_due": 2000,
+    }
+
+    def test_already_paid_invoice_is_success_not_failure(self):
+        """Stripe's auto-collection can win the race; the end state is what counts."""
+        import stripe
+
+        error = stripe.error.InvalidRequestError("Invoice is already paid", None)
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve", return_value={"status": "paid"}
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is True
+        assert result["new_status"] == "paid"
+        assert "payment_failed" not in result
+
+    def test_declined_card_is_reported_without_claiming_our_fault(self):
+        import stripe
+
+        error = stripe.error.CardError("Your card was declined.", None, "card_declined")
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True
+        assert result["card_declined"] is True
+
+    def test_a_genuine_stripe_failure_still_fails(self):
+        """The read-back must not turn every refused pay into a success."""
+        import stripe
+
+        error = stripe.error.APIConnectionError("connection reset")
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve", return_value={"status": "open"}
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True
+
+    def test_a_failed_read_back_does_not_escalate_to_a_500(self):
+        """A read-back that itself fails must leave the outcome a plain failure."""
+        import stripe
+
+        error = stripe.error.InvalidRequestError("Invoice is already paid", None)
+        with patch(
+            "studio.app.common.core.subscription.subscription_service."
+            "SubscriptionService._ensure_stripe_initialized"
+        ), patch("stripe.Invoice.pay", side_effect=error), patch(
+            "stripe.Invoice.retrieve",
+            side_effect=stripe.error.RateLimitError("slow down"),
+        ):
+            result = WebhookService.handle_invoice_finalized(dict(self.INVOICE))
+
+        assert result["success"] is False
+        assert result["payment_failed"] is True

@@ -1,11 +1,16 @@
 import { test, expect } from "@playwright/test"
 
 import {
+  dismissStorageWarning,
+  ensureRegisteredUser,
   FREE_USER,
+  localStackSkipReason,
   login,
   logout,
+  routeGate,
+  runSql,
   skipWithoutCreds,
-  dismissStorageWarning,
+  sqlLiteral,
 } from "./helpers"
 
 // Login, logout, session persistence, and public-header navigation
@@ -132,6 +137,59 @@ test.describe("Login", () => {
     await logout(page)
   })
 
+  // Row 606: a logout endpoint that never answers must not hold the session
+  // open. logout() awaits the call so the instance is released before the
+  // navigation cancels it, so the guarantee is a bounded wait, not no wait.
+  test("AUTH-19 - Logout completes when the logout API never answers", async ({
+    page,
+  }) => {
+    skipWithoutCreds()
+    await login(page)
+
+    // routing_id/routing_tier are premium-only, so for this free account they
+    // are absent either way and would pad the filter with a permanent 0 of 0.
+    const AUTH_KEYS = ["access_token", "refresh_token", "ExToken"]
+    const keysPresent = () =>
+      page.evaluate(
+        (keys) => keys.filter((k) => localStorage.getItem(k) !== null),
+        AUTH_KEYS,
+      )
+
+    // Positive control: without it a renamed key makes the filter match nothing
+    // and the emptiness assertion below passes on a session that never cleared.
+    expect(
+      await keysPresent(),
+      "the login left no auth keys to clear - the key names are stale",
+    ).not.toEqual([])
+
+    let calls = 0
+    const gate = routeGate()
+    // Held open rather than aborted: an abort rejects in milliseconds and takes
+    // the catch path, which is the one case that cannot expose a logout that
+    // waits on the network before clearing tokens.
+    await page.route("**/users/me/free/logout", async (route) => {
+      calls += 1
+      await gate.held
+      await route.abort()
+    })
+    try {
+      await logout(page)
+
+      expect(
+        await keysPresent(),
+        "auth keys still in localStorage after logout",
+      ).toEqual([])
+
+      // A cleared session must also fail the guard, not just look logged out
+      await page.goto("/dashboard")
+      await expect(page).toHaveURL(/\/login/, { timeout: 15_000 })
+      // The route did fire, so the hang really was the path under test
+      expect(calls, "the logout API was never called").toBeGreaterThan(0)
+    } finally {
+      gate.release()
+    }
+  })
+
   test("AUTH-06 - Session persistence across tabs", async ({ page }) => {
     skipWithoutCreds()
     await login(page)
@@ -195,6 +253,13 @@ test.describe("Registration form validation (extra)", () => {
   })
 
   test("AUTH-09 - Registration empty fields", async ({ page }) => {
+    // The form's own inventory: a missing field would otherwise only surface as
+    // a confusing validation failure further down this group.
+    for (const name of ["name", "email", "password", "confirmPassword"]) {
+      await expect(page.locator(`input[name="${name}"]`)).toBeVisible()
+    }
+    await expect(page.locator('button:has-text("Sign Up")')).toBeEnabled()
+
     await page.locator('button:has-text("Sign Up")').click()
     const alert = page.locator('[role="alert"]')
     await expect(alert).toBeVisible()
@@ -319,8 +384,43 @@ test.describe("Auth guard", () => {
       await expect(page.locator('[data-testid="email"]')).toBeVisible({
         timeout: 15_000,
       })
-      // No subscription content may have rendered behind the redirect
-      await expect(page.getByText(/^Current Plan/)).toHaveCount(0)
+      // "Current Plan" needs a loaded subscription, which an anonymous visitor
+      // never has, so it reads 0 whether the guard holds or not. The plan cards
+      // render from the public catalogue and are what a leak would actually show.
+      await expect(page.getByTestId(/^plan-card-/)).toHaveCount(0)
     }
+  })
+})
+
+// Rows 116 / 117: the sheets' own SQL row checks after a registration. The
+// unit suite asserts the ORM rows create_user builds; this is the real MySQL
+// round trip, so it is local-stack only.
+test.describe("Registration DB rows", () => {
+  test("AUTH-18 - Registration writes the active free-plan rows", async () => {
+    const reason = localStackSkipReason()
+    test.skip(!!reason, `rows 116 / 117: ${reason}`)
+    test.setTimeout(120_000)
+
+    // Per-run address: a reused account makes ensureRegisteredUser a no-op
+    // and the row would then assert stale rows instead of a real registration
+    const email = `e2e_dbrows_${Date.now()}@test.com`
+    await ensureRegisteredUser(email, "Test@123", "E2E DB Rows User")
+
+    // Inner joins on purpose: a registration that skipped any of these rows
+    // must fail this query, not be papered over by a LEFT JOIN default
+    const row = runSql(
+      `SELECT u.active, u.uid <> '', u.created_at IS NOT NULL, r.role_id,
+              s.plan_id, st.storage_quota_bytes
+         FROM users u
+         JOIN user_roles r ON r.user_id = u.id
+         JOIN subscription_users s ON s.user_id = u.id
+         JOIN user_storage_usage st ON st.user_id = u.id
+        WHERE u.email = '${sqlLiteral(email)}';`,
+    )
+    expect(
+      row,
+      `registration rows for ${email} (active, uid set, created_at set, ` +
+        `role_id, plan_id, quota): "${row}"`,
+    ).toMatch(/^1\s+1\s+1\s+20\s+1\s+5368709120$/)
   })
 })

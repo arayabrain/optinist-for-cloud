@@ -1,12 +1,15 @@
 import { test, expect, Page } from "@playwright/test"
 
 import {
-  login,
-  skipWithoutCreds,
+  apiLogin,
+  ERROR_RED,
+  FREE_USER,
   freeStorageState,
   gotoDashboard,
-  routeGate,
+  login,
   PREMIUM_USER,
+  routeGate,
+  skipWithoutCreds,
 } from "./helpers"
 
 // Subscription UI state for free and premium users.
@@ -15,6 +18,7 @@ import {
 // The features JSON is deployment configuration (the local DB seeds it empty),
 // so the catalogue is mocked in the shape the tfvars declare. Two strings are
 // on both plans, which is what makes the per-plan counts below a real check.
+
 const SHARED_FEATURES = [
   "Basic compute access with fair-use limitations",
   "Standard support through documentation and community",
@@ -71,13 +75,31 @@ test.describe("Free plan state", () => {
   }) => {
     await page.goto("/subscription")
 
+    const free = page.getByTestId("plan-card-Free")
+    const premium = page.getByTestId("plan-card-Premium")
+    await expect(free).toBeVisible({ timeout: 30_000 })
+    await expect(premium).toBeVisible()
+
+    // Scoped to its own card. Page-wide, a $20 rendered anywhere - including on
+    // the Free card - satisfied this row, and so did an Upgrade button sitting
+    // on the wrong plan.
+    await expect(free.locator('button:has-text("Current Plan")')).toBeVisible()
+    await expect(free.locator('button:has-text("Upgrade")')).toHaveCount(0)
+    await expect(premium.locator('button:has-text("Upgrade")')).toBeVisible()
     await expect(
-      page.locator('button:has-text("Current Plan")').first(),
-    ).toBeVisible({ timeout: 30_000 })
-    await expect(
-      page.locator('button:has-text("Upgrade")').first(),
-    ).toBeVisible()
-    await expect(page.locator("text=$20").first()).toBeVisible()
+      premium.locator('button:has-text("Current Plan")'),
+    ).toHaveCount(0)
+
+    // The billing cycle differs by environment (dev bills daily), so the
+    // assertion is the amount and its tax caption, not the period word.
+    await expect(premium).toContainText("$20")
+    await expect(premium).toContainText("+ applicable taxes")
+    await expect(free).not.toContainText("+ applicable taxes")
+
+    // Row 121: the only action offered to a free user has to be usable.
+    const upgrade = premium.locator('button:has-text("Upgrade")')
+    await expect(upgrade).toBeEnabled()
+    await expect(free.locator('button:has-text("Current Plan")')).toBeDisabled()
   })
 
   test("SUB-02 - Account profile shows Free status", async ({ page }) => {
@@ -86,7 +108,14 @@ test.describe("Free plan state", () => {
       timeout: 15_000,
     })
 
-    await expect(page.locator("text=Free").first()).toBeVisible()
+    // The status field itself, read exactly: "text=Free" matched the word
+    // anywhere on the page, so a Premium account would have satisfied it too.
+    await expect(page.getByTestId("account-plan-name")).toHaveText("Free")
+    // A free account has no billing period, so it must carry no expiry caption.
+    // Renew is included deliberately: it is the branch a free account wrongly
+    // marked SUBSCRIBED would actually render, and the other two never fire for
+    // one, so leaving it out made this a 0 == 0 by construction.
+    await expect(page.getByText(/\((Expires|Expired|Renew) on /)).toHaveCount(0)
     await expect(page.locator('button:has-text("Upgrade")')).toBeVisible()
     await expect(page.locator('button:has-text("Manage")')).toBeHidden()
   })
@@ -159,6 +188,30 @@ test.describe("Free plan state", () => {
           overflow,
           `${url} at ${viewport.width}px overflows by ${overflow}px`,
         ).toBeLessThanOrEqual(1)
+      }
+
+      // Row 298's overlap half. A scan of every element would be noise - a
+      // child always overlaps its parent - so the assertion is the pair that
+      // actually collides when the flex row refuses to wrap: the plan cards.
+      await page.goto("/subscription")
+      const cards = page.getByTestId(/^plan-card-/)
+      await expect(cards.first()).toBeVisible({ timeout: 30_000 })
+      const boxes = []
+      for (const card of await cards.all()) {
+        const box = await card.boundingBox()
+        if (box) boxes.push(box)
+      }
+      expect(boxes.length, "plan cards found").toBeGreaterThan(1)
+      // Overlap was the original check, but the cards are flex siblings with a
+      // gap and nothing short of absolute positioning makes those overlap. What
+      // a row that refuses to wrap really does is push a card off-screen.
+      for (const [i, box] of boxes.entries()) {
+        expect(
+          box.x >= -1 && box.x + box.width <= viewport.width + 1,
+          `plan card ${i} is outside the ${viewport.width}px viewport ` +
+            `(x=${box.x}, width=${box.width})`,
+        ).toBe(true)
+        expect(box.width, `plan card ${i} collapsed`).toBeGreaterThan(80)
       }
     }
   })
@@ -345,13 +398,22 @@ test.describe("Invoice page and subscription transitions (mocked billing)", () =
     await expect(
       confirm.getByText(`Your subscription will be canceled at ${endsOn}.`),
     ).toBeVisible()
+    // Two choices, and the destructive one is the one that looks destructive: a
+    // safe-looking confirm is how a cancellation gets clicked by accident.
+    const yes = confirm.getByRole("button", {
+      name: "Yes, Cancel Subscription",
+    })
+    const no = confirm.getByRole("button", { name: "No" })
+    await expect(confirm.getByRole("button")).toHaveCount(2)
+    await expect(yes).toBeEnabled()
+    await expect(no).toBeEnabled()
+    await expect(yes).toHaveCSS("background-color", ERROR_RED)
+
     const cancelRequest = page.waitForRequest(
       (r) =>
         r.url().includes("/api/subsc/mgmts/cancel") && r.method() === "DELETE",
     )
-    await confirm
-      .getByRole("button", { name: "Yes, Cancel Subscription" })
-      .click()
+    await yes.click()
     await cancelRequest
 
     await expect(confirm).toBeHidden({ timeout: 15_000 })
@@ -616,5 +678,67 @@ test.describe("Premium plan state", () => {
     await expect(
       page.locator("text=/renews? on|expires? on|expired on/i").first(),
     ).toBeVisible()
+  })
+})
+
+// Row 2015: GET /api/subsc/mgmts takes no user id at all - it reads the caller
+// out of the token - so the isolation the row asks about is a property of the
+// route, not of a filter someone could get wrong. Two real accounts asking the
+// same URL is what proves it: each gets its own row and neither can name the
+// other's.
+test.describe("Subscription API isolation", () => {
+  test("SUB-20 - The subscription route answers with the caller's own row only", async () => {
+    // Premium first: CI registers that account in bootstrap, while the
+    // lifecycle account only exists once 11-lifecycle has run, and specs run in
+    // file order.
+    const second = process.env.TEST_PREMIUM_EMAIL
+      ? {
+          email: process.env.TEST_PREMIUM_EMAIL,
+          password: process.env.TEST_PREMIUM_PASSWORD || "",
+        }
+      : {
+          email: process.env.TEST_LIFECYCLE_EMAIL || "",
+          password: process.env.TEST_LIFECYCLE_PASSWORD || "",
+        }
+    skipWithoutCreds()
+    test.skip(
+      !second.email || !second.password,
+      "needs a second account: TEST_PREMIUM_* or TEST_LIFECYCLE_*",
+    )
+
+    const seen: number[] = []
+    let rows = 0
+    for (const who of [FREE_USER, second]) {
+      const { api, headers } = await apiLogin(who.email, who.password)
+      try {
+        const me = await api.get("/users/me", { headers })
+        expect(me.ok(), `GET /users/me for ${who.email}`).toBeTruthy()
+        const myId = (await me.json()).id
+
+        const res = await api.get("/api/subsc/mgmts", { headers })
+        expect(res.ok(), "GET /api/subsc/mgmts").toBeTruthy()
+        const body = await res.json()
+        // null is the right answer for an account with no subscription object -
+        // a free account gets one, and receiving somebody else's row instead is
+        // exactly the leak this row is about.
+        if (body !== null) {
+          expect(
+            body.user_id,
+            "the row returned belongs to the caller, not to whoever asked last",
+          ).toBe(myId)
+          rows += 1
+        }
+        seen.push(myId)
+      } finally {
+        await api.dispose()
+      }
+    }
+    // Two different callers, and at least one real row between them, or the
+    // assertion above proves nothing
+    expect(new Set(seen).size, "the two accounts are distinct users").toBe(2)
+    expect(
+      rows,
+      "neither account returned a row, so nothing was compared",
+    ).toBeGreaterThan(0)
   })
 })

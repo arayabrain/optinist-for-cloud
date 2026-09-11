@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "araya-optinist"
 description = "Cloud-based Calcium Imaging Pipeline Tool"
-version = "1.1.9"
+version = "1.1.10"
 license = "GPL-3.0"
 authors = ["ARAYA <optinist-support@araya.org>"]
 readme = "README.md"

@@ -10,6 +10,8 @@ import logging
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 MODULE = "studio.app.common.core.cloud.storage_tracking"
 
 
@@ -86,3 +88,55 @@ def test_genuine_db_error_reports_failure_not_success(caplog):
         "Updated storage usage for user 9" in r.message for r in caplog.records
     )
     assert any("Failed to update storage usage" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_scan_leaves_the_row_alone_when_no_active_user_owns_it():
+    """A deleted account's storage row must not be written down to 0 bytes.
+
+    `get_user_with_context` filters on `active IS TRUE`, so a deleted account
+    404s. That used to be swallowed into a return of 0, which the caller wrote
+    to the row as though it were a measurement. It now raises, so the UPDATE is
+    never reached and the last real value survives.
+    """
+    from fastapi import HTTPException
+
+    from studio.app.common.core.cloud.storage_tracking import (
+        StorageOwnerInactive,
+        _perform_full_scan_and_reset_delta,
+    )
+
+    db = MagicMock()
+    # GET_LOCK returns 1 so the scan proceeds past the advisory lock
+    db.execute.return_value.scalar.return_value = 1
+
+    async def not_found(*_args, **_kwargs):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    with patch(f"{MODULE}.session_scope", _session_scope(db)):
+        with patch(
+            "studio.app.common.core.storage.remote_storage_controller."
+            "RemoteStorageType.get_activated_type"
+        ) as activated:
+            with patch(
+                "studio.app.common.core.users.crud_users.get_user_with_context",
+                not_found,
+            ):
+                from studio.app.common.core.storage.remote_storage_controller import (
+                    RemoteStorageType,
+                )
+
+                activated.return_value = RemoteStorageType.S3
+                try:
+                    await _perform_full_scan_and_reset_delta(1)
+                    raised = None
+                except StorageOwnerInactive as e:
+                    raised = e
+
+    assert raised is not None, "an unresolvable owner must not pass silently"
+    assert raised.user_id == 1
+    # The row keeps its value: no UPDATE statement was executed, only the
+    # advisory lock's GET_LOCK / RELEASE_LOCK
+    statements = [str(call.args[0]).lower() for call in db.execute.call_args_list]
+    assert not any("update" in statement for statement in statements), statements
+    assert any("release_lock" in statement for statement in statements), statements

@@ -94,6 +94,10 @@ jobs:
           yarn install --frozen-lockfile
           npx playwright install --with-deps chromium
 
+      - name: Typecheck the e2e specs
+        working-directory: frontend
+        run: yarn typecheck:e2e
+
       - name: Start frontend dev server
         working-directory: frontend
         # frontend/.env is gitignored; without REACT_APP_SERVER_* the app
